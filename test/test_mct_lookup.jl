@@ -303,4 +303,45 @@
         @test result_supp.mct_id == Int32(55)
         @test result_supp.suppressed
     end
+
+    @testset "materialize_mct_lookup filters by min_mct_override" begin
+        using DuckDB, DBInterface
+        store = DuckDBStore()
+        try
+            # Insert three MCT rows:
+            #   id=1 — 30 min (below 60-min threshold, should be excluded)
+            #   id=2 — 90 min (above threshold, should be included)
+            #   id=3 — suppression record at 0 min (must always be included)
+            DBInterface.execute(store.db, """
+                INSERT INTO mct (mct_id, arr_stn, dep_stn, mct_status, time_minutes, suppress, station_standard)
+                VALUES
+                    (1, 'ORD', 'ORD', 'DD', 30,  false, false),
+                    (2, 'ORD', 'ORD', 'DD', 90,  false, false),
+                    (3, 'ORD', 'ORD', 'DD',  0,  true,  false)
+            """)
+
+            constraints = SearchConstraints(
+                defaults = ParameterSet(min_mct_override = Minutes(60)),
+            )
+            lookup = materialize_mct_lookup(
+                store, Set([StationCode("ORD")]); constraints = constraints,
+            )
+
+            @test haskey(lookup.stations, StationCode("ORD"))
+            dd_records = lookup.stations[StationCode("ORD")][1]   # status index 1 = DD
+
+            # 30-min record must be absent
+            times = [r.time for r in dd_records]
+            @test Minutes(30) ∉ times
+
+            # 90-min record must be present
+            @test Minutes(90) ∈ times
+
+            # Suppression record (time=0, suppressed=true) must be present
+            suppressed_present = any(r -> r.suppressed, dd_records)
+            @test suppressed_present
+        finally
+            close(store)
+        end
+    end
 end

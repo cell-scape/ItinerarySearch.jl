@@ -283,11 +283,11 @@ function build_graph!(
 
     # 7. Materialise MCT lookup
     active_stations = Set{StationCode}(keys(stations))
-    mct_lookup = materialize_mct_lookup(store, active_stations)
+    constraints = SearchConstraints()
+    mct_lookup = materialize_mct_lookup(store, active_stations; constraints = constraints)
     @info "Materialised MCT lookup" stations_with_mct = length(mct_lookup.stations)
 
     # 8. Build connections
-    constraints = SearchConstraints()
     cnx_rules = build_cnx_rules(config, constraints, mct_lookup)
     itn_rules = build_itn_rules(config)
 

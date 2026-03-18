@@ -456,7 +456,7 @@ function _build_mct_record(r)::Tuple{StationCode, MCTStatus, MCTRecord}
 end
 
 """
-    `function materialize_mct_lookup(store::DuckDBStore, active_stations::Set{StationCode})::MCTLookup`
+    `function materialize_mct_lookup(store::DuckDBStore, active_stations::Set{StationCode}; constraints::SearchConstraints=SearchConstraints())::MCTLookup`
 ---
 
 # Description
@@ -467,10 +467,19 @@ end
   iteration without any sorting at query time
 - Only records whose `arr_stn` OR `dep_stn` appears in `active_stations` are
   fetched, bounding memory for large MCT datasets
+- Suppression records (`suppress = true`) are always included regardless of
+  `min_mct_override` / `max_mct_override`, because they block connections
+  semantically and must not be filtered out
 
 # Arguments
 1. `store::DuckDBStore`: populated store (must have MCT records loaded)
 2. `active_stations::Set{StationCode}`: set of station codes present in the graph
+
+# Keyword Arguments
+- `constraints::SearchConstraints=SearchConstraints()`: search constraints whose
+  `defaults.min_mct_override` and `defaults.max_mct_override` bound the
+  `time_minutes` of non-suppression records fetched; `NO_MINUTES` (-1) disables
+  the corresponding bound
 
 # Returns
 - `::MCTLookup`: fully populated lookup structure ready for `lookup_mct` calls
@@ -484,7 +493,8 @@ true
 """
 function materialize_mct_lookup(
     store::DuckDBStore,
-    active_stations::Set{StationCode},
+    active_stations::Set{StationCode};
+    constraints::SearchConstraints = SearchConstraints(),
 )::MCTLookup
     # Build an IN-list of station codes for the SQL predicate.
     # For large sets we use a parameterised ANY approach; for simplicity here
@@ -492,6 +502,9 @@ function materialize_mct_lookup(
     if isempty(active_stations)
         return MCTLookup()
     end
+
+    min_mct = Int(constraints.defaults.min_mct_override)
+    max_mct = Int(constraints.defaults.max_mct_override)
 
     quoted = join(["'" * String(s) * "'" for s in active_stations], ", ")
     sql = """
@@ -505,10 +518,14 @@ function materialize_mct_lookup(
             prv_ctry, nxt_ctry,
             prv_rgn, nxt_rgn
         FROM mct
-        WHERE arr_stn IN ($quoted) OR dep_stn IN ($quoted)
+        WHERE (arr_stn IN ($quoted) OR dep_stn IN ($quoted))
+          AND (suppress = true OR (
+              (time_minutes >= ? OR ? = -1)
+              AND (time_minutes <= ? OR ? = -1)
+          ))
     """
 
-    result = DBInterface.execute(store.db, sql)
+    result = DBInterface.execute(store.db, sql, [min_mct, min_mct, max_mct, max_mct])
 
     # Accumulate into a staging dict: station → status_idx → Vector{MCTRecord}
     staging = Dict{StationCode, NTuple{4, Vector{MCTRecord}}}()
