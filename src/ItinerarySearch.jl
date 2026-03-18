@@ -8,6 +8,7 @@ using CEnum
 include("types/aliases.jl")
 include("types/enums.jl")
 include("types/records.jl")
+include("types/status.jl")
 include("types/graph.jl")
 include("config.jl")
 include("compression.jl")
@@ -21,6 +22,15 @@ include("ingest/reference.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
+
+# Exports — status bits
+export DOW_MON, DOW_TUE, DOW_WED, DOW_THU, DOW_FRI, DOW_SAT, DOW_SUN, DOW_MASK
+export STATUS_INTERNATIONAL, STATUS_INTERLINE, STATUS_ROUNDTRIP
+export STATUS_CODESHARE, STATUS_THROUGH, STATUS_WETLEASE
+export is_international, is_interline, is_codeshare, is_roundtrip, is_through, is_wetlease
+export dow_bit
+export WILDCARD_STATION, WILDCARD_AIRLINE, WILDCARD_COUNTRY, WILDCARD_REGION, WILDCARD_FLIGHTNO
+export NO_STATION, NO_AIRLINE, NO_MINUTES, NO_DISTANCE, NO_FLIGHTNO
 
 # Exports — enums
 export MCTStatus, MCT_DD, MCT_DI, MCT_ID, MCT_II

@@ -49,6 +49,7 @@ using Dates
         @test_throws ErrorException parse_mct_status("XX")
     end
 
+    include("test_status.jl")
     include("test_config.jl")
     include("test_compression.jl")
     include("test_ingest.jl")
