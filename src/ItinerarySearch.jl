@@ -22,6 +22,7 @@ include("store/schedule_queries.jl")
 include("ingest/ssim.jl")
 include("ingest/mct.jl")
 include("ingest/reference.jl")
+include("graph/mct_lookup.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
@@ -75,5 +76,14 @@ export get_departures, get_arrivals
 export query_market_distance, query_segment, query_segment_stops, table_stats
 export post_ingest_sql!
 export query_schedule_legs, query_schedule_segments
+
+# Exports — graph: MCT lookup
+export MCTRecord, MCTLookup, lookup_mct, materialize_mct_lookup
+export MCT_BIT_ARR_CARRIER, MCT_BIT_DEP_CARRIER
+export MCT_BIT_ARR_TERM, MCT_BIT_DEP_TERM
+export MCT_BIT_PRV_STN, MCT_BIT_NXT_STN
+export MCT_BIT_PRV_COUNTRY, MCT_BIT_NXT_COUNTRY
+export MCT_BIT_PRV_REGION, MCT_BIT_NXT_REGION
+export MCT_BIT_DEP_BODY, MCT_BIT_ARR_BODY
 
 end # module
