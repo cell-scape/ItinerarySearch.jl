@@ -91,6 +91,7 @@ the reference — no locking, no mutation.
     constraints_path::String = "data/output"
     event_log_path::String = "data/output"
     output_formats::Vector{Symbol} = [:json, :yaml, :csv]
+    distance_formula::Symbol = :haversine  # :haversine or :vincenty
 end
 
 # ── JSON3 field extraction helpers ────────────────────────────────────────────

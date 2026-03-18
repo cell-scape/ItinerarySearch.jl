@@ -477,6 +477,97 @@ function _haversine_distance(
     return R * c
 end
 
+"""
+    `function _vincenty_distance(lat1::Float64, lng1::Float64, lat2::Float64, lng2::Float64)::Float64`
+
+Compute the geodesic distance between two points in nautical miles using the
+Vincenty inverse formula on the WGS-84 ellipsoid.  Falls back to
+`_haversine_distance` if the iterative solution does not converge (e.g. for
+nearly-antipodal points).
+
+WGS-84 parameters used:
+- Semi-major axis `a = 3443.918` NM (6 378 137 m / 1852 m NM⁻¹)
+- Flattening `f = 1/298.257 223 563`
+- `b = a(1−f)`
+"""
+function _vincenty_distance(
+    lat1::Float64,
+    lng1::Float64,
+    lat2::Float64,
+    lng2::Float64,
+)::Float64
+    # WGS-84 ellipsoid parameters in nautical miles
+    a = 3443.918        # semi-major axis (NM)
+    f = 1.0 / 298.257223563
+    b = a * (1.0 - f)
+
+    φ1 = deg2rad(lat1)
+    φ2 = deg2rad(lat2)
+    L  = deg2rad(lng2 - lng1)
+
+    U1 = atan((1.0 - f) * tan(φ1))
+    U2 = atan((1.0 - f) * tan(φ2))
+    sinU1 = sin(U1);  cosU1 = cos(U1)
+    sinU2 = sin(U2);  cosU2 = cos(U2)
+
+    λ = L
+    λ_prev = Inf
+    sinσ = 0.0;  cosσ = 0.0;  σ = 0.0
+    sinα = 0.0;  cos2α = 0.0;  cos2σm = 0.0
+
+    for _ in 1:200
+        sinλ = sin(λ);  cosλ = cos(λ)
+        sinσ = sqrt((cosU2 * sinλ)^2 + (cosU1 * sinU2 - sinU1 * cosU2 * cosλ)^2)
+        sinσ == 0.0 && return 0.0   # coincident points
+        cosσ  = sinU1 * sinU2 + cosU1 * cosU2 * cosλ
+        σ     = atan(sinσ, cosσ)
+        sinα  = cosU1 * cosU2 * sinλ / sinσ
+        cos2α = 1.0 - sinα^2
+        cos2σm = (cos2α == 0.0) ? 0.0 : cosσ - 2.0 * sinU1 * sinU2 / cos2α
+        C = f / 16.0 * cos2α * (4.0 + f * (4.0 - 3.0 * cos2α))
+        λ_prev = λ
+        λ = L + (1.0 - C) * f * sinα *
+            (σ + C * sinσ * (cos2σm + C * cosσ * (-1.0 + 2.0 * cos2σm^2)))
+        abs(λ - λ_prev) < 1e-12 && break
+    end
+
+    # Non-convergence (nearly antipodal) — fall back to haversine
+    if abs(λ - λ_prev) >= 1e-12
+        return _haversine_distance(lat1, lng1, lat2, lng2)
+    end
+
+    u2 = cos2α * (a^2 - b^2) / b^2
+    A_coeff = 1.0 + u2 / 16384.0 * (4096.0 + u2 * (-768.0 + u2 * (320.0 - 175.0 * u2)))
+    B_coeff = u2 / 1024.0 * (256.0 + u2 * (-128.0 + u2 * (74.0 - 47.0 * u2)))
+    Δσ = B_coeff * sinσ *
+         (cos2σm + B_coeff / 4.0 *
+          (cosσ * (-1.0 + 2.0 * cos2σm^2) -
+           B_coeff / 6.0 * cos2σm * (-3.0 + 4.0 * sinσ^2) * (-3.0 + 4.0 * cos2σm^2)))
+
+    return b * A_coeff * (σ - Δσ)
+end
+
+"""
+    `function _geodesic_distance(config, lat1::Float64, lng1::Float64, lat2::Float64, lng2::Float64)::Float64`
+
+Dispatch to `_haversine_distance` or `_vincenty_distance` based on
+`config.distance_formula` (`:haversine` or `:vincenty`).  Defaults to
+haversine for any unrecognised symbol.
+"""
+function _geodesic_distance(
+    config,
+    lat1::Float64,
+    lng1::Float64,
+    lat2::Float64,
+    lng2::Float64,
+)::Float64
+    if config.distance_formula === :vincenty
+        return _vincenty_distance(lat1, lng1, lat2, lng2)
+    else
+        return _haversine_distance(lat1, lng1, lat2, lng2)
+    end
+end
+
 # ── Rule 9: Traffic restriction code check ────────────────────────────────────
 
 """

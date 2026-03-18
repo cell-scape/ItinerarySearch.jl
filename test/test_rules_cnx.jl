@@ -629,6 +629,59 @@ using Dates
         @test _haversine_distance(0.0, 0.0, 0.0, 0.0) ≈ 0.0 atol=1e-6
     end
 
+    # ── Geodesic Distance ─────────────────────────────────────────────────────
+
+    @testset "Geodesic Distance" begin
+        using ItinerarySearch: _haversine_distance, _vincenty_distance, _geodesic_distance
+
+        # ORD (41.97N, 87.90W) → LHR (51.47N, 0.46W): expect 3400–3500 NM
+        ord_lat, ord_lng = 41.97, -87.90
+        lhr_lat, lhr_lng = 51.47, -0.46
+
+        @testset "haversine ORD→LHR in expected range" begin
+            d = _haversine_distance(ord_lat, ord_lng, lhr_lat, lhr_lng)
+            @test 3400.0 < d < 3500.0
+        end
+
+        @testset "vincenty ORD→LHR in expected range" begin
+            d = _vincenty_distance(ord_lat, ord_lng, lhr_lat, lhr_lng)
+            @test 3400.0 < d < 3500.0
+        end
+
+        @testset "haversine and vincenty agree within 0.5% for ORD→LHR" begin
+            dh = _haversine_distance(ord_lat, ord_lng, lhr_lat, lhr_lng)
+            dv = _vincenty_distance(ord_lat, ord_lng, lhr_lat, lhr_lng)
+            @test abs(dh - dv) / dv < 0.005
+        end
+
+        @testset "near-antipodal SYD→SCL > 5000 NM (both formulas)" begin
+            # SYD (-33.87, 151.21) → SCL (-33.45, -70.67)
+            syd_lat, syd_lng = -33.87, 151.21
+            scl_lat, scl_lng = -33.45, -70.67
+            @test _haversine_distance(syd_lat, syd_lng, scl_lat, scl_lng) > 5000.0
+            @test _vincenty_distance(syd_lat, syd_lng, scl_lat, scl_lng) > 5000.0
+        end
+
+        @testset "same point returns 0.0" begin
+            @test _vincenty_distance(0.0, 0.0, 0.0, 0.0) ≈ 0.0 atol=1e-6
+            @test _vincenty_distance(40.0, -74.0, 40.0, -74.0) ≈ 0.0 atol=1e-6
+        end
+
+        @testset "_geodesic_distance dispatches on :haversine" begin
+            cfg = SearchConfig(distance_formula=:haversine)
+            d = _geodesic_distance(cfg, ord_lat, ord_lng, lhr_lat, lhr_lng)
+            expected = _haversine_distance(ord_lat, ord_lng, lhr_lat, lhr_lng)
+            @test d ≈ expected
+        end
+
+        @testset "_geodesic_distance dispatches on :vincenty" begin
+            cfg = SearchConfig(distance_formula=:vincenty)
+            d = _geodesic_distance(cfg, ord_lat, ord_lng, lhr_lat, lhr_lng)
+            expected = _vincenty_distance(ord_lat, ord_lng, lhr_lat, lhr_lng)
+            @test d ≈ expected
+        end
+    end
+
     # ── build_cnx_rules ───────────────────────────────────────────────────────
 
     @testset "build_cnx_rules" begin
