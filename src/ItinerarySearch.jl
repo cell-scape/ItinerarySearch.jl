@@ -3,6 +3,7 @@ module ItinerarySearch
 using Dates
 using InlineStrings
 using CEnum
+using UUIDs
 
 # Type system (dependency order matters)
 include("types/aliases.jl")
@@ -27,6 +28,7 @@ include("graph/rules_cnx.jl")
 include("graph/rules_itn.jl")
 include("graph/connect.jl")
 include("graph/search.jl")
+include("graph/builder.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
@@ -111,5 +113,8 @@ export build_connections_at_station!, build_connections!
 
 # Exports — graph: DFS search
 export RuntimeContext, search_itineraries
+
+# Exports — graph: builder and FlightGraph
+export FlightGraph, build_graph!, search
 
 end # module
