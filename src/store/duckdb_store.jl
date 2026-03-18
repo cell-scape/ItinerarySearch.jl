@@ -390,6 +390,9 @@ function post_ingest_sql!(store::DuckDBStore)::Nothing
     @info "Post-ingest: computing segment circuity..."
     _compute_circuity!(store)
 
+    @info "Post-ingest: injecting leg distances from markets..."
+    _inject_leg_distances!(store)
+
     @info "Post-ingest: creating indexes..."
     _create_indexes!(store)
 
@@ -518,6 +521,32 @@ function _compute_circuity!(store::DuckDBStore)
     WHERE m.stn_a = LEAST(s.segment_org, s.segment_dst)
       AND m.stn_b = GREATEST(s.segment_org, s.segment_dst)
     """)
+end
+
+function _inject_leg_distances!(store::DuckDBStore)
+    # Inject great-circle distance from markets table into legs
+    _exec(store, """
+    UPDATE legs l
+    SET distance = m.distance_miles
+    FROM markets m
+    WHERE m.stn_a = LEAST(l.org, l.dst)
+      AND m.stn_b = GREATEST(l.org, l.dst)
+      AND l.distance = 0
+    """)
+
+    # Also update expanded_legs (derived from legs via EDF expansion)
+    _exec(store, """
+    UPDATE expanded_legs el
+    SET distance = m.distance_miles
+    FROM markets m
+    WHERE m.stn_a = LEAST(el.org, el.dst)
+      AND m.stn_b = GREATEST(el.org, el.dst)
+      AND el.distance = 0
+    """)
+
+    r = _exec(store, "SELECT COUNT(*) as n FROM legs WHERE distance > 0")
+    updated = first(r).n
+    @info "Leg distances injected" updated
 end
 
 function _create_indexes!(store::DuckDBStore)
