@@ -161,14 +161,14 @@ function build_connections_at_station!(
         push!(station.connections, ns_cp)
         stats.num_nonstops += Int32(1)
         # Track distance and equipment for departures
-        stats.total_dep_distance += Float64(dep_leg.record.distance)
+        stats.total_dep_distance += Float64(dep_leg.distance)
         push!(stats.unique_equipment, dep_leg.record.eqp)
     end
 
     # Track arrival distances
     for i in 1:n_arr
         arr_leg = arrivals[i]::GraphLeg
-        stats.total_arr_distance += Float64(arr_leg.record.distance)
+        stats.total_arr_distance += Float64(arr_leg.distance)
     end
 
     # Early exit: nothing to pair

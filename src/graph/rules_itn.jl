@@ -180,7 +180,7 @@ function check_itn_maft(itn::Itinerary, ctx)::Int
     # Sum block times (approximated from leg distances at 400 knots cruise)
     total_bt = 0.0
     for cp in itn.connections
-        total_bt += Float64(cp.from_leg.record.distance) / 400.0 * 60.0
+        total_bt += Float64(cp.from_leg.distance) / 400.0 * 60.0
     end
 
     return total_bt <= maft ? PASS : FAIL_ITN_MAFT

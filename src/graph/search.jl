@@ -27,6 +27,7 @@
   `hash(origin_code, hash(dest_code))`
 - `target_date::UInt32` — packed YYYYMMDD target search date
 - `target_dow::StatusBits` — single-bit DOW mask for the target date
+- `utc_dep_origin::Int32` — UTC departure of the current origin leg (minutes), set per departure leg in `search_itineraries`
 - `results::Vector{Itinerary}` — committed itineraries from the current search
 - `build_stats::BuildStats` — connection-build instrumentation accumulator
 - `search_stats::SearchStats` — search instrumentation accumulator
@@ -48,6 +49,7 @@
     # Search state
     target_date::UInt32 = UInt32(0)         # packed YYYYMMDD
     target_dow::StatusBits = StatusBits(0)  # DOW bit for target date
+    utc_dep_origin::Int32 = Int32(0)        # UTC dep of first leg (minutes), set per departure
 
     results::Vector{Itinerary} = Itinerary[]
 
@@ -175,44 +177,63 @@ end
 
 # Description
 - Computes the definitive elapsed time (minutes) from the first passenger
-  departure to the last passenger arrival
-- Accounts for overnight arrivals via `arr_date_var` on the final leg
-  (each +1 adds 1440 minutes)
-- Connection ground times for intermediate stops are added on top of the
-  dep-to-arr block times
+  departure to the last passenger arrival using UTC conversion
+- UTC departure/arrival are derived from local times and `dep_utc_offset` /
+  `arr_utc_offset` fields: `utc = local - utc_offset`
+- Overnight arrivals are handled via `arr_date_var` on each leg
+  (each +1 adds 1440 minutes to the UTC arrival)
+- For connecting itineraries, each leg's UTC block time is accumulated; the
+  stored `cnx_time` for connecting `GraphConnection`s is added between legs
 - Returns `Int32(0)` for an empty itinerary
 
 # Arguments
 1. `itn::Itinerary`: the completed itinerary to measure
 
 # Returns
-- `::Int32`: total elapsed time in minutes
+- `::Int32`: total elapsed time in minutes (UTC-corrected)
+
+# Examples
+```julia
+# ORD (UTC-5, offset=-300) dep 09:00 → LHR (UTC+0, offset=0) arr 22:00, arr_date_var=0
+# utc_dep = 540 - (-300) = 840  (14:00 UTC)
+# utc_arr = 1320 - 0    = 1320  (22:00 UTC)
+# elapsed = 1320 - 840 = 480 min (8h) — not 780 min as local-time math gives
+```
 """
 function _compute_elapsed(itn::Itinerary)::Int32
     isempty(itn.connections) && return Int32(0)
 
-    first_cp = itn.connections[1]
-    last_cp = itn.connections[end]
+    first_leg = itn.connections[1].from_leg::GraphLeg
+    fr = first_leg.record
+    utc_dep_first = Int32(fr.pax_dep) - Int32(fr.dep_utc_offset)
 
-    first_leg = first_cp.from_leg::GraphLeg
-    # When to_leg === from_leg the connection is a nonstop self-connection;
-    # the "last" leg is still to_leg.
-    last_leg = last_cp.to_leg::GraphLeg
+    total = Int32(0)
 
-    dep = Int32(first_leg.record.pax_dep)
-    arr =
-        Int32(last_leg.record.pax_arr) +
-        Int32(last_leg.record.arr_date_var) * Int32(1440)
+    for (i, cp) in enumerate(itn.connections)
+        leg = cp.from_leg::GraphLeg
+        r = leg.record
+        if i == 1
+            utc_arr = Int32(r.pax_arr) - Int32(r.arr_utc_offset) + Int32(r.arr_date_var) * Int32(1440)
+            total = utc_arr - utc_dep_first
+        else
+            total += Int32(cp.cnx_time)
+            utc_dep = Int32(r.pax_dep) - Int32(r.dep_utc_offset)
+            utc_arr = Int32(r.pax_arr) - Int32(r.arr_utc_offset) + Int32(r.arr_date_var) * Int32(1440)
+            total += utc_arr - utc_dep
+        end
 
-    elapsed = arr - dep
-
-    # Add connection ground times for multi-leg itineraries (skip first nonstop)
-    for i in 2:length(itn.connections)
-        cp = itn.connections[i]::GraphConnection
-        elapsed += Int32(cp.cnx_time)
+        # Final to_leg of a connecting itinerary (to_leg !== from_leg)
+        if i == length(itn.connections) && !(cp.from_leg === cp.to_leg)
+            to_leg = cp.to_leg::GraphLeg
+            tr = to_leg.record
+            total += Int32(cp.cnx_time)
+            utc_dep_to = Int32(tr.pax_dep) - Int32(tr.dep_utc_offset)
+            utc_arr_to = Int32(tr.pax_arr) - Int32(tr.arr_utc_offset) + Int32(tr.arr_date_var) * Int32(1440)
+            total += utc_arr_to - utc_dep_to
+        end
     end
 
-    return max(Int32(0), elapsed)
+    return max(Int32(0), total)
 end
 
 # ── Geographic diversity helpers ────────────────────────────────────────────────
@@ -404,7 +425,7 @@ function _dfs!(
         end
 
         itn.elapsed_time += Int32(cp.cnx_time)
-        itn.total_distance += cp.to_leg.record.distance
+        itn.total_distance += cp.to_leg.distance
 
         # ── Recurse ───────────────────────────────────────────────────────────
         _dfs!(dest, itn, next_leg, ctx, depth + 1)
@@ -509,7 +530,8 @@ function search_itineraries(
     gc_key = hash(origin, hash(dest))
     market_dist = get(ctx.gc_cache, gc_key, -1.0)
     if market_dist < 0.0
-        market_dist = _haversine_distance(
+        market_dist = _geodesic_distance(
+            ctx.config,
             org_stn.record.lat,
             org_stn.record.lng,
             dst_stn.record.lat,
@@ -538,13 +560,17 @@ function search_itineraries(
         ns_cp = _find_nonstop_connection(org_stn, dep_leg)
         ns_cp === nothing && continue
 
+        # Record UTC departure of this origin leg for downstream use
+        ctx.utc_dep_origin =
+            Int32(dep_leg.record.pax_dep) - Int32(dep_leg.record.dep_utc_offset)
+
         # Reset working itinerary for this departure
         empty!(working.connections)
         working.status = StatusBits(dep_leg.record.frequency) & DOW_MASK
         working.num_stops = Int16(0)
         working.num_eqp_changes = Int16(0)
         working.elapsed_time = Int32(0)
-        working.total_distance = dep_leg.record.distance
+        working.total_distance = dep_leg.distance
         working.market_distance = Distance(market_dist)
 
         # Push the nonstop self-connection as the first edge

@@ -375,8 +375,8 @@ MAFTRule() = MAFTRule(400.0, 240.0)
 function (r::MAFTRule)(cp::GraphConnection, ctx)::Int
     is_roundtrip(cp.status) && return PASS
 
-    from_dist = Float64(cp.from_leg.record.distance)
-    to_dist = Float64(cp.to_leg.record.distance)
+    from_dist = Float64(cp.from_leg.distance)
+    to_dist = Float64(cp.to_leg.distance)
     total_dist = from_dist + to_dist
     maft = max((total_dist / r.speed) * 60.0, 30.0) + r.rest_time
 
@@ -424,11 +424,11 @@ CircuityRule() = CircuityRule(2.0, 500.0)
 # Description
 - Callable entry-point for `CircuityRule`; invoked as `rule(cp, ctx)` in the
   rule chain
-- Uses `_haversine_distance` for GC computation when no cache entry is found
+- Uses `_geodesic_distance(ctx.config, ...)` for GC computation when no cache entry is found
 
 # Arguments
 1. `cp::GraphConnection`: connection to evaluate
-2. `ctx`: runtime context; accesses `ctx.gc_cache::Dict{UInt64, Float64}`
+2. `ctx`: runtime context; accesses `ctx.gc_cache::Dict{UInt64, Float64}` and `ctx.config::SearchConfig`
 
 # Returns
 - `::Int`: `PASS` or `FAIL_CIRCUITY`
@@ -444,14 +444,15 @@ function (r::CircuityRule)(cp::GraphConnection, ctx)::Int
     gc_key = hash(from_org.code, hash(to_dst.code))
     gc_dist = get(ctx.gc_cache, gc_key, -1.0)
     if gc_dist < 0.0
-        gc_dist = _haversine_distance(
+        gc_dist = _geodesic_distance(
+            ctx.config,
             from_org.record.lat, from_org.record.lng,
             to_dst.record.lat, to_dst.record.lng,
         )
         ctx.gc_cache[gc_key] = gc_dist
     end
 
-    route_dist = Float64(cp.from_leg.record.distance) + Float64(cp.to_leg.record.distance)
+    route_dist = Float64(cp.from_leg.distance) + Float64(cp.to_leg.distance)
     return route_dist <= r.factor * gc_dist + r.extra_miles ? PASS : FAIL_CIRCUITY
 end
 

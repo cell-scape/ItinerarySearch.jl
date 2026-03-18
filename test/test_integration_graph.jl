@@ -279,12 +279,16 @@ end
         @test itns isa Vector{Itinerary}
         @test !isempty(itns)
 
-        # Must include the nonstop ORD→LHR (UA 916, dep 10:00 arr 22:00 = 720 min)
+        # Must include the nonstop ORD→LHR (UA 916, dep 10:00 arr 22:00)
         nonstops = filter(i -> i.num_stops == Int16(0), itns)
         @test !isempty(nonstops)
 
-        # The nonstop ORD→LHR should have elapsed_time = 1320 - 600 = 720 min
-        @test any(i -> i.elapsed_time == Int32(720), nonstops)
+        # The nonstop ORD→LHR UTC elapsed:
+        #   dep_utc_offset=-300 (UTC-5), arr_utc_offset=0 (UTC+0)
+        #   utc_dep = 600 - (-300) = 900 (15:00 UTC)
+        #   utc_arr = 1320 - 0    = 1320 (22:00 UTC)
+        #   elapsed = 1320 - 900 = 420 min (7h block time)
+        @test any(i -> i.elapsed_time == Int32(420), nonstops)
 
         # May include the 1-stop via JFK (ORD arr 11:00, JFK dep 14:00 → 180 min cnx)
         # JFK→LHR: dep 14:00 (840), arr 02:00+1 = 840+1440-120+120 ...
