@@ -10,6 +10,7 @@ include("types/enums.jl")
 include("types/records.jl")
 include("config.jl")
 include("compression.jl")
+include("ingest/schemas.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
