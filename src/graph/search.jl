@@ -28,6 +28,8 @@
 - `target_date::UInt32` — packed YYYYMMDD target search date
 - `target_dow::StatusBits` — single-bit DOW mask for the target date
 - `utc_dep_origin::Int32` — UTC departure of the current origin leg (minutes), set per departure leg in `search_itineraries`
+- `_max_elapsed_threshold::Int32` — pre-computed 1.5 × `max_elapsed` for DFS pruning (minutes)
+- `_circuity_threshold::Float64` — pre-computed `itinerary_circuity` for DFS pruning
 - `results::Vector{Itinerary}` — committed itineraries from the current search
 - `build_stats::BuildStats` — connection-build instrumentation accumulator
 - `search_stats::SearchStats` — search instrumentation accumulator
@@ -50,6 +52,8 @@
     target_date::UInt32 = UInt32(0)         # packed YYYYMMDD
     target_dow::StatusBits = StatusBits(0)  # DOW bit for target date
     utc_dep_origin::Int32 = Int32(0)        # UTC dep of first leg (minutes), set per departure
+    _max_elapsed_threshold::Int32 = Int32(2160)  # 1.5 * max_elapsed, pre-computed
+    _circuity_threshold::Float64 = 2.5           # itinerary_circuity, pre-computed
 
     results::Vector{Itinerary} = Itinerary[]
 
@@ -396,6 +400,19 @@ function _dfs!(
 
         next_leg = cp.to_leg::GraphLeg
 
+        # Elapsed-time pruning (UTC-based)
+        next_utc_arr = Int32(next_leg.record.pax_arr) - Int32(next_leg.record.arr_utc_offset) +
+                       Int32(next_leg.record.arr_date_var) * Int32(1440)
+        est_elapsed = next_utc_arr - ctx.utc_dep_origin
+        est_elapsed > ctx._max_elapsed_threshold && continue
+
+        # Cumulative circuity pruning
+        if itn.market_distance > Distance(0)
+            candidate_dist = Float64(itn.total_distance) + Float64(next_leg.distance)
+            candidate_circ = candidate_dist / Float64(itn.market_distance)
+            candidate_circ > ctx._circuity_threshold && continue
+        end
+
         # Direction pruning
         _direction_ok(cp.station, next_leg.dst, dest) || continue
 
@@ -517,6 +534,10 @@ function search_itineraries(
     ctx.target_dow = dow_bit(Dates.dayofweek(target_date))
     empty!(ctx.results)
     ctx.search_stats.queries += Int32(1)
+
+    # Pre-compute DFS pruning thresholds (avoid repeated multiplication in hot loop)
+    ctx._max_elapsed_threshold = Int32(round(1.5 * ctx.constraints.defaults.max_elapsed))
+    ctx._circuity_threshold = ctx.constraints.defaults.itinerary_circuity
 
     # Great-circle market distance (cached)
     gc_key = hash(origin, hash(dest))

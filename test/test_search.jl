@@ -646,9 +646,183 @@ using Dates
         @test ctx.target_date == UInt32(0)
         @test ctx.target_dow == StatusBits(0)
         @test ctx.utc_dep_origin == Int32(0)
+        @test ctx._max_elapsed_threshold == Int32(2160)
+        @test ctx._circuity_threshold == 2.5
         @test isempty(ctx.results)
         @test ctx.search_stats isa SearchStats
         @test ctx.build_stats isa BuildStats
+    end
+
+    # ── Elapsed-time DFS pruning ───────────────────────────────────────────────
+
+    @testset "Elapsed-time DFS pruning" begin
+        # Build the standard 3-station graph (JFK→ORD→LHR).
+        # All UTC offsets are 0, so local times equal UTC.
+        #
+        # Leg 1: JFK dep 08:00 (480 min), ORD arr 10:00 (600 min)  block=120 min
+        # Leg 2: ORD dep 12:00 (720 min), LHR arr 22:00 (1320 min) block=600 min
+        # Total elapsed (UTC):
+        #   utc_dep_origin = 480
+        #   next_utc_arr of LHR = 1320
+        #   est_elapsed = 1320 - 480 = 840 min
+        #
+        # With max_elapsed=480 → _max_elapsed_threshold = round(1.5*480) = 720
+        # 840 > 720 → the connecting leg to LHR is pruned → only nonstop survives.
+        #
+        # Nonstop JFK→LHR: dep 09:00 (540), arr 21:00 (1260)
+        #   est_elapsed = 1260 - 480 = 780 — but the nonstop is handled via the
+        #   departure loop (not _dfs!), so it is never subject to the _dfs! prune.
+        # Therefore: tight max_elapsed prunes the 1-stop but nonstop is unaffected.
+        stations, _, _, _, _, _, _ = _build_graph()
+
+        tight_ps = ParameterSet(
+            max_stops=Int16(2),
+            max_elapsed=Int32(480),              # tight: 8h max elapsed
+            circuity_factor=5.0,
+            circuity_extra_miles=50_000.0,
+            itinerary_circuity=10.0,             # generous: don't prune on circuity
+        )
+        ctx_tight = RuntimeContext(
+            config=SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL),
+            constraints=SearchConstraints(defaults=tight_ps),
+            itn_rules=build_itn_rules(SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL)),
+            gc_cache=Dict{UInt64,Float64}(),
+        )
+
+        itns_tight = search_itineraries(
+            stations, StationCode("JFK"), StationCode("LHR"),
+            Date(2026, 6, 15), ctx_tight,
+        )
+
+        # Threshold = round(1.5*480) = 720; est_elapsed for 1-stop leg = 840 > 720
+        @test ctx_tight._max_elapsed_threshold == Int32(720)
+        # 1-stop itineraries must be absent (pruned by elapsed-time check)
+        @test !any(i -> i.num_stops == Int16(1), itns_tight)
+
+        # Verify with a generous threshold: 1-stop reappears
+        loose_ps = ParameterSet(
+            max_stops=Int16(2),
+            max_elapsed=Int32(1440),             # default 24h
+            circuity_factor=5.0,
+            circuity_extra_miles=50_000.0,
+            itinerary_circuity=10.0,
+        )
+        ctx_loose = RuntimeContext(
+            config=SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL),
+            constraints=SearchConstraints(defaults=loose_ps),
+            itn_rules=build_itn_rules(SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL)),
+            gc_cache=Dict{UInt64,Float64}(),
+        )
+
+        itns_loose = search_itineraries(
+            stations, StationCode("JFK"), StationCode("LHR"),
+            Date(2026, 6, 15), ctx_loose,
+        )
+        @test any(i -> i.num_stops == Int16(1), itns_loose)
+    end
+
+    # ── Circuity DFS pruning ───────────────────────────────────────────────────
+
+    @testset "Circuity DFS pruning" begin
+        # Construct a graph where the connecting leg has an enormous distance so
+        # that adding it would push the candidate circuity above the threshold.
+        #
+        # Market: JFK → LHR, great-circle ≈ 3,451 mi (computed at search time).
+        # Leg 1: JFK → ORD  distance = 800 mi  (same as standard graph)
+        # Leg 2: ORD → LHR  distance = 999_999 mi  (absurdly large)
+        #
+        # candidate_dist = 800 + 999_999 = 1,000,799 mi
+        # candidate_circ = 1_000_799 / ~3451 ≈ 290 >> 2.5 → pruned
+        #
+        # With itinerary_circuity=2.5 the 1-stop should be pruned.
+        # Nonstop (JFK→LHR distance=3451) has circuity ≈ 1.0 → survives.
+
+        jfk_stn = GraphStation(
+            _stn_rec("JFK", "US", "NAM"; lat=JFK_LAT, lng=JFK_LNG, metro_area="NYC", state="NY")
+        )
+        ord_stn = GraphStation(
+            _stn_rec("ORD", "US", "NAM"; lat=ORD_LAT, lng=ORD_LNG, metro_area="CHI", state="IL")
+        )
+        lhr_stn = GraphStation(
+            _stn_rec("LHR", "GB", "EUR"; lat=LHR_LAT, lng=LHR_LNG, metro_area="LON")
+        )
+
+        rec1 = _leg_rec(
+            airline="UA", flt_no=200,
+            org="JFK", dst="ORD",
+            pax_dep=Int16(480), pax_arr=Int16(600),
+            distance=800.0f0,
+        )
+        # Leg 2 has absurdly large distance to force candidate_circ >> threshold
+        rec2 = _leg_rec(
+            airline="UA", flt_no=916,
+            org="ORD", dst="LHR",
+            pax_dep=Int16(720), pax_arr=Int16(1320),
+            distance=999_999.0f0,
+        )
+        rec_ns = _leg_rec(
+            airline="UA", flt_no=100,
+            org="JFK", dst="LHR",
+            pax_dep=Int16(540), pax_arr=Int16(1260),
+            distance=3451.0f0,
+        )
+
+        leg1   = GraphLeg(rec1,   jfk_stn, ord_stn)
+        leg2   = GraphLeg(rec2,   ord_stn, lhr_stn)
+        leg_ns = GraphLeg(rec_ns, jfk_stn, lhr_stn)
+
+        push!(jfk_stn.departures, leg1)
+        push!(jfk_stn.departures, leg_ns)
+        push!(ord_stn.arrivals,   leg1)
+        push!(ord_stn.departures, leg2)
+        push!(lhr_stn.arrivals,   leg2)
+        push!(lhr_stn.arrivals,   leg_ns)
+
+        constraints = SearchConstraints(
+            defaults=ParameterSet(
+                max_stops=Int16(2),
+                max_elapsed=Int32(99_999),       # generous: don't prune on elapsed
+                circuity_factor=5.0,
+                circuity_extra_miles=50_000.0,
+                itinerary_circuity=2.5,          # tight circuity threshold
+            )
+        )
+        cnx_ctx = (
+            config=SearchConfig(interline=INTERLINE_ALL),
+            constraints=constraints,
+            build_stats=BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
+            mct_cache=Dict{UInt64,MCTResult}(),
+            gc_cache=Dict{UInt64,Float64}(),
+        )
+        cnx_rules = build_cnx_rules(SearchConfig(interline=INTERLINE_ALL), constraints, MCTLookup())
+
+        stations = Dict{StationCode,GraphStation}(
+            StationCode("JFK") => jfk_stn,
+            StationCode("ORD") => ord_stn,
+            StationCode("LHR") => lhr_stn,
+        )
+        build_connections!(stations, cnx_rules, cnx_ctx)
+
+        ctx = RuntimeContext(
+            config=SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL),
+            constraints=constraints,
+            itn_rules=build_itn_rules(SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL)),
+            gc_cache=Dict{UInt64,Float64}(),
+        )
+
+        itns = search_itineraries(
+            stations, StationCode("JFK"), StationCode("LHR"),
+            Date(2026, 6, 15), ctx,
+        )
+
+        # Circuity threshold pre-computed correctly
+        @test ctx._circuity_threshold == 2.5
+
+        # 1-stop itineraries must be absent (pruned by circuity check)
+        @test !any(i -> i.num_stops == Int16(1), itns)
+
+        # Nonstop must still be found
+        @test any(i -> i.num_stops == Int16(0), itns)
     end
 
 end
