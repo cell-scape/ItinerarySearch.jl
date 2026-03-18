@@ -9,6 +9,7 @@ include("types/aliases.jl")
 include("types/enums.jl")
 include("types/records.jl")
 include("types/status.jl")
+include("types/stats.jl")
 include("types/graph.jl")
 include("config.jl")
 include("compression.jl")
@@ -44,6 +45,10 @@ export parse_mct_status, MCT_DEFAULTS
 export LegRecord, StationRecord, MCTResult, SegmentRecord
 export flight_id, segment_id, full_id
 export pack_date, unpack_date
+
+# Exports — stats types (Subsystem 2 instrumentation)
+export StationStats, BuildStats, SearchStats, MCTSelectionRow
+export merge_build_stats!, merge_station_stats!
 
 # Exports — graph stubs (Subsystem 2)
 export GraphStation, GraphSegment, GraphConnection

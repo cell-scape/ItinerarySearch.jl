@@ -70,10 +70,10 @@ function parse_mct_status(s::AbstractString)::MCTStatus
     error("Unknown MCT status: $s")
 end
 
-# Default MCT times (minutes) per status — used when no station-specific MCT found
+# Default MCT times (minutes) per status — IATA SSIM standard global fallbacks
 const MCT_DEFAULTS = Dict{MCTStatus, Minutes}(
-    MCT_DD => Int16(30),
-    MCT_DI => Int16(60),
+    MCT_DD => Int16(60),
+    MCT_DI => Int16(90),
     MCT_ID => Int16(90),
-    MCT_II => Int16(90),
+    MCT_II => Int16(120),
 )

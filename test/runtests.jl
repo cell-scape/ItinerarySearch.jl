@@ -50,6 +50,7 @@ using Dates
     end
 
     include("test_status.jl")
+    include("test_stats.jl")
     include("test_config.jl")
     include("test_compression.jl")
     include("test_ingest.jl")
