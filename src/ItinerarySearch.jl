@@ -11,6 +11,8 @@ include("types/records.jl")
 include("config.jl")
 include("compression.jl")
 include("ingest/schemas.jl")
+include("store/interface.jl")
+include("store/julia_store.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
@@ -30,5 +32,11 @@ export pack_date, unpack_date
 
 # Exports — config
 export SearchConfig, load_config
+
+# Exports — store interface
+export AbstractStore, JuliaStore
+export load_schedule!, query_legs, query_station, query_mct
+export get_departures, get_arrivals
+export query_market_distance, query_segment, query_segment_stops, table_stats
 
 end # module

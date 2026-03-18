@@ -259,4 +259,17 @@ using Dates
             @test unpack_date(pack_date(Date(2099, 12, 31))) == Date(2099, 12, 31)
         end
     end
+
+    @testset "AbstractStore Interface" begin
+        @test isabstracttype(AbstractStore)
+        @test hasmethod(load_schedule!, Tuple{AbstractStore, SearchConfig})
+        @test hasmethod(query_legs, Tuple{AbstractStore, StationCode, StationCode, Date})
+        @test hasmethod(query_station, Tuple{AbstractStore, StationCode})
+        @test hasmethod(get_departures, Tuple{AbstractStore, StationCode, Date})
+        @test hasmethod(get_arrivals, Tuple{AbstractStore, StationCode, Date})
+        @test hasmethod(query_market_distance, Tuple{AbstractStore, StationCode, StationCode})
+        @test hasmethod(query_segment, Tuple{AbstractStore, UInt64})
+        @test hasmethod(query_segment_stops, Tuple{AbstractStore, UInt64})
+        @test hasmethod(table_stats, Tuple{AbstractStore})
+    end
 end
