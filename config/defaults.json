@@ -4,15 +4,15 @@
     "path": ":memory:"
   },
   "data": {
-    "ssim": "data/demo/ssim_demo.dat.zst",
-    "mct": "data/demo/mct_demo.dat.zst",
-    "airports": "data/demo/airports.txt",
-    "regions": "data/demo/regions.dat",
-    "aircrafts": "data/demo/aircrafts.txt",
-    "seats": "data/demo/seats.dat",
-    "classmap": "data/demo/classmap.txt",
-    "serviceclass": "data/demo/serviceclass.dat",
-    "oa_control": "data/demo/oa_control.csv"
+    "ssim": "data/input/uaoa_ssim.new.dat",
+    "mct": "data/input/MCTIMFILUA.DAT",
+    "airports": "data/input/mdstua.txt",
+    "regions": "data/input/REGIMFILUA.DAT",
+    "aircrafts": "data/input/aircraft.txt",
+    "seats": "data/input/seats_ua.txt.DAT",
+    "classmap": "data/input/classmaptable.txt",
+    "serviceclass": "data/input/servclasstable.dat",
+    "oa_control": "data/input/oa_control_table.csv"
   },
   "search": {
     "max_stops": 2,
@@ -24,8 +24,8 @@
     "interline": "codeshare"
   },
   "schedule": {
-    "max_days": 1,
-    "trailing_days": 0
+    "max_days": 3,
+    "trailing_days": 1
   },
   "output": {
     "format": "json",

@@ -2,3 +2,4 @@
 *.jl.mem
 .worktrees/
 docs/superpowers/
+.DS_Store

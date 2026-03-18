@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "dfd46a69de5db52a3f2dc4d5d54e7acb939cf70a"
+project_hash = "30d1bb935c2dc1bae0a199e02f7e47198758cf78"
 
 [[deps.Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -104,9 +104,11 @@ version = "0.6.5"
 
 [[deps.FixedWidthParsers]]
 deps = ["Dates", "InlineStrings", "Mmap", "Parsers", "StringViews", "StructArrays", "TOML", "Tables"]
-path = "/Users/brad/Projects/FixedWidthParsers.jl"
+git-tree-sha1 = "9c2e909c67c880146612a6579b08e768524e67f3"
+repo-rev = "main"
+repo-url = "https://github.com/cell-scape/FixedWidthParsers.jl"
 uuid = "394be9c0-75bc-4ced-998b-f5a708a320e8"
-version = "0.2.0"
+version = "0.2.2"
 weakdeps = ["JSON3"]
 
     [deps.FixedWidthParsers.extensions]
@@ -131,7 +133,7 @@ uuid = "82899510-4779-5014-852e-03e436cf321d"
 version = "1.0.0"
 
 [[deps.ItinerarySearch]]
-deps = ["CEnum", "CodecBzip2", "CodecXz", "CodecZlib", "CodecZstd", "DBInterface", "Dates", "DuckDB", "FixedWidthParsers", "InlineStrings", "JSON3", "TranscodingStreams"]
+deps = ["CEnum", "CodecBzip2", "CodecXz", "CodecZlib", "CodecZstd", "DBInterface", "Dates", "DuckDB", "InlineStrings", "JSON3", "TranscodingStreams", "UUIDs"]
 path = "."
 uuid = "abb1f9ea-3061-4222-98a1-0c043039d694"
 version = "0.1.0"
