@@ -73,3 +73,109 @@ end
 
     close(store)
 end
+
+@testset "DuckDBStore Query Methods" begin
+    using ItinerarySearch: _build_schedule_filters
+
+    # Setup: create store with test data, run full pipeline
+    store = DuckDBStore()
+
+    # Insert test data
+    DBInterface.execute(store.db, """
+    INSERT INTO legs VALUES (
+        1, 1, 'UA', 1234, ' ', 1, ' ', 1, 'J',
+        'ORD', 'LHR', 540, 1320, 535, 1325,
+        -300, 0, 0, 0, '1', '2', '789', 'W', 'UA',
+        '2026-06-15', '2026-06-15', 127,
+        'D', 'I', '', ' ', 'JCDZPY', 3941.0, false
+    )
+    """)
+    DBInterface.execute(store.db, "INSERT INTO stations VALUES ('ORD','US','IL','Chicago','NOA',41.9742,-87.9073,-300)")
+    DBInterface.execute(store.db, "INSERT INTO stations VALUES ('LHR','GB','','London','EUR',51.4700,-0.4543,0)")
+
+    post_ingest_sql!(store)
+
+    @testset "query_station" begin
+        stn = query_station(store, StationCode("ORD"))
+        @test stn !== nothing
+        @test stn.code == StationCode("ORD")
+        @test stn.country == InlineString3("US")
+
+        @test query_station(store, StationCode("ZZZ")) === nothing
+    end
+
+    @testset "get_departures" begin
+        deps = get_departures(store, StationCode("ORD"), Date(2026, 6, 15))
+        @test length(deps) >= 1
+        @test all(r -> r.org == StationCode("ORD"), deps)
+    end
+
+    @testset "get_arrivals" begin
+        arrs = get_arrivals(store, StationCode("LHR"), Date(2026, 6, 15))
+        @test length(arrs) >= 1
+        @test all(r -> r.dst == StationCode("LHR"), arrs)
+    end
+
+    @testset "query_legs" begin
+        legs = query_legs(store, StationCode("ORD"), StationCode("LHR"), Date(2026, 6, 15))
+        @test length(legs) >= 1
+        @test legs[1].airline == AirlineCode("UA")
+    end
+
+    @testset "query_market_distance" begin
+        d = query_market_distance(store, StationCode("ORD"), StationCode("LHR"))
+        @test d !== nothing
+        @test d > 3000  # ORD-LHR is ~3941 miles
+
+        # Reversed order should give same result (NDOD)
+        d2 = query_market_distance(store, StationCode("LHR"), StationCode("ORD"))
+        @test d ≈ d2
+
+        # Unknown market
+        @test query_market_distance(store, StationCode("ZZZ"), StationCode("YYY")) === nothing
+    end
+
+    @testset "query_segment" begin
+        # Get the segment hash from segments table
+        result = DBInterface.execute(store.db, "SELECT segment_hash FROM segments LIMIT 1")
+        row = first(result)
+        hash_val = UInt64(row.segment_hash)
+        seg = query_segment(store, hash_val)
+        @test seg !== nothing
+        @test seg.airline == AirlineCode("UA")
+    end
+
+    @testset "query_segment_stops" begin
+        result = DBInterface.execute(store.db, "SELECT segment_hash FROM segments LIMIT 1")
+        row = first(result)
+        hash_val = UInt64(row.segment_hash)
+        bp, op = query_segment_stops(store, hash_val)
+        @test length(bp) >= 1
+        @test length(op) >= 1
+    end
+
+    @testset "query_mct" begin
+        # Insert an MCT record
+        DBInterface.execute(store.db, """
+        INSERT INTO mct VALUES (
+            1, 0, 'ORD', 'ORD', 'DD', 45,
+            'UA', '', '', '', '', '',
+            '', '', '', '', '', '',
+            '', '', '', '',
+            0, 0, 0, 0,
+            '', '', '', '',
+            '1900-01-01', '2099-12-31', false, '', '', '',
+            'UA', false, 0
+        )
+        """)
+
+        mct = query_mct(store, AirlineCode("UA"), AirlineCode("UA"), StationCode("ORD"), MCT_DD)
+        @test mct.time == Int16(45)
+
+        # Global default fallback
+        mct_default = query_mct(store, AirlineCode("XX"), AirlineCode("XX"), StationCode("ZZZ"), MCT_II)
+        @test mct_default.source == SOURCE_GLOBAL_DEFAULT
+    end
+
+    close(store)
+end

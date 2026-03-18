@@ -531,3 +531,409 @@ function _create_indexes!(store::DuckDBStore)
     _exec(store, "CREATE INDEX IF NOT EXISTS idx_markets_stn_b ON markets (stn_b)")
     _exec(store, "CREATE INDEX IF NOT EXISTS idx_dei_row_id ON dei (row_id)")
 end
+
+# ── Query implementations ───────────────────────────────────────
+
+"""
+    `_safe_missing(val, default)`
+
+Handle both `nothing` and `missing` (DuckDB NULLs) by returning `default`.
+Julia's `something()` only handles `nothing`, not `missing`.
+"""
+_safe_missing(val, default) = (val === nothing || val === missing) ? default : val
+
+"""
+    `_first_char(val, default::Char)::Char`
+
+Extract the first non-whitespace character from a DuckDB field value.
+Returns `default` if the value is null, missing, or empty after stripping.
+"""
+function _first_char(val, default::Char)::Char
+    (val === nothing || val === missing) && return default
+    s = strip(String(val))
+    isempty(s) ? default : s[1]
+end
+
+"""
+    `_safe_string(val, default::String="")::String`
+
+Convert a DuckDB field value to a trimmed String, returning `default` for null/missing.
+"""
+function _safe_string(val, default::String="")::String
+    (val === nothing || val === missing) && return default
+    strip(String(val))
+end
+
+"""
+    `query_station(store::DuckDBStore, code::StationCode)::Union{StationRecord, Nothing}`
+---
+
+# Description
+- Look up a station by its IATA code in the `stations` reference table
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store
+2. `code::StationCode`: the IATA airport code
+
+# Returns
+- `::Union{StationRecord, Nothing}`: station record, or `nothing` if not found
+"""
+function query_station(store::DuckDBStore, code::StationCode)::Union{StationRecord, Nothing}
+    result = DBInterface.execute(store.db,
+        "SELECT * FROM stations WHERE code = ?", [String(code)])
+    rows = collect(result)
+    isempty(rows) && return nothing
+    r = rows[1]
+    StationRecord(
+        code       = StationCode(_safe_string(r.code)),
+        country    = InlineString3(_safe_string(r.country)),
+        state      = InlineString3(_safe_string(r.state)),
+        city       = InlineString31(_safe_string(r.city)),
+        region     = InlineString3(_safe_string(r.region)),
+        lat        = Float64(_safe_missing(r.lat, 0.0)),
+        lng        = Float64(_safe_missing(r.lng, 0.0)),
+        utc_offset = Int16(_safe_missing(r.utc_offset, 0)),
+    )
+end
+
+"""
+    `_row_to_leg(r)::LegRecord`
+
+Convert a DuckDB row from `legs_with_operating` to a `LegRecord`.
+Handles `missing` (DuckDB NULL) for all optional fields.
+
+Notes:
+- `operating_date` may arrive as `DateTime` from DuckDB; `Date()` conversion handles both.
+- `segment_hash` is not in `legs_with_operating` (it comes from legs which has no segment_hash
+  column); set to 0 — populated by joining segments table in Subsystem 2.
+- `eff_date`/`disc_date` arrive as `Date` objects from DuckDB.
+"""
+function _row_to_leg(r)::LegRecord
+    # operating_date may be a DateTime (DuckDB DATE → Julia DateTime) or Date
+    op_date_val = _safe_missing(r.operating_date, Date(1900, 1, 1))
+    op_date = op_date_val isa DateTime ? Date(op_date_val) : Date(op_date_val)
+
+    eff_val = _safe_missing(r.eff_date, Date(1900, 1, 1))
+    disc_val = _safe_missing(r.disc_date, Date(2099, 12, 31))
+    eff_d = eff_val isa DateTime ? Date(eff_val) : Date(eff_val)
+    disc_d = disc_val isa DateTime ? Date(disc_val) : Date(disc_val)
+
+    LegRecord(
+        airline              = AirlineCode(_safe_string(r.airline)),
+        flt_no               = Int16(_safe_missing(r.flt_no, 0)),
+        operational_suffix   = _first_char(r.op_suffix, ' '),
+        itin_var             = UInt8(_safe_missing(r.itin_var, 0)),
+        itin_var_overflow    = _first_char(r.itin_var_overflow, ' '),
+        leg_seq              = UInt8(_safe_missing(r.leg_seq, 0)),
+        svc_type             = _first_char(r.svc_type, ' '),
+        org                  = StationCode(_safe_string(r.org)),
+        dst                  = StationCode(_safe_string(r.dst)),
+        pax_dep              = Int16(_safe_missing(r.pax_dep_mins, 0)),
+        pax_arr              = Int16(_safe_missing(r.pax_arr_mins, 0)),
+        ac_dep               = Int16(_safe_missing(r.ac_dep_mins, 0)),
+        ac_arr               = Int16(_safe_missing(r.ac_arr_mins, 0)),
+        dep_utc_offset       = Int16(_safe_missing(r.dep_utc_offset, 0)),
+        arr_utc_offset       = Int16(_safe_missing(r.arr_utc_offset, 0)),
+        dep_date_var         = Int8(_safe_missing(r.dep_date_var, 0)),
+        arr_date_var         = Int8(_safe_missing(r.arr_date_var, 0)),
+        eqp                  = InlineString7(_safe_string(r.eqp)),
+        body_type            = _first_char(r.body_type, ' '),
+        dep_term             = InlineString3(_safe_string(r.dep_term)),
+        arr_term             = InlineString3(_safe_string(r.arr_term)),
+        aircraft_owner       = AirlineCode(_safe_string(r.aircraft_owner)),
+        operating_date       = pack_date(op_date),
+        day_of_week          = UInt8(_safe_missing(r.day_of_week, 0)),
+        eff_date             = pack_date(eff_d),
+        disc_date            = pack_date(disc_d),
+        frequency            = UInt8(_safe_missing(r.frequency, 0)),
+        mct_status_dep       = _first_char(r.mct_dep, ' '),
+        mct_status_arr       = _first_char(r.mct_arr, ' '),
+        trc                  = InlineString15(_safe_string(r.trc)),
+        trc_overflow         = _first_char(r.trc_overflow, ' '),
+        record_serial        = UInt32(_safe_missing(r.record_serial, 0)),
+        row_number           = UInt64(_safe_missing(r.row_id, 0)),
+        # segment_hash not in legs_with_operating — populated via segments join in Subsystem 2
+        segment_hash         = UInt64(0),
+        distance             = Float32(_safe_missing(r.distance, 0.0)),
+        codeshare_airline    = AirlineCode(_safe_string(hasproperty(r, :codeshare_airline) ? r.codeshare_airline : nothing)),
+        codeshare_flt_no     = Int16(_safe_missing(hasproperty(r, :codeshare_flt_no) ? r.codeshare_flt_no : nothing, 0)),
+        dei_10               = InlineString31(_safe_string(hasproperty(r, :dei_10) ? r.dei_10 : nothing)),
+        wet_lease            = Bool(_safe_missing(r.wet_lease, false)),
+        dei_127              = InlineString31(_safe_string(hasproperty(r, :dei_127) ? r.dei_127 : nothing)),
+        prbd                 = InlineString31(_safe_string(r.prbd)),
+    )
+end
+
+"""
+    `get_departures(store::DuckDBStore, station::StationCode, date::Date)::Vector{LegRecord}`
+---
+
+# Description
+- Return all legs departing from `station` on `date` from the `legs_with_operating` view
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store
+2. `station::StationCode`: departure station code
+3. `date::Date`: operating date
+
+# Returns
+- `::Vector{LegRecord}`: all departing legs (may be empty)
+"""
+function get_departures(store::DuckDBStore, station::StationCode, date::Date)::Vector{LegRecord}
+    result = DBInterface.execute(store.db,
+        "SELECT * FROM legs_with_operating WHERE org = ? AND operating_date = ?",
+        [String(station), date])
+    [_row_to_leg(r) for r in result]
+end
+
+"""
+    `get_arrivals(store::DuckDBStore, station::StationCode, date::Date)::Vector{LegRecord}`
+---
+
+# Description
+- Return all legs arriving at `station` on `date` from the `legs_with_operating` view
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store
+2. `station::StationCode`: arrival station code
+3. `date::Date`: operating date
+
+# Returns
+- `::Vector{LegRecord}`: all arriving legs (may be empty)
+"""
+function get_arrivals(store::DuckDBStore, station::StationCode, date::Date)::Vector{LegRecord}
+    result = DBInterface.execute(store.db,
+        "SELECT * FROM legs_with_operating WHERE dst = ? AND operating_date = ?",
+        [String(station), date])
+    [_row_to_leg(r) for r in result]
+end
+
+"""
+    `query_legs(store::DuckDBStore, origin::StationCode, destination::StationCode, date::Date)::Vector{LegRecord}`
+---
+
+# Description
+- Return all legs between an O-D pair on `date` from the `legs_with_operating` view
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store
+2. `origin::StationCode`: departure station code
+3. `destination::StationCode`: arrival station code
+4. `date::Date`: operating date
+
+# Returns
+- `::Vector{LegRecord}`: matching leg records (may be empty)
+"""
+function query_legs(store::DuckDBStore, origin::StationCode, destination::StationCode, date::Date)::Vector{LegRecord}
+    result = DBInterface.execute(store.db,
+        "SELECT * FROM legs_with_operating WHERE org = ? AND dst = ? AND operating_date = ?",
+        [String(origin), String(destination), date])
+    [_row_to_leg(r) for r in result]
+end
+
+"""
+    `query_market_distance(store::DuckDBStore, stn_a::StationCode, stn_b::StationCode)::Union{Float64, Nothing}`
+---
+
+# Description
+- Return the NDOD market distance between two stations in miles
+- Uses the normalized NDOD key (alphabetically ordered) so order of arguments does not matter
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store
+2. `stn_a::StationCode`: first station code
+3. `stn_b::StationCode`: second station code
+
+# Returns
+- `::Union{Float64, Nothing}`: great-circle distance in miles, or `nothing` if market unknown
+"""
+function query_market_distance(store::DuckDBStore, stn_a::StationCode, stn_b::StationCode)::Union{Float64, Nothing}
+    a = min(String(stn_a), String(stn_b))
+    b = max(String(stn_a), String(stn_b))
+    ndod = a * b
+    result = DBInterface.execute(store.db,
+        "SELECT distance_miles FROM markets WHERE ndod = ?", [ndod])
+    rows = collect(result)
+    isempty(rows) && return nothing
+    Float64(rows[1].distance_miles)
+end
+
+"""
+    `query_segment(store::DuckDBStore, segment_hash::UInt64)::Union{SegmentRecord, Nothing}`
+---
+
+# Description
+- Return aggregate segment data for a segment identified by its hash key
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store
+2. `segment_hash::UInt64`: the precomputed segment identity hash
+
+# Returns
+- `::Union{SegmentRecord, Nothing}`: segment record, or `nothing` if not found
+"""
+function query_segment(store::DuckDBStore, segment_hash::UInt64)::Union{SegmentRecord, Nothing}
+    result = DBInterface.execute(store.db,
+        "SELECT * FROM segments WHERE segment_hash = ?",
+        [segment_hash])
+    rows = collect(result)
+    isempty(rows) && return nothing
+    r = rows[1]
+    # operating_date may arrive as DateTime from DuckDB DATE column
+    op_dt = _safe_missing(r.operating_date, Date(1900, 1, 1))
+    op_date = op_dt isa DateTime ? Date(op_dt) : Date(op_dt)
+    SegmentRecord(
+        segment_hash      = UInt64(r.segment_hash),
+        airline           = AirlineCode(_safe_string(r.airline)),
+        flt_no            = Int16(_safe_missing(r.flt_no, 0)),
+        op_suffix         = _first_char(r.op_suffix, ' '),
+        itin_var          = UInt8(_safe_missing(r.itin_var, 0)),
+        itin_var_overflow = _first_char(r.itin_var_overflow, ' '),
+        svc_type          = _first_char(r.svc_type, ' '),
+        operating_date    = pack_date(op_date),
+        num_legs          = UInt8(_safe_missing(r.num_legs, 0)),
+        first_leg_seq     = UInt8(_safe_missing(r.first_leg_seq, 0)),
+        last_leg_seq      = UInt8(_safe_missing(r.last_leg_seq, 0)),
+        segment_org       = StationCode(_safe_string(r.segment_org)),
+        segment_dst       = StationCode(_safe_string(r.segment_dst)),
+        flown_distance    = Float32(_safe_missing(r.flown_distance, 0.0)),
+        market_distance   = Float32(_safe_missing(r.market_distance, 0.0)),
+        segment_circuity  = Float32(_safe_missing(r.segment_circuity, 0.0)),
+        segment_pax_dep   = Int16(_safe_missing(r.segment_pax_dep, 0)),
+        segment_pax_arr   = Int16(_safe_missing(r.segment_pax_arr, 0)),
+        segment_ac_dep    = Int16(_safe_missing(r.segment_ac_dep, 0)),
+        segment_ac_arr    = Int16(_safe_missing(r.segment_ac_arr, 0)),
+    )
+end
+
+"""
+    `query_segment_stops(store::DuckDBStore, segment_hash::UInt64)::Tuple{Vector{StationCode}, Vector{StationCode}}`
+---
+
+# Description
+- Return the board points and off points arrays for a segment
+- For a single-leg segment, each list has one entry
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store
+2. `segment_hash::UInt64`: the precomputed segment identity hash
+
+# Returns
+- `::Tuple{Vector{StationCode}, Vector{StationCode}}`: (board_points, off_points)
+"""
+function query_segment_stops(store::DuckDBStore, segment_hash::UInt64)::Tuple{Vector{StationCode}, Vector{StationCode}}
+    result = DBInterface.execute(store.db,
+        "SELECT board_points, off_points FROM segments WHERE segment_hash = ?",
+        [segment_hash])
+    rows = collect(result)
+    isempty(rows) && return (StationCode[], StationCode[])
+    r = rows[1]
+    # board_points and off_points are DuckDB LIST columns — Julia receives them as
+    # Vector{Union{Missing, String}}; filter out any missing entries
+    bp = [StationCode(_safe_string(s)) for s in r.board_points if s !== missing]
+    op_pts = [StationCode(_safe_string(s)) for s in r.off_points if s !== missing]
+    (bp, op_pts)
+end
+
+"""
+    `query_mct(store::DuckDBStore, arr_carrier, dep_carrier, station, status; kwargs...)::MCTResult`
+---
+
+# Description
+- Look up MCT for a connection at `station` with the given traffic status
+- Tries carrier-specific exception records first, then falls back to global default
+- Full SSIM8 hierarchical lookup deferred to Subsystem 2
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store
+2. `arr_carrier::AirlineCode`: arriving flight carrier
+3. `dep_carrier::AirlineCode`: departing flight carrier
+4. `station::StationCode`: connecting station
+5. `status::MCTStatus`: connection traffic type (MCT_DD, MCT_DI, MCT_ID, MCT_II)
+
+# Returns
+- `::MCTResult`: MCT value, source, specificity, and suppression flag
+"""
+function query_mct(store::DuckDBStore, arr_carrier::AirlineCode, dep_carrier::AirlineCode,
+                   station::StationCode, status::MCTStatus; kwargs...)::MCTResult
+    status_str = status == MCT_DD ? "DD" :
+                 status == MCT_DI ? "DI" :
+                 status == MCT_ID ? "ID" : "II"
+
+    # Try carrier-specific exception first, then station standard
+    result = DBInterface.execute(store.db, """
+    SELECT time_minutes, suppress FROM mct
+    WHERE arr_stn = ? AND dep_stn = ? AND mct_status = ?
+      AND (arr_carrier = ? OR arr_carrier = '')
+      AND suppress = false
+    ORDER BY CASE WHEN arr_carrier != '' THEN 0 ELSE 1 END
+    LIMIT 1
+    """, [String(station), String(station), status_str, String(arr_carrier)])
+
+    rows = collect(result)
+    if !isempty(rows)
+        r = rows[1]
+        return MCTResult(
+            time            = Int16(_safe_missing(r.time_minutes, 0)),
+            queried_status  = status,
+            matched_status  = status,
+            suppressed      = Bool(_safe_missing(r.suppress, false)),
+            source          = SOURCE_EXCEPTION,
+            specificity     = UInt32(100),
+        )
+    end
+
+    # Fall back to global default
+    MCTResult(
+        time           = MCT_DEFAULTS[status],
+        queried_status = status,
+        matched_status = status,
+        suppressed     = false,
+        source         = SOURCE_GLOBAL_DEFAULT,
+        specificity    = UInt32(0),
+    )
+end
+
+# ── load_schedule! ───────────────────────────────────────────────
+
+"""
+    `load_schedule!(store::DuckDBStore, config::SearchConfig)::Nothing`
+---
+
+# Description
+- Load all schedule and reference data from files described in `config` into the store
+- Ingests SSIM, MCT, and reference files, then runs the full post-ingest SQL pipeline
+- MCT is pre-filtered using the station and carrier sets from the ingested legs
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store (tables must already exist)
+2. `config::SearchConfig`: file paths and search parameters
+
+# Returns
+- `::Nothing`
+"""
+function load_schedule!(store::DuckDBStore, config::SearchConfig)::Nothing
+    @info "Loading schedule..." ssim=config.ssim_path mct=config.mct_path
+
+    # Ingest SSIM
+    ingest_ssim!(store, config.ssim_path)
+
+    # Build schedule filters for MCT pre-filtering
+    stn_filter, car_filter = _build_schedule_filters(store)
+
+    # Ingest MCT with schedule-based filtering
+    ingest_mct!(store, config.mct_path;
+                station_filter=stn_filter, carrier_filter=car_filter)
+
+    # Load reference tables (skip missing files gracefully)
+    isfile(config.airports_path)   && load_airports!(store, config.airports_path)
+    isfile(config.regions_path)    && load_regions!(store, config.regions_path)
+    isfile(config.aircrafts_path)  && load_aircrafts!(store, config.aircrafts_path)
+    isfile(config.oa_control_path) && load_oa_control!(store, config.oa_control_path)
+
+    # Post-ingest processing: EDF expansion, codeshare view, segments, markets, circuity, indexes
+    post_ingest_sql!(store)
+
+    @info "Schedule loaded." stats=table_stats(store)
+    nothing
+end
