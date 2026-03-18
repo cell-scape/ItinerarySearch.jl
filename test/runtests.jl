@@ -53,6 +53,7 @@ using Dates
     include("test_status.jl")
     include("test_stats.jl")
     include("test_graph_types.jl")
+    include("test_constraints.jl")
     include("test_config.jl")
     include("test_compression.jl")
     include("test_ingest.jl")

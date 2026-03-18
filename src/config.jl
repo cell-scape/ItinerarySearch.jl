@@ -84,6 +84,13 @@ the reference — no locking, no mutation.
     classmap_path::String = _default_path("classmap.txt")
     serviceclass_path::String = _default_path("serviceclass.dat")
     oa_control_path::String = _default_path("oa_control.csv")
+    leading_days::Int = 1
+    metrics_level::Symbol = :basic        # :basic, :aircraft, :full
+    graph_export_path::String = ""
+    graph_import_path::String = ""
+    constraints_path::String = ""
+    event_log_path::String = ""
+    output_formats::Vector{Symbol} = [:json, :yaml, :csv]
 end
 
 # ── JSON3 field extraction helpers ────────────────────────────────────────────
@@ -198,6 +205,34 @@ function load_config(path::String)::SearchConfig
     if sched !== nothing
         v = _json_int(sched, :max_days);      v !== nothing && (kwargs[:max_days]      = v)
         v = _json_int(sched, :trailing_days); v !== nothing && (kwargs[:trailing_days] = v)
+        v = _json_int(sched, :leading_days);  v !== nothing && (kwargs[:leading_days]  = v)
+    end
+
+    if data !== nothing
+        s = _json_str(data, :constraints); s !== nothing && (kwargs[:constraints_path] = s)
+    end
+
+    graph = _json_obj(raw, :graph)
+    if graph !== nothing
+        s = _json_str(graph, :export_path); s !== nothing && (kwargs[:graph_export_path] = s)
+        s = _json_str(graph, :import_path); s !== nothing && (kwargs[:graph_import_path] = s)
+    end
+
+    output = _json_obj(raw, :output)
+    if output !== nothing
+        s = _json_str(output, :metrics_level)
+        if s !== nothing
+            sym = Symbol(lowercase(s))
+            sym in (:basic, :aircraft, :full) && (kwargs[:metrics_level] = sym)
+        end
+        s = _json_str(output, :event_log_path); s !== nothing && (kwargs[:event_log_path] = s)
+        if haskey(output, :output_formats)
+            fmts_val = output[:output_formats]
+            if fmts_val isa JSON3.Array
+                syms = Symbol[Symbol(lowercase(String(f))) for f in fmts_val if f isa String]
+                isempty(syms) || (kwargs[:output_formats] = syms)
+            end
+        end
     end
 
     SearchConfig(; kwargs...)

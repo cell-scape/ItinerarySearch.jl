@@ -10,6 +10,7 @@ include("types/enums.jl")
 include("types/records.jl")
 include("types/status.jl")
 include("types/stats.jl")
+include("types/constraints.jl")
 include("types/graph.jl")
 include("config.jl")
 include("compression.jl")
@@ -49,6 +50,10 @@ export pack_date, unpack_date
 # Exports — stats types (Subsystem 2 instrumentation)
 export StationStats, BuildStats, SearchStats, MCTSelectionRow
 export merge_build_stats!, merge_station_stats!
+
+# Exports — constraints
+export ParameterSet, MarketOverride, SearchConstraints
+export resolve_params
 
 # Exports — graph types (Subsystem 2)
 export GraphStation, GraphLeg, GraphSegment, GraphConnection, Itinerary
