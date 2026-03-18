@@ -26,6 +26,7 @@ include("graph/mct_lookup.jl")
 include("graph/rules_cnx.jl")
 include("graph/rules_itn.jl")
 include("graph/connect.jl")
+include("graph/search.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
@@ -107,5 +108,8 @@ export FAIL_ITN_SUPPCODE, FAIL_ITN_MAFT
 
 # Exports — graph: connection builder
 export build_connections_at_station!, build_connections!
+
+# Exports — graph: DFS search
+export RuntimeContext, search_itineraries
 
 end # module
