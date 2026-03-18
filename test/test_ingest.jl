@@ -175,3 +175,86 @@ end
     close(store)
     rm(path)
 end
+
+@testset "MCT Ingest — Schedule Filtering" begin
+    mct_data = make_test_mct()
+
+    # Add a third MCT record at JFK (not in our schedule)
+    jfk_fields = "2"
+    jfk_fields *= "JFK"                    # arr station
+    jfk_fields *= "0060"                   # 60 min
+    jfk_fields *= "II"                     # status
+    jfk_fields *= "JFK"                    # dep station
+    jfk_fields *= rpad("", 81)             # 14-94: blank
+    jfk_fields *= "  "                     # 95-96: submitting carrier
+    jfk_line = rpad(jfk_fields, 194) * "000004"
+
+    # Add a carrier-specific record at ORD for QF (not in schedule)
+    qf_fields = "2"
+    qf_fields *= "ORD"                     # arr station
+    qf_fields *= "0075"                    # 75 min
+    qf_fields *= "II"                      # status
+    qf_fields *= "ORD"                     # dep station
+    qf_fields *= "QF"                      # 14-15: arr carrier
+    qf_fields *= rpad("", 79)              # 16-94
+    qf_fields *= "QF"                      # 95-96: submitting carrier
+    qf_line = rpad(qf_fields, 194) * "000005"
+
+    full_mct = mct_data * jfk_line * "\n" * qf_line * "\n"
+
+    @testset "No filter loads all records" begin
+        path = tempname()
+        write(path, full_mct)
+        store = DuckDBStore()
+        ingest_mct!(store, path)
+        @test table_stats(store).mct == 4  # original 2 + JFK + QF@ORD
+        close(store)
+        rm(path)
+    end
+
+    @testset "Station filter drops JFK record" begin
+        path = tempname()
+        write(path, full_mct)
+        store = DuckDBStore()
+        stn_filter = Set(["ORD", "LHR"])
+        ingest_mct!(store, path; station_filter=stn_filter)
+        # JFK record filtered out, 3 remain (2 ORD originals + QF@ORD)
+        @test table_stats(store).mct == 3
+        close(store)
+        rm(path)
+    end
+
+    @testset "Carrier filter drops QF record but keeps station standard" begin
+        path = tempname()
+        write(path, full_mct)
+        store = DuckDBStore()
+        stn_filter = Set(["ORD", "LHR"])
+        car_filter = Set(["UA"])
+        ingest_mct!(store, path; station_filter=stn_filter, carrier_filter=car_filter)
+        # JFK filtered by station, QF@ORD filtered by carrier
+        # Remaining: ORD station standard (II) + ORD UA exception (DD) = 2
+        @test table_stats(store).mct == 2
+        close(store)
+        rm(path)
+    end
+
+    @testset "_build_schedule_filters from legs table" begin
+        using ItinerarySearch: _build_schedule_filters
+
+        store = DuckDBStore()
+        # Ingest SSIM first so legs table has data
+        ssim_path = tempname()
+        write(ssim_path, make_test_ssim())
+        ingest_ssim!(store, ssim_path)
+
+        stations, carriers = _build_schedule_filters(store)
+        @test "ORD" ∈ stations
+        @test "LHR" ∈ stations
+        @test "JFK" ∉ stations
+        @test "UA" ∈ carriers
+        @test "QF" ∉ carriers
+
+        close(store)
+        rm(ssim_path)
+    end
+end

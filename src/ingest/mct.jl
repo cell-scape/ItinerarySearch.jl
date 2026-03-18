@@ -4,7 +4,40 @@ using DuckDB
 using Dates
 
 """
-    `ingest_mct!(store::DuckDBStore, path::String)::Nothing`
+    `_build_schedule_filters(store::DuckDBStore)::Tuple{Set{String}, Set{String}}`
+---
+
+# Description
+- Build station and carrier filter sets from the already-ingested legs table
+- Used to pre-filter MCT records so only schedule-relevant records are loaded
+
+# Arguments
+1. `store::DuckDBStore`: store with legs table already populated
+
+# Returns
+- `(stations::Set{String}, carriers::Set{String})`: sets of station codes and carrier codes
+"""
+function _build_schedule_filters(store::DuckDBStore)::Tuple{Set{String}, Set{String}}
+    stations = Set{String}()
+    carriers = Set{String}()
+
+    result = DBInterface.execute(store.db, "SELECT DISTINCT org FROM legs UNION SELECT DISTINCT dst FROM legs")
+    for row in result
+        s = strip(String(row.org))
+        isempty(s) || push!(stations, s)
+    end
+
+    result = DBInterface.execute(store.db, "SELECT DISTINCT airline FROM legs")
+    for row in result
+        c = strip(String(row.airline))
+        isempty(c) || push!(carriers, c)
+    end
+
+    (stations, carriers)
+end
+
+"""
+    `ingest_mct!(store::DuckDBStore, path::String; station_filter, carrier_filter)::Nothing`
 ---
 
 # Description
@@ -15,10 +48,19 @@ using Dates
 - `station_standard` is true when both arr_carrier, dep_carrier, and
   submitting_carrier are blank (no carrier specificity)
 - `specificity` is stored as 0 and computed in a post-ingest pipeline step
+- When `station_filter` is provided, MCT records for stations not in the set are skipped
+- When `carrier_filter` is provided, carrier-specific MCT records referencing
+  carriers not in the set are skipped (station standards are always kept)
 
 # Arguments
 1. `store::DuckDBStore`: initialized store (tables must already exist)
 2. `path::String`: path to MCT file (may be compressed)
+
+# Keyword Arguments
+- `station_filter::Union{Nothing, Set{String}}=nothing`: if provided, only keep records
+  where both arr_stn and dep_stn are in the set
+- `carrier_filter::Union{Nothing, Set{String}}=nothing`: if provided, skip carrier-specific
+  records where none of the referenced carriers appear in the set
 
 # Returns
 - `nothing`
@@ -31,11 +73,14 @@ julia> table_stats(store).mct
 12345
 ```
 """
-function ingest_mct!(store::DuckDBStore, path::String)::Nothing
+function ingest_mct!(store::DuckDBStore, path::String;
+                     station_filter::Union{Nothing, Set{String}} = nothing,
+                     carrier_filter::Union{Nothing, Set{String}} = nothing)::Nothing
     io = open_maybe_compressed(path)
     appender = DuckDB.Appender(store.db, "mct")
     mct_id = 0
     skipped = 0
+    filtered = 0
 
     try
         for line in eachline(io)
@@ -44,6 +89,37 @@ function ingest_mct!(store::DuckDBStore, path::String)::Nothing
 
             try
                 if rt == '2' && length(line) >= 96
+                    # Quick-extract station and carrier fields for filtering
+                    arr_stn_raw = strip(line[2:min(4, length(line))])
+                    dep_stn_raw = strip(line[11:min(13, length(line))])
+
+                    # Station filter: skip if either station is not in the schedule
+                    if station_filter !== nothing
+                        if arr_stn_raw ∉ station_filter || dep_stn_raw ∉ station_filter
+                            filtered += 1
+                            continue
+                        end
+                    end
+
+                    # Carrier filter: for carrier-specific records, skip if no
+                    # referenced carrier appears in the schedule
+                    if carrier_filter !== nothing
+                        arr_carrier_raw = strip(line[14:min(15, length(line))])
+                        dep_carrier_raw = strip(line[19:min(20, length(line))])
+                        submitting_raw  = strip(line[95:min(96, length(line))])
+                        is_station_std  = isempty(arr_carrier_raw) && isempty(dep_carrier_raw) && isempty(submitting_raw)
+
+                        if !is_station_std
+                            arr_ok = isempty(arr_carrier_raw) || arr_carrier_raw ∈ carrier_filter
+                            dep_ok = isempty(dep_carrier_raw) || dep_carrier_raw ∈ carrier_filter
+                            sub_ok = isempty(submitting_raw)  || submitting_raw  ∈ carrier_filter
+                            if !arr_ok || !dep_ok || !sub_ok
+                                filtered += 1
+                                continue
+                            end
+                        end
+                    end
+
                     mct_id += 1
                     _append_mct!(appender, mct_id, line)
                 end
@@ -57,7 +133,7 @@ function ingest_mct!(store::DuckDBStore, path::String)::Nothing
         close(io)
     end
 
-    skipped > 0 && @info "MCT ingest complete" total=mct_id skipped=skipped
+    (skipped > 0 || filtered > 0) && @info "MCT ingest complete" loaded=mct_id filtered=filtered skipped=skipped
     nothing
 end
 
