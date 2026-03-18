@@ -24,6 +24,7 @@ include("ingest/mct.jl")
 include("ingest/reference.jl")
 include("graph/mct_lookup.jl")
 include("graph/rules_cnx.jl")
+include("graph/rules_itn.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
@@ -95,5 +96,12 @@ export build_cnx_rules
 export PASS, FAIL_ROUNDTRIP, FAIL_SCOPE, FAIL_ONLINE, FAIL_CODESHARE, FAIL_INTERLINE
 export FAIL_TIME_MIN, FAIL_TIME_MAX, FAIL_OPDAYS, FAIL_SUPPCODE
 export FAIL_MAFT, FAIL_CIRCUITY, FAIL_TRFREST
+
+# Exports — graph: itinerary rules
+export check_itn_scope, check_itn_opdays, check_itn_circuity
+export check_itn_suppcodes, check_itn_maft
+export build_itn_rules
+export FAIL_ITN_SCOPE, FAIL_ITN_OPDAYS, FAIL_ITN_CIRCUITY
+export FAIL_ITN_SUPPCODE, FAIL_ITN_MAFT
 
 end # module

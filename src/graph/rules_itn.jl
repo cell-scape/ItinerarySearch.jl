@@ -1,0 +1,224 @@
+# src/graph/rules_itn.jl — Itinerary rule chain for search_itineraries
+#
+# Each rule receives (itn::Itinerary, ctx) and returns an Int:
+#   positive (PASS)   — itinerary passed this rule, continue chain
+#   zero or negative  — itinerary failed; unique code identifies which rule
+#
+# ctx is typed Any here because RuntimeContext is defined in a later task.
+# The fields accessed by each rule are documented in the per-rule docstrings.
+#
+# Rule chain:
+#   1. check_itn_scope      — DOM/INTL/ALL scope filter
+#   2. check_itn_opdays     — operating-day intersection non-empty
+#   3. check_itn_circuity   — total route distance vs great-circle origin→dest
+#   4. check_itn_suppcodes  — itinerary-level TRC suppression code 'I'
+#   5. check_itn_maft       — total block time vs MAFT formula with stop allowance
+
+# ── Return-code constants ──────────────────────────────────────────────────────
+
+"""
+    Itinerary rule return codes
+
+Each itinerary rule returns one of these `Int` constants.  Any positive value is
+a pass; zero or negative is a fail with a unique diagnostic code.
+
+- `FAIL_ITN_SCOPE    = -20` — failed scope filter (DOM vs INTL)
+- `FAIL_ITN_OPDAYS   = -21` — no overlapping operating days across all legs
+- `FAIL_ITN_CIRCUITY = -22` — total route too circuitous vs great-circle O-D
+- `FAIL_ITN_SUPPCODE = -23` — TRC suppression code 'I' on a leg
+- `FAIL_ITN_MAFT     = -24` — total block time exceeds MAFT with stop allowance
+"""
+const FAIL_ITN_SCOPE    = Int(-20)
+const FAIL_ITN_OPDAYS   = Int(-21)
+const FAIL_ITN_CIRCUITY = Int(-22)
+const FAIL_ITN_SUPPCODE = Int(-23)
+const FAIL_ITN_MAFT     = Int(-24)
+
+# ── Rule 1: Scope filter ───────────────────────────────────────────────────────
+
+"""
+    `function check_itn_scope(itn::Itinerary, ctx)::Int`
+---
+
+# Description
+- Enforces the DOM/INTL/ALL scope filter from `ctx.config.scope` for the full
+  itinerary
+- `SCOPE_ALL` always passes
+- `SCOPE_DOM` rejects itineraries tagged `STATUS_INTERNATIONAL`
+- `SCOPE_INTL` rejects itineraries not tagged `STATUS_INTERNATIONAL`
+
+# Arguments
+1. `itn::Itinerary`: the itinerary to evaluate; accesses `itn.status`
+2. `ctx`: runtime context; accesses `ctx.config::SearchConfig`
+
+# Returns
+- `::Int`: `PASS` or `FAIL_ITN_SCOPE`
+"""
+function check_itn_scope(itn::Itinerary, ctx)::Int
+    scope = ctx.config.scope
+    scope == SCOPE_ALL && return PASS
+    intl = is_international(itn.status)
+    scope == SCOPE_DOM && return intl ? FAIL_ITN_SCOPE : PASS
+    return intl ? PASS : FAIL_ITN_SCOPE  # SCOPE_INTL
+end
+
+# ── Rule 2: Operating-days filter ─────────────────────────────────────────────
+
+"""
+    `function check_itn_opdays(itn::Itinerary, ctx)::Int`
+---
+
+# Description
+- Rejects itineraries whose DOW bits (bits 0–6 of `itn.status`) are all zero,
+  meaning there are no overlapping operating days across all legs in the path
+- A zero `DOW_MASK` intersection means the itinerary can never operate on any
+  day of the week
+
+# Arguments
+1. `itn::Itinerary`: the itinerary to evaluate; accesses `itn.status`
+2. `ctx`: runtime context (no fields accessed by this rule)
+
+# Returns
+- `::Int`: `PASS` or `FAIL_ITN_OPDAYS`
+"""
+function check_itn_opdays(itn::Itinerary, ctx)::Int
+    op_days = itn.status & DOW_MASK
+    return op_days == StatusBits(0) ? FAIL_ITN_OPDAYS : PASS
+end
+
+# ── Rule 3: Circuity filter ────────────────────────────────────────────────────
+
+"""
+    `function check_itn_circuity(itn::Itinerary, ctx)::Int`
+---
+
+# Description
+- Checks whether the total flown distance of the itinerary is within an
+  acceptable ratio of the great-circle origin-to-destination distance
+- Skips the check when the itinerary has no connections or the market distance
+  is zero (no coordinates available)
+- Uses `ctx.constraints.defaults.itinerary_circuity` as the maximum allowed
+  ratio and `ctx.constraints.defaults.circuity_extra_miles` as a flat tolerance
+
+# Arguments
+1. `itn::Itinerary`: the itinerary to evaluate; accesses `itn.total_distance`
+   and `itn.market_distance`
+2. `ctx`: runtime context; accesses `ctx.constraints::SearchConstraints`
+
+# Returns
+- `::Int`: `PASS` or `FAIL_ITN_CIRCUITY`
+"""
+function check_itn_circuity(itn::Itinerary, ctx)::Int
+    isempty(itn.connections) && return PASS
+    itn.market_distance <= Distance(0) && return PASS
+    factor = ctx.constraints.defaults.itinerary_circuity
+    extra = ctx.constraints.defaults.circuity_extra_miles
+    return Float64(itn.total_distance) <= factor * Float64(itn.market_distance) + extra ? PASS : FAIL_ITN_CIRCUITY
+end
+
+# ── Rule 4: TRC suppression code check ────────────────────────────────────────
+
+"""
+    `function check_itn_suppcodes(itn::Itinerary, ctx)::Int`
+---
+
+# Description
+- Checks for itinerary-level suppression code 'I' on any leg in the itinerary
+- Code 'I' in SSIM8 indicates the leg is suppressed for itinerary building
+- Inspects `cp.from_leg.record.trc` at position `cp.from_leg.record.leg_seq`
+  for each connection in the itinerary
+
+# Arguments
+1. `itn::Itinerary`: the itinerary to evaluate; iterates `itn.connections`
+2. `ctx`: runtime context (no fields accessed by this rule)
+
+# Returns
+- `::Int`: `PASS` or `FAIL_ITN_SUPPCODE`
+"""
+function check_itn_suppcodes(itn::Itinerary, ctx)::Int
+    for cp in itn.connections
+        trc = cp.from_leg.record.trc
+        seq = Int(cp.from_leg.record.leg_seq)
+        if seq > 0 && seq <= length(trc)
+            trc[seq] == 'I' && return FAIL_ITN_SUPPCODE
+        end
+    end
+    return PASS
+end
+
+# ── Rule 5: MAFT (Maximum Feasible Travel Time) filter ────────────────────────
+
+"""
+    `function check_itn_maft(itn::Itinerary, ctx)::Int`
+---
+
+# Description
+- Validates that the total approximate block time of the itinerary does not
+  exceed the Maximum Feasible Travel Time (MAFT) formula
+- MAFT = `max(gc_dist / 400.0 × 60, 30.0) + 240.0 + num_stops × 120.0`
+  where `gc_dist` is the great-circle origin-to-destination distance in NM
+- Block time is approximated as the sum of per-leg distances divided by the
+  assumed cruise speed (400 knots) converted to minutes
+- Skips the check when the itinerary has no connections or market distance
+  is zero (no coordinates available)
+
+# Arguments
+1. `itn::Itinerary`: the itinerary to evaluate; accesses `itn.market_distance`,
+   `itn.num_stops`, and `itn.connections`
+2. `ctx`: runtime context (no fields accessed by this rule)
+
+# Returns
+- `::Int`: `PASS` or `FAIL_ITN_MAFT`
+"""
+function check_itn_maft(itn::Itinerary, ctx)::Int
+    isempty(itn.connections) && return PASS
+    itn.market_distance <= Distance(0) && return PASS
+
+    gc_dist = Float64(itn.market_distance)
+    maft = max((gc_dist / 400.0) * 60.0, 30.0) + 240.0 + Float64(itn.num_stops) * 120.0
+
+    # Sum block times (approximated from leg distances at 400 knots cruise)
+    total_bt = 0.0
+    for cp in itn.connections
+        total_bt += Float64(cp.from_leg.record.distance) / 400.0 * 60.0
+    end
+
+    return total_bt <= maft ? PASS : FAIL_ITN_MAFT
+end
+
+# ── Rule chain assembly ────────────────────────────────────────────────────────
+
+"""
+    `function build_itn_rules(config::SearchConfig)::Vector{Any}`
+---
+
+# Description
+- Assembles and returns the canonical 5-rule itinerary rule chain
+- Rules are ordered from structural checks (scope, opdays) to geometric
+  checks (circuity, MAFT) with the suppression code check in between
+- The returned vector contains plain functions; all rules share the same
+  `(itn::Itinerary, ctx) -> Int` signature
+
+# Arguments
+1. `config::SearchConfig`: search configuration (currently unused; reserved for
+   future rule-enable/disable toggles)
+
+# Returns
+- `::Vector{Any}`: 5-element vector of callables, in chain order
+
+# Examples
+```julia
+julia> rules = build_itn_rules(SearchConfig());
+julia> length(rules)
+5
+```
+"""
+function build_itn_rules(config::SearchConfig)::Vector{Any}
+    rules = Any[]
+    push!(rules, check_itn_scope)
+    push!(rules, check_itn_opdays)
+    push!(rules, check_itn_circuity)
+    push!(rules, check_itn_suppcodes)
+    push!(rules, check_itn_maft)
+    return rules
+end
