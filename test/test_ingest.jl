@@ -258,3 +258,63 @@ end
         rm(ssim_path)
     end
 end
+
+@testset "Reference Table Loaders" begin
+    @testset "Airports" begin
+        path = tempname()
+        # Tab-delimited: code, name, city, country, state, lat, lng, utc_offset, region
+        write(path, "ORD\tO'Hare International\tChicago\tUS\tIL\t41.9742\t-87.9073\t-360\tNOA\nLHR\tHeathrow\tLondon\tGB\t\t51.4700\t-0.4543\t0\tEUR\n")
+        store = DuckDBStore()
+        load_airports!(store, path)
+        @test table_stats(store).stations == 2
+
+        result = DBInterface.execute(store.db, "SELECT * FROM stations WHERE code = 'ORD'")
+        row = first(result)
+        @test strip(String(row.country)) == "US"
+        @test row.lat ≈ 41.9742
+
+        close(store)
+        rm(path)
+    end
+
+    @testset "Regions" begin
+        path = tempname()
+        # Format: region, airport, metro_area (space-delimited)
+        write(path, "NOA ORD CHI\nNOA LAX LAX\nEUR LHR LON\n")
+        store = DuckDBStore()
+        load_regions!(store, path)
+        result = DBInterface.execute(store.db, "SELECT COUNT(*) AS n FROM regions")
+        @test first(result).n == 3
+        close(store)
+        rm(path)
+    end
+
+    @testset "OA Control (CSV)" begin
+        path = tempname()
+        write(path, "carrier_cd,exception_carrier,irrops_window,joint_venture,carrier_group,eligible_wet_leases\nUA,,72,N,STAR,\nLH,,72,Y,STAR,LX\n")
+        store = DuckDBStore()
+        load_oa_control!(store, path)
+        result = DBInterface.execute(store.db, "SELECT COUNT(*) AS n FROM oa_control")
+        @test first(result).n == 2
+        close(store)
+        rm(path)
+    end
+
+    @testset "Aircrafts" begin
+        path = tempname()
+        # Tab-delimited: code, body_type, description
+        write(path, "789\tW\tBoeing 787-9 Dreamliner\n320\tN\tAirbus A320\n")
+        store = DuckDBStore()
+        load_aircrafts!(store, path)
+        result = DBInterface.execute(store.db, "SELECT COUNT(*) AS n FROM aircrafts")
+        @test first(result).n == 2
+
+        # Verify data integrity
+        result = DBInterface.execute(store.db, "SELECT * FROM aircrafts WHERE code = '789'")
+        row = first(result)
+        @test strip(String(row.body_type)) == "W"
+
+        close(store)
+        rm(path)
+    end
+end
