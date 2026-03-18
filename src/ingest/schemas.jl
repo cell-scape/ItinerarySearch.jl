@@ -1,7 +1,9 @@
 # src/ingest/schemas.jl — Parsing helper functions for SSIM and MCT fixed-width records
-# FixedWidthParsers schema constants will be added when FixedWidthParsers.jl is available.
+# FixedWidthParsers provides the canonical SSIM_SCHEMA, MCT_SCHEMA, AIRPORT_SCHEMA,
+# and REGIONAL_SCHEMA constants used by the post-ingest pipeline and reference loaders.
 
 using Dates
+using FixedWidthParsers: SSIM_SCHEMA, MCT_SCHEMA, AIRPORT_SCHEMA, REGIONAL_SCHEMA
 
 # ── Parsing helpers ──────────────────────────────────────────────
 

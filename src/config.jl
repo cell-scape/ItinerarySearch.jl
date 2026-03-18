@@ -3,16 +3,30 @@
 using JSON3
 
 """
-    _default_path(filename::String)::String
+    `_default_path(filename::String)::String`
+---
 
-Resolve a default data path relative to the package's `data/demo/` directory.
+# Description
+- Resolve a default data path relative to the package's `data/demo/` directory
+- Falls back to a path relative to the current working directory if the package
+  directory cannot be determined (e.g. during development without a package env)
+
+# Arguments
+1. `filename::String`: basename of the file under `data/demo/`
+
+# Returns
+- `::String`: absolute or relative path to the file
 """
 function _default_path(filename::String)::String
-    joinpath(pkgdir(@__MODULE__), "data", "demo", filename)
+    dir = pkgdir(@__MODULE__)
+    if dir === nothing
+        return joinpath("data", "demo", filename)
+    end
+    joinpath(dir, "data", "demo", filename)
 end
 
 """
-    _parse_scope(s::AbstractString)::ScopeMode
+    `_parse_scope(s::AbstractString)::ScopeMode`
 
 Parse a scope string from JSON config to ScopeMode enum.
 """
@@ -25,7 +39,7 @@ function _parse_scope(s::AbstractString)::ScopeMode
 end
 
 """
-    _parse_interline(s::AbstractString)::InterlineMode
+    `_parse_interline(s::AbstractString)::InterlineMode`
 
 Parse an interline string from JSON config to InterlineMode enum.
 """
@@ -72,6 +86,58 @@ the reference — no locking, no mutation.
     oa_control_path::String = _default_path("oa_control.csv")
 end
 
+# ── JSON3 field extraction helpers ────────────────────────────────────────────
+# JSON3 object field access returns a wide union type. These helpers narrow
+# the return type so JET can verify correctness.
+
+"""
+    `_json_str(obj::JSON3.Object, key::Symbol)::Union{String, Nothing}`
+
+Return the string value of `obj[key]` if it is a `String`, otherwise `nothing`.
+"""
+function _json_str(obj::JSON3.Object, key::Symbol)::Union{String, Nothing}
+    haskey(obj, key) || return nothing
+    val = obj[key]
+    val isa String ? val : nothing
+end
+
+"""
+    `_json_int(obj::JSON3.Object, key::Symbol)::Union{Int, Nothing}`
+
+Return the integer value of `obj[key]` if it is an `Int64`, otherwise `nothing`.
+"""
+function _json_int(obj::JSON3.Object, key::Symbol)::Union{Int, Nothing}
+    haskey(obj, key) || return nothing
+    val = obj[key]
+    val isa Int64 ? Int(val) : nothing
+end
+
+"""
+    `_json_float(obj::JSON3.Object, key::Symbol)::Union{Float64, Nothing}`
+
+Return the float value of `obj[key]` coerced from `Float64` or `Int64`,
+otherwise `nothing`.
+"""
+function _json_float(obj::JSON3.Object, key::Symbol)::Union{Float64, Nothing}
+    haskey(obj, key) || return nothing
+    val = obj[key]
+    val isa Float64 && return val
+    val isa Int64   && return Float64(val)
+    nothing
+end
+
+"""
+    `_json_obj(raw::JSON3.Object, key::Symbol)::Union{JSON3.Object, Nothing}`
+
+Return the nested object value of `raw[key]` if it is a `JSON3.Object`,
+otherwise `nothing`.
+"""
+function _json_obj(raw::JSON3.Object, key::Symbol)::Union{JSON3.Object, Nothing}
+    haskey(raw, key) || return nothing
+    val = raw[key]
+    val isa JSON3.Object ? val : nothing
+end
+
 """
     `load_config(path::String)::SearchConfig`
 ---
@@ -79,6 +145,7 @@ end
 # Description
 - Load a SearchConfig from a JSON file
 - Any missing field uses the struct default
+- Unknown or wrongly-typed JSON values are silently skipped (logged in future)
 
 # Arguments
 1. `path::String`: path to a JSON config file
@@ -93,42 +160,44 @@ julia> cfg = load_config("config/defaults.json");
 """
 function load_config(path::String)::SearchConfig
     raw = JSON3.read(read(path, String))
+    raw isa JSON3.Object || return SearchConfig()
+
     kwargs = Dict{Symbol, Any}()
 
-    if haskey(raw, :store)
-        store = raw[:store]
-        haskey(store, :backend) && (kwargs[:backend] = String(store[:backend]))
-        haskey(store, :path)    && (kwargs[:db_path]  = String(store[:path]))
+    store = _json_obj(raw, :store)
+    if store !== nothing
+        s = _json_str(store, :backend);  s !== nothing && (kwargs[:backend] = s)
+        s = _json_str(store, :path);     s !== nothing && (kwargs[:db_path]  = s)
     end
 
-    if haskey(raw, :search)
-        s = raw[:search]
-        haskey(s, :max_stops)               && (kwargs[:max_stops]               = Int(s[:max_stops]))
-        haskey(s, :max_connection_minutes)  && (kwargs[:max_connection_minutes]  = Int(s[:max_connection_minutes]))
-        haskey(s, :max_elapsed_minutes)     && (kwargs[:max_elapsed_minutes]     = Int(s[:max_elapsed_minutes]))
-        haskey(s, :circuity_factor)         && (kwargs[:circuity_factor]         = Float64(s[:circuity_factor]))
-        haskey(s, :circuity_extra_miles)    && (kwargs[:circuity_extra_miles]    = Float64(s[:circuity_extra_miles]))
-        haskey(s, :scope)                   && (kwargs[:scope]                   = _parse_scope(String(s[:scope])))
-        haskey(s, :interline)               && (kwargs[:interline]               = _parse_interline(String(s[:interline])))
+    search = _json_obj(raw, :search)
+    if search !== nothing
+        v = _json_int(search, :max_stops);              v !== nothing && (kwargs[:max_stops]              = v)
+        v = _json_int(search, :max_connection_minutes); v !== nothing && (kwargs[:max_connection_minutes] = v)
+        v = _json_int(search, :max_elapsed_minutes);    v !== nothing && (kwargs[:max_elapsed_minutes]    = v)
+        f = _json_float(search, :circuity_factor);      f !== nothing && (kwargs[:circuity_factor]        = f)
+        f = _json_float(search, :circuity_extra_miles); f !== nothing && (kwargs[:circuity_extra_miles]   = f)
+        s = _json_str(search, :scope);     s !== nothing && (kwargs[:scope]     = _parse_scope(s))
+        s = _json_str(search, :interline); s !== nothing && (kwargs[:interline] = _parse_interline(s))
     end
 
-    if haskey(raw, :data)
-        d = raw[:data]
-        haskey(d, :ssim)         && (kwargs[:ssim_path]         = String(d[:ssim]))
-        haskey(d, :mct)          && (kwargs[:mct_path]          = String(d[:mct]))
-        haskey(d, :airports)     && (kwargs[:airports_path]     = String(d[:airports]))
-        haskey(d, :regions)      && (kwargs[:regions_path]      = String(d[:regions]))
-        haskey(d, :aircrafts)    && (kwargs[:aircrafts_path]    = String(d[:aircrafts]))
-        haskey(d, :seats)        && (kwargs[:seats_path]        = String(d[:seats]))
-        haskey(d, :classmap)     && (kwargs[:classmap_path]     = String(d[:classmap]))
-        haskey(d, :serviceclass) && (kwargs[:serviceclass_path] = String(d[:serviceclass]))
-        haskey(d, :oa_control)   && (kwargs[:oa_control_path]   = String(d[:oa_control]))
+    data = _json_obj(raw, :data)
+    if data !== nothing
+        s = _json_str(data, :ssim);         s !== nothing && (kwargs[:ssim_path]         = s)
+        s = _json_str(data, :mct);          s !== nothing && (kwargs[:mct_path]          = s)
+        s = _json_str(data, :airports);     s !== nothing && (kwargs[:airports_path]     = s)
+        s = _json_str(data, :regions);      s !== nothing && (kwargs[:regions_path]      = s)
+        s = _json_str(data, :aircrafts);    s !== nothing && (kwargs[:aircrafts_path]    = s)
+        s = _json_str(data, :seats);        s !== nothing && (kwargs[:seats_path]        = s)
+        s = _json_str(data, :classmap);     s !== nothing && (kwargs[:classmap_path]     = s)
+        s = _json_str(data, :serviceclass); s !== nothing && (kwargs[:serviceclass_path] = s)
+        s = _json_str(data, :oa_control);   s !== nothing && (kwargs[:oa_control_path]   = s)
     end
 
-    if haskey(raw, :schedule)
-        sched = raw[:schedule]
-        haskey(sched, :max_days)      && (kwargs[:max_days]      = Int(sched[:max_days]))
-        haskey(sched, :trailing_days) && (kwargs[:trailing_days] = Int(sched[:trailing_days]))
+    sched = _json_obj(raw, :schedule)
+    if sched !== nothing
+        v = _json_int(sched, :max_days);      v !== nothing && (kwargs[:max_days]      = v)
+        v = _json_int(sched, :trailing_days); v !== nothing && (kwargs[:trailing_days] = v)
     end
 
     SearchConfig(; kwargs...)

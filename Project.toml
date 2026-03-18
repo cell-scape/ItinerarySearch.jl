@@ -24,16 +24,26 @@ CodecXz = "0.7"
 CodecZlib = "0.7"
 CodecZstd = "0.8"
 DBInterface = "2"
+Dates = "1"
 DuckDB = "1"
+FixedWidthParsers = "0.2"
 InlineStrings = "1"
 JSON3 = "1"
 TranscodingStreams = "0.11"
 julia = "1.10"
+# extras compat
+Aqua = "0.8"
+Chairmarks = "1"
+Documenter = "1"
+JET = "0.11"
+Test = "1"
 
 [extras]
-Chairmarks = "0ca39b1e-fe0b-4e98-acfc-b1656f902cb6"
+Aqua = "4c88cf16-eb10-579e-8560-4a9242c79595"
+Chairmarks = "0ca39b1e-fe0b-4e98-acfc-b1656634c4de"
 Documenter = "e30172f5-a6a5-5a46-863b-614d45cd2de4"
+JET = "c3a54625-cd67-489e-a8e7-0a5a0ff4e31b"
 Test = "8dfed614-e22c-5e08-85e1-65c5234f0b40"
 
 [targets]
-test = ["Test", "Documenter"]
+test = ["Aqua", "Chairmarks", "Documenter", "JET", "Test"]

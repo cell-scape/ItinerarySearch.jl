@@ -50,8 +50,9 @@ export pack_date, unpack_date
 export StationStats, BuildStats, SearchStats, MCTSelectionRow
 export merge_build_stats!, merge_station_stats!
 
-# Exports — graph stubs (Subsystem 2)
-export GraphStation, GraphSegment, GraphConnection
+# Exports — graph types (Subsystem 2)
+export GraphStation, GraphLeg, GraphSegment, GraphConnection, Itinerary
+export nonstop_connection
 
 # Exports — config
 export SearchConfig, load_config
