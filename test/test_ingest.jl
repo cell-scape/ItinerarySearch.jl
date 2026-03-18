@@ -123,3 +123,55 @@ end
         rm(path)
     end
 end
+
+function make_test_mct()::String
+    # Type 1: Header (200 bytes)
+    t1 = rpad("1MINIMUM CONNECT TIME DATA SET", 194) * "000001"
+
+    # Type 2: MCT record (200 bytes)
+    # Station standard at ORD: 90 min II
+    t2_fields = "2"                       # 1: record type
+    t2_fields *= "ORD"                    # 2-4: arrival station
+    t2_fields *= "0130"                   # 5-8: time HHMM (90 min)
+    t2_fields *= "II"                     # 9-10: status
+    t2_fields *= "ORD"                    # 11-13: departure station
+    t2_fields *= rpad("", 81)             # 14-94: carrier/equipment/geographic/dates fields
+    t2_fields *= "  "                     # 95-96: submitting carrier
+    t2 = rpad(t2_fields, 194) * "000002"
+
+    # Another MCT: exception at ORD for UA arrivals
+    t3_fields = "2"
+    t3_fields *= "ORD"                    # arr station
+    t3_fields *= "0045"                   # 45 min
+    t3_fields *= "DD"                     # status
+    t3_fields *= "ORD"                    # dep station
+    t3_fields *= "UA"                     # 14-15: arr carrier
+    t3_fields *= rpad("", 79)             # 16-94
+    t3_fields *= "UA"                     # 95-96: submitting carrier
+    t3 = rpad(t3_fields, 194) * "000003"
+
+    join([t1, t2, t3], "\n") * "\n"
+end
+
+@testset "MCT Ingest" begin
+    path = tempname()
+    write(path, make_test_mct())
+
+    store = DuckDBStore()
+    ingest_mct!(store, path)
+
+    stats = table_stats(store)
+    @test stats.mct == 2
+
+    # Verify MCT data
+    result = DBInterface.execute(store.db, "SELECT * FROM mct ORDER BY mct_id")
+    rows = collect(result)
+    @test length(rows) == 2
+    @test rows[1].time_minutes == 90
+    @test strip(String(rows[1].mct_status)) == "II"
+    @test rows[2].time_minutes == 45
+    @test strip(String(rows[2].mct_status)) == "DD"
+
+    close(store)
+    rm(path)
+end
