@@ -50,9 +50,9 @@ if stn !== nothing
 end
 
 # Market distance
-d = query_market_distance(store, StationCode("ORD"), StationCode("LHR"))
-if d !== nothing
-    println("ORD↔LHR market distance: $(round(d; digits=1)) miles")
+mkt_dist = query_market_distance(store, StationCode("ORD"), StationCode("LHR"))
+if mkt_dist !== nothing
+    println("ORD↔LHR market distance: $(round(mkt_dist; digits=1)) miles")
 end
 
 # Show config
@@ -66,84 +66,85 @@ println("  Circuity factor: $(config.circuity_factor)")
 println("  Scope: $(config.scope)")
 println("  Interline: $(config.interline)")
 
-# ── Graph Engine ───────────────────────────────────────────────────────────────
+# ── Sample run: 10 random ODs × 3 days ───────────────────────────────────────
 
-println("\n" * "="^50)
-println("Graph Engine")
-println("="^50)
+using Random
+Random.seed!(42)
 
-# Build the flight graph — use a date within the demo data range
-target = Date(2026, 3, 20)
-println("\nBuilding graph for $(target)...")
-graph = build_graph!(store, config, target)
+outdir = config.graph_export_path
+mkpath(outdir)
 
-println("\nGraph Statistics:")
-println("  Stations:    $(length(graph.stations))")
-println("  Legs:        $(length(graph.legs))")
-println("  Segments:    $(length(graph.segments))")
-total_cnx = sum(stn.stats.num_connections for (_, stn) in graph.stations; init = Int32(0))
-println("  Connections: $(total_cnx)")
-println("  Build time:  $(round(graph.build_stats.build_time_ns / 1.0e6; digits=1)) ms")
-println("  Window:      $(graph.window_start) – $(graph.window_end)")
+start_date = Date(2026, 3, 18)
+n_days = 3
 
-# ── Itinerary Search ───────────────────────────────────────────────────────────
+# Build graph once for first date to pick OD pairs from available stations
+first_graph = build_graph!(store, config, start_date)
+all_stations = collect(keys(first_graph.stations))
 
-println("\n" * "="^50)
-println("Itinerary Search")
-println("="^50)
+# Pick 10 random OD pairs from stations with departures
+active = [s for s in all_stations if !isempty(first_graph.stations[s].departures)]
+od_pairs = Tuple{StationCode,StationCode}[]
+while length(od_pairs) < 10 && length(active) >= 2
+    o = rand(active)
+    d = rand(active)
+    o == d && continue
+    (o, d) in od_pairs && continue
+    push!(od_pairs, (o, d))
+end
 
-station_codes = collect(keys(graph.stations))
-if length(station_codes) >= 2
-    # Try ORD→LHR if both stations are present; otherwise use first/last in key list
-    origin = StationCode("ORD") in station_codes ? StationCode("ORD") : station_codes[1]
-    dest   = StationCode("LHR") in station_codes ? StationCode("LHR") : station_codes[end]
+println("\nSelected OD pairs:")
+for (o, d) in od_pairs
+    println("  $(o) → $(d)")
+end
 
-    println("\nSearching $(origin) → $(dest) on $(target)...")
+for day_offset in 0:(n_days - 1)
+    target = start_date + Day(day_offset)
+    t_day = time()
+    println("\n" * "="^50)
+    println("[$(target)] Building graph...")
 
+    graph = build_graph!(store, config, target)
+    build_ms = round(graph.build_stats.build_time_ns / 1.0e6; digits=0)
+    println("[$(target)] $(length(graph.stations)) stations, $(length(graph.legs)) legs, built in $(build_ms)ms")
+
+    # Write legs operating on this date
+    legs_file = joinpath(outdir, "legs_$(target).psv")
+    n_legs = open(legs_file, "w") do io
+        write_legs(io, graph, target)
+    end
+    println("[$(target)] $(n_legs) legs → $(legs_file)")
+
+    # Search selected OD pairs
     ctx = RuntimeContext(
         config = config,
         constraints = SearchConstraints(),
         itn_rules = build_itn_rules(config),
     )
 
-    itineraries = copy(search_itineraries(graph.stations, origin, dest, target, ctx))
+    itns_file = joinpath(outdir, "itineraries_$(target).psv")
+    total_itns = 0
+    total_rows = 0
+    open(itns_file, "w") do io
+        write_itineraries(io, Itinerary[], graph, target; header=true)
 
-    println("Found $(length(itineraries)) itineraries")
+        for (origin, dest) in od_pairs
+            t0 = time()
+            itineraries = search_itineraries(graph.stations, origin, dest, target, ctx)
+            dt = round(time() - t0; digits=2)
 
-    if !isempty(itineraries)
-        # Show first few itineraries via Base.show
-        n_show = min(5, length(itineraries))
-        println("\nTop $(n_show) itineraries:")
-        for i in 1:n_show
-            println("  $(i). $(itineraries[i])")
+            if !isempty(itineraries)
+                n = write_itineraries(io, copy(itineraries), graph, target; header=false)
+                total_itns += length(itineraries)
+                total_rows += n
+                println("[$(target)]   $(origin)→$(dest): $(length(itineraries)) itineraries ($(n) rows) in $(dt)s")
+            else
+                println("[$(target)]   $(origin)→$(dest): no results ($(dt)s)")
+            end
         end
-
-        # Wide format summary
-        wide = itinerary_wide_format(itineraries)
-        println("\nWide format (first $(n_show) rows):")
-        for i in 1:n_show
-            w = wide[i]
-            println(
-                "  $(i). $(w.flights)" *
-                " | $(w.num_stops) stops" *
-                " | $(w.elapsed_time) min" *
-                " | $(round(w.total_distance; digits=0)) mi" *
-                " | circ=$(round(w.circuity; digits=2))",
-            )
-        end
-
-        # Long format summary
-        long_rows = itinerary_long_format(itineraries)
-        println("\nLong format: $(length(long_rows)) total leg rows across $(length(itineraries)) itineraries")
     end
 
-    # Search stats
-    println("\nSearch Statistics:")
-    println("  Paths found:    $(ctx.search_stats.paths_found)")
-    println("  Paths rejected: $(ctx.search_stats.paths_rejected)")
-    println("  By stops (0,1,2,3+): $(ctx.search_stats.paths_by_stops[1:4])")
-else
-    println("\nNot enough stations for search demo (need >= 2, have $(length(station_codes)))")
+    day_elapsed = round(time() - t_day; digits=1)
+    println("[$(target)] Total: $(total_itns) itineraries, $(total_rows) rows → $(itns_file) ($(day_elapsed)s)")
 end
 
 close(store)

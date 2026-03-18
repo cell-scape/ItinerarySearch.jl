@@ -82,9 +82,9 @@ SSIM schedule. Dropping `leg_seq` gives the **Segment Identifier**.
     # ── Codeshare / Operating Carrier (from DEI supplements) ──
     codeshare_airline::AirlineCode  # DEI 50
     codeshare_flt_no::FlightNumber  # DEI 50
-    dei_10::InlineString31          # DEI 10: commercial duplicate list
+    dei_10::String                  # DEI 10: commercial duplicate list (variable length)
     wet_lease::Bool                 # byte 149: 'Z' or 'S'
-    dei_127::InlineString31         # DEI 127: operating airline disclosure
+    dei_127::String                 # DEI 127: operating airline disclosure (variable length)
 
     # ── Booking ──
     prbd::InlineString31            # bytes 76-95

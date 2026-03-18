@@ -81,9 +81,9 @@ using Dates
             distance=Distance(distance),
             codeshare_airline=AirlineCode(codeshare_airline),
             codeshare_flt_no=Int16(0),
-            dei_10=InlineString31(""),
+            dei_10="",
             wet_lease=wet_lease,
-            dei_127=InlineString31(""),
+            dei_127="",
             prbd=InlineString31(""),
         )
     end

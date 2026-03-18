@@ -120,5 +120,6 @@ export FlightGraph, build_graph!, search
 
 # Exports — output formats
 export itinerary_long_format, itinerary_wide_format
+export write_legs, write_itineraries
 
 end # module

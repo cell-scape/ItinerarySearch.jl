@@ -170,8 +170,8 @@ using Dates
         # DEI join is not performed at schedule level
         @test r.codeshare_airline == AirlineCode("")
         @test r.codeshare_flt_no == Int16(0)
-        @test r.dei_10 == InlineString31("")
-        @test r.dei_127 == InlineString31("")
+        @test r.dei_10 == ""
+        @test r.dei_127 == ""
 
         close(store)
         rm(path)

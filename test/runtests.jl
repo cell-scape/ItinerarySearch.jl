@@ -115,8 +115,8 @@ using Dates
 
     @testset "Record Types" begin
         @testset "LegRecord" begin
-            # Must be isbits for arena allocation and DuckDB column storage
-            @test isbitstype(LegRecord)
+            # dei_10/dei_127 are String (variable-length), so LegRecord is not isbits
+            @test !isbitstype(LegRecord)
             # Fieldcount matches spec
             @test fieldcount(LegRecord) == 41
 
@@ -159,9 +159,9 @@ using Dates
                 distance = Float32(3941.0),
                 codeshare_airline = AirlineCode(""),
                 codeshare_flt_no = Int16(0),
-                dei_10 = InlineString31(""),
+                dei_10 = "",
                 wet_lease = false,
-                dei_127 = InlineString31(""),
+                dei_127 = "",
                 prbd = InlineString31("JCDZPY"),
             )
             @test leg.airline == AirlineCode("UA")
@@ -197,8 +197,8 @@ using Dates
                 segment_hash = UInt64(0), distance = Float32(0),
                 codeshare_airline = AirlineCode(""),
                 codeshare_flt_no = Int16(0),
-                dei_10 = InlineString31(""), wet_lease = false,
-                dei_127 = InlineString31(""),
+                dei_10 = "", wet_lease = false,
+                dei_127 = "",
                 prbd = InlineString31(""),
             )
             @test flight_id(leg) == "UA 354"

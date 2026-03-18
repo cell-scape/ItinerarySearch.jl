@@ -686,9 +686,9 @@ function _row_to_leg(r)::LegRecord
         distance             = Float32(_safe_missing(r.distance, 0.0)),
         codeshare_airline    = AirlineCode(_safe_string(hasproperty(r, :codeshare_airline) ? r.codeshare_airline : nothing)),
         codeshare_flt_no     = Int16(_safe_missing(hasproperty(r, :codeshare_flt_no) ? r.codeshare_flt_no : nothing, 0)),
-        dei_10               = InlineString31(_safe_string(hasproperty(r, :dei_10) ? r.dei_10 : nothing)),
+        dei_10               = _safe_string(hasproperty(r, :dei_10) ? r.dei_10 : nothing),
         wet_lease            = Bool(_safe_missing(r.wet_lease, false)),
-        dei_127              = InlineString31(_safe_string(hasproperty(r, :dei_127) ? r.dei_127 : nothing)),
+        dei_127              = _safe_string(hasproperty(r, :dei_127) ? r.dei_127 : nothing),
         prbd                 = InlineString31(_safe_string(r.prbd)),
     )
 end

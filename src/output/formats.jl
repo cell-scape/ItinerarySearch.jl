@@ -282,3 +282,204 @@ function itinerary_wide_format(itineraries::Vector{Itinerary})::Vector{NamedTupl
     end
     return rows
 end
+
+# ── Delimited file export ────────────────────────────────────────────────────
+
+const _DELIM = '|'
+
+function _write_row(io::IO, vals)
+    first = true
+    for v in vals
+        first || print(io, _DELIM)
+        first = false
+        print(io, v)
+    end
+    println(io)
+end
+
+# Format minutes-since-midnight as "HH:MM"
+_format_time(m::Integer) = lpad(div(m, 60), 2, '0') * ":" * lpad(mod(m, 60), 2, '0')
+
+# Determine if this leg is an operating flight (DEI 50 absent or same carrier).
+# Also resolves aircraft_owner: defaults to airline if empty on operating legs,
+# or codeshare_airline if empty on codeshare legs.
+function _resolve_flags(r)
+    airline = strip(String(r.airline))
+    flt_no = Int(r.flt_no)
+    cs_al = strip(String(r.codeshare_airline))
+    cs_flt = Int(r.codeshare_flt_no)
+    is_operating = cs_al == "" || cs_al == airline
+    # Default codeshare fields to self when operating
+    cs_al = is_operating ? airline : cs_al
+    cs_flt = is_operating ? flt_no : cs_flt
+    owner = strip(String(r.aircraft_owner))
+    owner = owner == "" ? cs_al : owner
+    return (; is_operating, cs_al, cs_flt, owner)
+end
+
+# Non-directional market key (alphabetical order)
+_market(org, dst) = org < dst ? org * dst : dst * org
+
+# Distance in integer miles (consistent unit across all outputs)
+_miles(d::Real) = round(Int, d)
+
+# Does this leg operate on `date`?  Checks eff/disc range + frequency DOW bit.
+function _operates_on(r, date::Date)::Bool
+    eff = unpack_date(r.eff_date)
+    disc = unpack_date(r.disc_date)
+    (eff <= date <= disc) || return false
+    dow = Dates.dayofweek(date)  # 1=Mon .. 7=Sun
+    return (Int(r.frequency) & (1 << (dow - 1))) != 0
+end
+
+"""
+    `function write_legs(io::IO, graph::FlightGraph, date::Date)::Int`
+---
+
+# Description
+- Write all valid legs in the graph to a pipe-delimited file
+- Includes both operating and codeshare (commercial duplicate) legs
+- `is_operating` = true when this is the physical flight; false for codeshare
+- Codeshare legs have `codeshare_airline`/`codeshare_flt_no` pointing to the
+  operating carrier (from DEI 50); on operating legs these fields are empty
+
+# Arguments
+1. `io::IO`: output stream
+2. `graph::FlightGraph`: built flight graph
+3. `date::Date`: target operating date (legs not operating on this date are skipped)
+
+# Returns
+- `::Int`: number of rows written
+"""
+function write_legs(io::IO, graph::FlightGraph, date::Date)::Int
+    _write_row(io, [
+        "record_serial", "row_number",
+        "airline", "flt_no", "operational_suffix", "itin_var", "leg_seq", "svc_type",
+        "codeshare_airline", "codeshare_flt_no", "is_operating",
+        "org", "dst", "market",
+        "dep_date", "dep_time", "arr_time", "arr_date_var",
+        "eqp", "body_type", "dep_term", "arr_term",
+        "distance_miles",
+        "mct_status_dep", "mct_status_arr",
+        "dei_10", "dei_127", "wet_lease", "aircraft_owner",
+    ])
+
+    n = 0
+    for leg in values(graph.legs)
+        r = leg.record
+        _operates_on(r, date) || continue
+        flags = _resolve_flags(r)
+        org = strip(String(r.org))
+        dst = strip(String(r.dst))
+
+        _write_row(io, [
+            Int(r.record_serial), Int(r.row_number),
+            strip(String(r.airline)), Int(r.flt_no), r.operational_suffix,
+            Int(r.itin_var), Int(r.leg_seq), r.svc_type,
+            flags.cs_al, flags.cs_flt, flags.is_operating,
+            org, dst, _market(org, dst),
+            date, _format_time(r.ac_dep), _format_time(r.ac_arr), Int(r.arr_date_var),
+            String(r.eqp), r.body_type, strip(String(r.dep_term)), strip(String(r.arr_term)),
+            _miles(r.distance),
+            r.mct_status_dep, r.mct_status_arr,
+            strip(r.dei_10), strip(r.dei_127), r.wet_lease, flags.owner,
+        ])
+        n += 1
+    end
+    return n
+end
+
+"""
+    `function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::FlightGraph, date::Date)::Int`
+---
+
+# Description
+- Write itineraries to a pipe-delimited file (one row per leg per itinerary)
+- `is_operating` = true for operating legs; codeshare legs reference the
+  operating flight via `codeshare_airline`/`codeshare_flt_no` (DEI 50)
+- `cnx_type`: L = single-leg nonstop, S = through-segment, C = connection
+
+# Arguments
+1. `io::IO`: output stream
+2. `itineraries::Vector{Itinerary}`: search results
+3. `graph::FlightGraph`: built flight graph
+
+# Returns
+- `::Int`: number of rows written
+"""
+function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::FlightGraph, date::Date; header::Bool=true)::Int
+    if header
+        _write_row(io, [
+            "itinerary_id", "leg_seq",
+            "record_serial", "row_number",
+            "airline", "flt_no", "operational_suffix", "itin_var", "leg_seq_ssim", "svc_type",
+            "codeshare_airline", "codeshare_flt_no", "is_operating",
+            "org", "dst", "market",
+            "dep_date", "dep_time", "arr_time", "arr_date_var",
+            "eqp", "body_type", "dep_term", "arr_term",
+            "distance_miles",
+            "dei_10", "dei_127", "wet_lease", "aircraft_owner",
+            "cnx_type", "cnx_time", "mct",
+            "num_stops", "elapsed_time",
+            "total_distance_miles", "market_distance_miles", "circuity",
+            "is_international", "has_interline", "has_codeshare",
+        ])
+    end
+
+    n = 0
+    for (itn_idx, itn) in enumerate(itineraries)
+        # Flatten connections into a leg list with inbound connection metadata
+        legs_out = Tuple{GraphLeg, String, Int, Int}[]  # (leg, cnx_type, cnx_time, mct)
+        n_cnx = length(itn.connections)
+        for (i, cp) in enumerate(itn.connections)
+            is_nonstop = cp.from_leg === cp.to_leg
+            if i == 1
+                # First leg: L if nonstop itinerary, C/S if connecting
+                ct = is_nonstop && n_cnx == 1 ? "L" : (cp.is_through ? "S" : "C")
+                push!(legs_out, (cp.from_leg, ct, 0, 0))
+            else
+                ct = cp.is_through ? "S" : "C"
+                push!(legs_out, (cp.from_leg, ct, Int(cp.cnx_time), Int(cp.mct)))
+            end
+            # Final arriving leg of a connecting itinerary
+            if i == n_cnx && !is_nonstop
+                push!(legs_out, (cp.to_leg, "C", Int(cp.cnx_time), Int(cp.mct)))
+            end
+        end
+
+        for (seq, (leg, cnx_type, cnx_time, mct_val)) in enumerate(legs_out)
+            n += _write_itn_leg_row(io, itn_idx, seq, leg, cnx_type, cnx_time, mct_val, itn, date)
+        end
+    end
+    return n
+end
+
+function _write_itn_leg_row(io::IO, itn_idx, leg_seq, leg::GraphLeg,
+                            cnx_type::String, cnx_time::Int, mct_val::Int,
+                            itn, date::Date)::Int
+    r = leg.record
+    flags = _resolve_flags(r)
+    org = strip(String(r.org))
+    dst = strip(String(r.dst))
+
+    _write_row(io, [
+        itn_idx, leg_seq,
+        Int(r.record_serial), Int(r.row_number),
+        strip(String(r.airline)), Int(r.flt_no), r.operational_suffix,
+        Int(r.itin_var), Int(r.leg_seq), r.svc_type,
+        strip(String(r.codeshare_airline)), Int(r.codeshare_flt_no), flags.is_operating,
+        org, dst, _market(org, dst),
+        date, _format_time(r.ac_dep), _format_time(r.ac_arr), Int(r.arr_date_var),
+        String(r.eqp), r.body_type, strip(String(r.dep_term)), strip(String(r.arr_term)),
+        _miles(r.distance),
+        strip(r.dei_10), strip(r.dei_127), r.wet_lease, flags.owner,
+        cnx_type, cnx_time, mct_val,
+        Int(itn.num_stops), Int(itn.elapsed_time),
+        _miles(itn.total_distance), _miles(itn.market_distance),
+        round(Float64(itn.circuity); digits=2),
+        is_international(itn.status),
+        is_interline(itn.status),
+        is_codeshare(itn.status),
+    ])
+    return 1
+end

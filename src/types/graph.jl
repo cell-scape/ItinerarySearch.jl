@@ -63,9 +63,9 @@ const _ZERO_LEG_RECORD = LegRecord(
     distance=Distance(0),
     codeshare_airline=AirlineCode(""),
     codeshare_flt_no=FlightNumber(0),
-    dei_10=InlineString31(""),
+    dei_10="",
     wet_lease=false,
-    dei_127=InlineString31(""),
+    dei_127="",
     prbd=InlineString31(""),
 )
 

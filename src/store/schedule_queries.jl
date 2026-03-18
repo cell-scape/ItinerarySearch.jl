@@ -57,12 +57,11 @@ function _row_to_schedule_leg(r)::LegRecord
         row_number           = UInt64(_safe_missing(r.row_id, 0)),
         segment_hash         = UInt64(0),
         distance             = Float32(_safe_missing(r.distance, 0.0)),
-        # DEI-sourced fields are not joined at schedule level
-        codeshare_airline    = AirlineCode(""),
-        codeshare_flt_no     = Int16(0),
-        dei_10               = InlineString31(""),
+        codeshare_airline    = AirlineCode(_safe_string(hasproperty(r, :codeshare_airline) ? r.codeshare_airline : nothing)),
+        codeshare_flt_no     = Int16(_safe_missing(hasproperty(r, :codeshare_flt_no) ? r.codeshare_flt_no : nothing, 0)),
+        dei_10               = _safe_string(hasproperty(r, :dei_10) ? r.dei_10 : nothing),
         wet_lease            = Bool(_safe_missing(r.wet_lease, false)),
-        dei_127              = InlineString31(""),
+        dei_127              = _safe_string(hasproperty(r, :dei_127) ? r.dei_127 : nothing),
         prbd                 = InlineString31(_safe_string(r.prbd)),
     )
 end
@@ -78,7 +77,7 @@ end
 - The `operating_date` field is set to `eff_date` (representative date)
 - The `day_of_week` field is set to 0 (the `frequency` bitmask is authoritative
   at schedule level)
-- DEI codeshare fields are left empty (no DEI join at schedule level)
+- Joins DEI 50 (codeshare), DEI 10 (commercial duplicates), DEI 127 (operating disclosure)
 
 # Arguments
 1. `store::DuckDBStore`: the DuckDB-backed store
@@ -101,11 +100,18 @@ function query_schedule_legs(
     result = DBInterface.execute(
         store.db,
         """
-        SELECT *
-        FROM legs
-        WHERE eff_date <= ?
-          AND disc_date >= ?
-        ORDER BY row_id
+        SELECT l.*,
+            TRIM(SUBSTRING(dei50.data, 1, 3)) AS codeshare_airline,
+            CAST(NULLIF(TRIM(SUBSTRING(dei50.data, 4, 4)), '') AS SMALLINT) AS codeshare_flt_no,
+            dei10.data AS dei_10,
+            dei127.data AS dei_127
+        FROM legs l
+        LEFT JOIN dei dei50  ON dei50.row_id  = l.row_id AND dei50.dei_code  = 50
+        LEFT JOIN dei dei10  ON dei10.row_id  = l.row_id AND dei10.dei_code  = 10
+        LEFT JOIN dei dei127 ON dei127.row_id = l.row_id AND dei127.dei_code = 127
+        WHERE l.eff_date <= ?
+          AND l.disc_date >= ?
+        ORDER BY l.row_id
         """,
         [window_end, window_start],
     )
