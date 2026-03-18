@@ -419,7 +419,7 @@ function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::Flight
             "eqp", "body_type", "dep_term", "arr_term",
             "distance_miles",
             "dei_10", "dei_127", "wet_lease", "aircraft_owner",
-            "cnx_type", "cnx_time", "mct",
+            "cnx_type", "cnx_time", "mct", "mct_id",
             "num_stops", "elapsed_time",
             "total_distance_miles", "market_distance_miles", "circuity",
             "is_international", "has_interline", "has_codeshare",
@@ -429,33 +429,34 @@ function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::Flight
     n = 0
     for (itn_idx, itn) in enumerate(itineraries)
         # Flatten connections into a leg list with inbound connection metadata
-        legs_out = Tuple{GraphLeg, String, Int, Int}[]  # (leg, cnx_type, cnx_time, mct)
+        legs_out = Tuple{GraphLeg, String, Int, Int, Int32}[]  # (leg, cnx_type, cnx_time, mct, mct_id)
         n_cnx = length(itn.connections)
         for (i, cp) in enumerate(itn.connections)
             is_nonstop = cp.from_leg === cp.to_leg
+            mid = cp.mct_result.mct_id
             if i == 1
                 # First leg: L if nonstop itinerary, C/S if connecting
                 ct = is_nonstop && n_cnx == 1 ? "L" : (cp.is_through ? "S" : "C")
-                push!(legs_out, (cp.from_leg, ct, 0, 0))
+                push!(legs_out, (cp.from_leg, ct, 0, 0, Int32(0)))
             else
                 ct = cp.is_through ? "S" : "C"
-                push!(legs_out, (cp.from_leg, ct, Int(cp.cnx_time), Int(cp.mct)))
+                push!(legs_out, (cp.from_leg, ct, Int(cp.cnx_time), Int(cp.mct), mid))
             end
             # Final arriving leg of a connecting itinerary
             if i == n_cnx && !is_nonstop
-                push!(legs_out, (cp.to_leg, "C", Int(cp.cnx_time), Int(cp.mct)))
+                push!(legs_out, (cp.to_leg, "C", Int(cp.cnx_time), Int(cp.mct), mid))
             end
         end
 
-        for (seq, (leg, cnx_type, cnx_time, mct_val)) in enumerate(legs_out)
-            n += _write_itn_leg_row(io, itn_idx, seq, leg, cnx_type, cnx_time, mct_val, itn, date)
+        for (seq, (leg, cnx_type, cnx_time, mct_val, mct_id)) in enumerate(legs_out)
+            n += _write_itn_leg_row(io, itn_idx, seq, leg, cnx_type, cnx_time, mct_val, mct_id, itn, date)
         end
     end
     return n
 end
 
 function _write_itn_leg_row(io::IO, itn_idx, leg_seq, leg::GraphLeg,
-                            cnx_type::String, cnx_time::Int, mct_val::Int,
+                            cnx_type::String, cnx_time::Int, mct_val::Int, mct_id::Int32,
                             itn, date::Date)::Int
     r = leg.record
     flags = _resolve_flags(r)
@@ -473,7 +474,7 @@ function _write_itn_leg_row(io::IO, itn_idx, leg_seq, leg::GraphLeg,
         String(r.eqp), r.body_type, strip(String(r.dep_term)), strip(String(r.arr_term)),
         _miles(leg.distance),
         strip(r.dei_10), strip(r.dei_127), r.wet_lease, flags.owner,
-        cnx_type, cnx_time, mct_val,
+        cnx_type, cnx_time, mct_val, Int(mct_id),
         Int(itn.num_stops), Int(itn.elapsed_time),
         _miles(itn.total_distance), _miles(itn.market_distance),
         round(Float64(itn.circuity); digits=2),
