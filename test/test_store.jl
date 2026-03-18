@@ -179,3 +179,60 @@ end
 
     close(store)
 end
+
+@testset "Integration: Full Pipeline" begin
+    # Write synthetic SSIM and MCT to temp files
+    ssim_path = tempname()
+    mct_path = tempname()
+    airports_path = tempname()
+
+    write(ssim_path, make_test_ssim())  # from test_ingest.jl (included before this file)
+    write(mct_path, make_test_mct())    # from test_ingest.jl
+
+    write(airports_path, "ORD\tO'Hare\tChicago\tUS\tIL\t41.9742\t-87.9073\t-300\tNOA\nLHR\tHeathrow\tLondon\tGB\t\t51.4700\t-0.4543\t0\tEUR\n")
+
+    # Build config pointing to temp files
+    config = SearchConfig(
+        ssim_path = ssim_path,
+        mct_path = mct_path,
+        airports_path = airports_path,
+        regions_path = "/dev/null",
+        aircrafts_path = "/dev/null",
+        oa_control_path = "/dev/null",
+    )
+
+    # Run full pipeline
+    store = DuckDBStore()
+    load_schedule!(store, config)
+
+    # Verify all tables populated
+    stats = table_stats(store)
+    @test stats.legs > 0
+    @test stats.dei > 0
+    @test stats.stations == 2
+    @test stats.mct > 0
+    @test stats.expanded_legs > 0
+    @test stats.segments > 0
+    @test stats.markets > 0
+
+    # Query tests
+    stn = query_station(store, StationCode("ORD"))
+    @test stn !== nothing
+    @test stn.lat ≈ 41.9742
+
+    # Market distance
+    d = query_market_distance(store, StationCode("ORD"), StationCode("LHR"))
+    @test d !== nothing
+    @test d > 3000
+
+    # MCT lookup
+    mct_result = query_mct(store, AirlineCode("UA"), AirlineCode("UA"),
+                           StationCode("ORD"), MCT_II)
+    @test mct_result.time > 0
+
+    # Cleanup
+    close(store)
+    rm(ssim_path; force=true)
+    rm(mct_path; force=true)
+    rm(airports_path; force=true)
+end
