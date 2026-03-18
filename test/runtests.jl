@@ -49,6 +49,8 @@ using Dates
         @test_throws ErrorException parse_mct_status("XX")
     end
 
+    include("test_config.jl")
+
     @testset "Record Types" begin
         @testset "LegRecord" begin
             # Must be isbits for arena allocation and DuckDB column storage

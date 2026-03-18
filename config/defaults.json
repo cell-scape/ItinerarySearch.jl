@@ -1,0 +1,36 @@
+{
+  "store": {
+    "backend": "duckdb",
+    "path": ":memory:"
+  },
+  "data": {
+    "ssim": "data/demo/ssim_demo.dat.zst",
+    "mct": "data/demo/mct_demo.dat.zst",
+    "airports": "data/demo/airports.txt",
+    "regions": "data/demo/regions.dat",
+    "aircrafts": "data/demo/aircrafts.txt",
+    "seats": "data/demo/seats.dat",
+    "classmap": "data/demo/classmap.txt",
+    "serviceclass": "data/demo/serviceclass.dat",
+    "oa_control": "data/demo/oa_control.csv"
+  },
+  "search": {
+    "max_stops": 2,
+    "max_connection_minutes": 480,
+    "max_elapsed_minutes": 1440,
+    "circuity_factor": 2.5,
+    "circuity_extra_miles": 500.0,
+    "scope": "all",
+    "interline": "codeshare"
+  },
+  "schedule": {
+    "max_days": 1,
+    "trailing_days": 0
+  },
+  "output": {
+    "format": "json",
+    "compression": "zstd",
+    "include_flight_id": true,
+    "include_dei_fields": true
+  }
+}

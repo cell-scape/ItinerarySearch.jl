@@ -8,6 +8,7 @@ using CEnum
 include("types/aliases.jl")
 include("types/enums.jl")
 include("types/records.jl")
+include("config.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
@@ -24,5 +25,8 @@ export parse_mct_status, MCT_DEFAULTS
 export LegRecord, StationRecord, MCTResult, SegmentRecord
 export flight_id, segment_id, full_id
 export pack_date, unpack_date
+
+# Exports — config
+export SearchConfig, load_config
 
 end # module
