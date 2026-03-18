@@ -58,6 +58,7 @@ using Dates
     include("test_compression.jl")
     include("test_ingest.jl")
     include("test_store.jl")
+    include("test_schedule_queries.jl")
 
     @testset "SSIM Parsing Helpers" begin
         using ItinerarySearch: parse_ddmonyy, parse_hhmm, parse_frequency_bitmask
@@ -278,5 +279,7 @@ using Dates
         @test hasmethod(query_segment, Tuple{AbstractStore, UInt64})
         @test hasmethod(query_segment_stops, Tuple{AbstractStore, UInt64})
         @test hasmethod(table_stats, Tuple{AbstractStore})
+        @test hasmethod(query_schedule_legs, Tuple{AbstractStore, Date, Date})
+        @test hasmethod(query_schedule_segments, Tuple{AbstractStore, Date, Date})
     end
 end

@@ -219,3 +219,45 @@ end
 function table_stats(store::AbstractStore)
     error("table_stats not implemented for $(typeof(store))")
 end
+
+"""
+    `query_schedule_legs(store::AbstractStore, window_start::Date, window_end::Date)`
+---
+
+# Description
+- Return all schedule-level leg records whose effective period overlaps the window
+- Returns one record per schedule entry (unexpanded), not per operating date
+- `operating_date` is set to `eff_date`; `day_of_week` is 0 (use `frequency`)
+
+# Arguments
+1. `store::AbstractStore`: the backend
+2. `window_start::Date`: start of the search window (inclusive)
+3. `window_end::Date`: end of the search window (inclusive)
+
+# Returns
+- `::Vector{LegRecord}`: one record per schedule entry active during the window
+"""
+function query_schedule_legs(store::AbstractStore, window_start::Date, window_end::Date)
+    error("query_schedule_legs not implemented for $(typeof(store))")
+end
+
+"""
+    `query_schedule_segments(store::AbstractStore, window_start::Date, window_end::Date)`
+---
+
+# Description
+- Return schedule-level segment aggregates, grouped by segment identity without
+  expanding by operating date
+- Returns one record per unique segment active during the window
+
+# Arguments
+1. `store::AbstractStore`: the backend
+2. `window_start::Date`: start of the search window (inclusive)
+3. `window_end::Date`: end of the search window (inclusive)
+
+# Returns
+- `::Vector{SegmentRecord}`: one record per unique schedule segment in the window
+"""
+function query_schedule_segments(store::AbstractStore, window_start::Date, window_end::Date)
+    error("query_schedule_segments not implemented for $(typeof(store))")
+end
