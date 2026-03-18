@@ -23,6 +23,7 @@ include("ingest/ssim.jl")
 include("ingest/mct.jl")
 include("ingest/reference.jl")
 include("graph/mct_lookup.jl")
+include("graph/rules_cnx.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
@@ -85,5 +86,14 @@ export MCT_BIT_PRV_STN, MCT_BIT_NXT_STN
 export MCT_BIT_PRV_COUNTRY, MCT_BIT_NXT_COUNTRY
 export MCT_BIT_PRV_REGION, MCT_BIT_NXT_REGION
 export MCT_BIT_DEP_BODY, MCT_BIT_ARR_BODY
+
+# Exports — graph: connection rules
+export check_cnx_roundtrip, check_cnx_scope, check_cnx_interline
+export check_cnx_opdays, check_cnx_suppcodes, check_cnx_trfrest
+export MCTRule, MAFTRule, CircuityRule
+export build_cnx_rules
+export PASS, FAIL_ROUNDTRIP, FAIL_SCOPE, FAIL_ONLINE, FAIL_CODESHARE, FAIL_INTERLINE
+export FAIL_TIME_MIN, FAIL_TIME_MAX, FAIL_OPDAYS, FAIL_SUPPCODE
+export FAIL_MAFT, FAIL_CIRCUITY, FAIL_TRFREST
 
 end # module
