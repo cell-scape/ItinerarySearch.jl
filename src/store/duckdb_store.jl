@@ -357,3 +357,177 @@ function table_stats(store::DuckDBStore)
         markets      = _count("markets"),
     )
 end
+
+"""
+    `post_ingest_sql!(store::DuckDBStore)::Nothing`
+---
+
+# Description
+- Run the full post-ingest SQL pipeline after schedule data has been loaded
+- Steps: EDF expansion, codeshare resolution view, segments table,
+  spatial extension load, markets table (NDOD distances), segment circuity
+  precomputation, and indexes
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store (must have legs and stations populated)
+
+# Returns
+- `::Nothing`
+"""
+function post_ingest_sql!(store::DuckDBStore)::Nothing
+    @info "Post-ingest: expanding schedule (EDF)..."
+    _expand_schedule!(store)
+
+    @info "Post-ingest: creating codeshare view..."
+    _create_codeshare_view!(store)
+
+    @info "Post-ingest: building segments..."
+    _build_segments!(store)
+
+    @info "Post-ingest: computing market distances..."
+    _build_markets!(store)
+
+    @info "Post-ingest: computing segment circuity..."
+    _compute_circuity!(store)
+
+    @info "Post-ingest: creating indexes..."
+    _create_indexes!(store)
+
+    @info "Post-ingest complete." stats=table_stats(store)
+    nothing
+end
+
+function _expand_schedule!(store::DuckDBStore)
+    _exec(store, "DROP TABLE IF EXISTS expanded_legs")
+    _exec(store, """
+    CREATE TABLE expanded_legs AS
+    SELECT l.*, d.operating_date,
+           EXTRACT(ISODOW FROM d.operating_date)::INT AS day_of_week
+    FROM legs l
+    CROSS JOIN LATERAL generate_series(l.eff_date, l.disc_date, INTERVAL 1 DAY) AS d(operating_date)
+    WHERE l.frequency & (1 << ((EXTRACT(ISODOW FROM d.operating_date) - 1)::INT)) != 0
+    """)
+end
+
+function _create_codeshare_view!(store::DuckDBStore)
+    _exec(store, "DROP VIEW IF EXISTS legs_with_operating")
+    _exec(store, """
+    CREATE VIEW legs_with_operating AS
+    SELECT l.*,
+        TRIM(SUBSTRING(dei50.data, 1, 3)) AS codeshare_airline,
+        CAST(NULLIF(TRIM(SUBSTRING(dei50.data, 4, 4)), '') AS SMALLINT) AS codeshare_flt_no,
+        dei10.data AS dei_10,
+        dei127.data AS dei_127
+    FROM expanded_legs l
+    LEFT JOIN dei dei50  ON dei50.row_id = l.row_id AND dei50.dei_code = 50
+    LEFT JOIN dei dei10  ON dei10.row_id = l.row_id AND dei10.dei_code = 10
+    LEFT JOIN dei dei127 ON dei127.row_id = l.row_id AND dei127.dei_code = 127
+    """)
+end
+
+function _build_segments!(store::DuckDBStore)
+    _exec(store, "DROP TABLE IF EXISTS segments")
+    _exec(store, """
+    CREATE TABLE segments AS
+    SELECT
+        hash(airline || CAST(flt_no AS VARCHAR) || op_suffix
+             || CAST(itin_var AS VARCHAR) || itin_var_overflow
+             || svc_type || CAST(operating_date AS VARCHAR)) AS segment_hash,
+        airline, flt_no, op_suffix, itin_var, itin_var_overflow, svc_type,
+        operating_date,
+        FIRST(leg_seq ORDER BY leg_seq) AS first_leg_seq,
+        LAST(leg_seq ORDER BY leg_seq) AS last_leg_seq,
+        CAST(COUNT(*) AS INTEGER) AS num_legs,
+        FIRST(org ORDER BY leg_seq) AS segment_org,
+        LAST(dst ORDER BY leg_seq) AS segment_dst,
+        COALESCE(SUM(distance), 0) AS flown_distance,
+        FIRST(pax_dep_mins ORDER BY leg_seq) AS segment_pax_dep,
+        LAST(pax_arr_mins ORDER BY leg_seq) AS segment_pax_arr,
+        FIRST(ac_dep_mins ORDER BY leg_seq) AS segment_ac_dep,
+        LAST(ac_arr_mins ORDER BY leg_seq) AS segment_ac_arr,
+        STRING_AGG(trc, '|' ORDER BY leg_seq) AS trc_by_leg,
+        LIST(org ORDER BY leg_seq) AS board_points,
+        LIST(dst ORDER BY leg_seq) AS off_points
+    FROM expanded_legs
+    GROUP BY airline, flt_no, op_suffix, itin_var, itin_var_overflow, svc_type, operating_date
+    """)
+end
+
+function _build_markets!(store::DuckDBStore)
+    # Install spatial extension for ST_Distance_Sphere
+    try
+        _exec(store, "INSTALL spatial")
+    catch
+        # May already be installed
+    end
+    _exec(store, "LOAD spatial")
+
+    _exec(store, "DROP TABLE IF EXISTS markets")
+    _exec(store, """
+    CREATE TABLE markets AS
+    WITH active_markets AS (
+        SELECT DISTINCT
+            LEAST(segment_org, segment_dst) AS stn_a,
+            GREATEST(segment_org, segment_dst) AS stn_b
+        FROM segments
+
+        UNION
+
+        SELECT DISTINCT
+            LEAST(a.org, b.dst) AS stn_a,
+            GREATEST(a.org, b.dst) AS stn_b
+        FROM expanded_legs a
+        JOIN expanded_legs b
+            ON  a.airline = b.airline
+            AND a.flt_no = b.flt_no
+            AND a.op_suffix = b.op_suffix
+            AND a.itin_var = b.itin_var
+            AND a.itin_var_overflow = b.itin_var_overflow
+            AND a.svc_type = b.svc_type
+            AND a.operating_date = b.operating_date
+            AND a.leg_seq < b.leg_seq
+        WHERE a.org != b.dst
+    )
+    SELECT
+        m.stn_a,
+        m.stn_b,
+        m.stn_a || m.stn_b AS ndod,
+        ST_Distance_Sphere(
+            ST_Point(sa.lng, sa.lat),
+            ST_Point(sb.lng, sb.lat)
+        ) / 1609.344 AS distance_miles,
+        ST_Distance_Sphere(
+            ST_Point(sa.lng, sa.lat),
+            ST_Point(sb.lng, sb.lat)
+        ) / 1852.0 AS distance_nm
+    FROM active_markets m
+    JOIN stations sa ON sa.code = m.stn_a
+    JOIN stations sb ON sb.code = m.stn_b
+    """)
+end
+
+function _compute_circuity!(store::DuckDBStore)
+    _exec(store, "ALTER TABLE segments ADD COLUMN IF NOT EXISTS market_distance FLOAT")
+    _exec(store, "ALTER TABLE segments ADD COLUMN IF NOT EXISTS segment_circuity FLOAT")
+
+    _exec(store, """
+    UPDATE segments s
+    SET market_distance = m.distance_miles,
+        segment_circuity = s.flown_distance / NULLIF(m.distance_miles, 0)
+    FROM markets m
+    WHERE m.stn_a = LEAST(s.segment_org, s.segment_dst)
+      AND m.stn_b = GREATEST(s.segment_org, s.segment_dst)
+    """)
+end
+
+function _create_indexes!(store::DuckDBStore)
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_expanded_org_date ON expanded_legs (org, operating_date)")
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_expanded_dst_date ON expanded_legs (dst, operating_date)")
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_segments_hash ON segments (segment_hash)")
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_segments_org_date ON segments (segment_org, operating_date)")
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_segments_dst_date ON segments (segment_dst, operating_date)")
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_markets_ndod ON markets (ndod)")
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_markets_stn_a ON markets (stn_a)")
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_markets_stn_b ON markets (stn_b)")
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_dei_row_id ON dei (row_id)")
+end

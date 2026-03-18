@@ -47,5 +47,6 @@ export AbstractStore, JuliaStore, DuckDBStore
 export load_schedule!, query_legs, query_station, query_mct
 export get_departures, get_arrivals
 export query_market_distance, query_segment, query_segment_stops, table_stats
+export post_ingest_sql!
 
 end # module
