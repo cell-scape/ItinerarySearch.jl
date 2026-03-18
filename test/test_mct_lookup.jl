@@ -206,4 +206,101 @@
         @test lookup_mct(lookup, AirlineCode("UA"), AirlineCode("AA"),
                          StationCode("ORD"), MCT_II).time == Minutes(120)
     end
+
+    @testset "mct_id propagation" begin
+        # Global default (no station records) → mct_id == 0
+        lookup_empty = MCTLookup()
+        result_global = lookup_mct(
+            lookup_empty, AirlineCode("UA"), AirlineCode("AA"),
+            StationCode("ORD"), MCT_DD,
+        )
+        @test result_global.mct_id == Int32(0)
+        @test result_global.source == SOURCE_GLOBAL_DEFAULT
+
+        # Station has records but none match → falls through to global default → mct_id == 0
+        exc_rec_dl = MCTRecord(
+            time        = Minutes(30),
+            arr_carrier = AirlineCode("DL"),
+            specified   = MCT_BIT_ARR_CARRIER,
+            specificity = UInt32(1 << 23),
+            mct_id      = Int32(42),
+        )
+        lookup_no_match = MCTLookup(
+            stations = Dict(
+                StationCode("ORD") => (
+                    [exc_rec_dl], MCTRecord[], MCTRecord[], MCTRecord[],
+                ),
+            ),
+        )
+        result_fallback = lookup_mct(
+            lookup_no_match, AirlineCode("UA"), AirlineCode("AA"),
+            StationCode("ORD"), MCT_DD,
+        )
+        @test result_fallback.mct_id == Int32(0)
+        @test result_fallback.source == SOURCE_GLOBAL_DEFAULT
+
+        # Exception match → mct_id propagated from MCTRecord
+        exc_rec_ua = MCTRecord(
+            time        = Minutes(25),
+            arr_carrier = AirlineCode("UA"),
+            specified   = MCT_BIT_ARR_CARRIER,
+            specificity = UInt32(1 << 23),
+            mct_id      = Int32(99),
+        )
+        lookup_hit = MCTLookup(
+            stations = Dict(
+                StationCode("ORD") => (
+                    [exc_rec_ua], MCTRecord[], MCTRecord[], MCTRecord[],
+                ),
+            ),
+        )
+        result_exc = lookup_mct(
+            lookup_hit, AirlineCode("UA"), AirlineCode("AA"),
+            StationCode("ORD"), MCT_DD,
+        )
+        @test result_exc.mct_id == Int32(99)
+        @test result_exc.source == SOURCE_EXCEPTION
+
+        # Station standard match → mct_id propagated
+        std_rec = MCTRecord(
+            time             = Minutes(45),
+            station_standard = true,
+            mct_id           = Int32(7),
+        )
+        lookup_std = MCTLookup(
+            stations = Dict(
+                StationCode("ORD") => (
+                    [std_rec], MCTRecord[], MCTRecord[], MCTRecord[],
+                ),
+            ),
+        )
+        result_std = lookup_mct(
+            lookup_std, AirlineCode("UA"), AirlineCode("AA"),
+            StationCode("ORD"), MCT_DD,
+        )
+        @test result_std.mct_id == Int32(7)
+        @test result_std.source == SOURCE_STATION_STANDARD
+
+        # Suppression match → mct_id propagated
+        supp_rec = MCTRecord(
+            time        = Minutes(0),
+            suppressed  = true,
+            arr_carrier = AirlineCode("UA"),
+            specified   = MCT_BIT_ARR_CARRIER,
+            mct_id      = Int32(55),
+        )
+        lookup_supp = MCTLookup(
+            stations = Dict(
+                StationCode("ORD") => (
+                    [supp_rec], MCTRecord[], MCTRecord[], MCTRecord[],
+                ),
+            ),
+        )
+        result_supp = lookup_mct(
+            lookup_supp, AirlineCode("UA"), AirlineCode("AA"),
+            StationCode("ORD"), MCT_DD,
+        )
+        @test result_supp.mct_id == Int32(55)
+        @test result_supp.suppressed
+    end
 end

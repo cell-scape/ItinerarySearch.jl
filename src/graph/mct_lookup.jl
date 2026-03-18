@@ -53,6 +53,7 @@ match.  Fields not present in `specified` are wildcards and always match.
 - `suppressed::Bool` — if true this record suppresses MCT (connection not permitted)
 - `station_standard::Bool` — true for station-standard (no carrier specificity) records
 - `specificity::UInt32` — pre-sorted descending weight; higher = more specific
+- `mct_id::Int32` — primary key of the originating `mct` table row (0 = unknown/default)
 """
 @kwdef struct MCTRecord
     # Matching fields
@@ -77,6 +78,7 @@ match.  Fields not present in `specified` are wildcards and always match.
     suppressed::Bool   = false
     station_standard::Bool = false
     specificity::UInt32 = UInt32(0)    # pre-sorted descending
+    mct_id::Int32 = Int32(0)           # PK from mct table (0 = unknown/default)
 end
 
 # ── MCTLookup ─────────────────────────────────────────────────────────────────
@@ -274,6 +276,7 @@ function lookup_mct(
             suppressed     = false,
             source         = SOURCE_GLOBAL_DEFAULT,
             specificity    = UInt32(0),
+            mct_id         = Int32(0),
         )
     end
 
@@ -296,6 +299,7 @@ function lookup_mct(
             suppressed     = false,
             source         = SOURCE_EXCEPTION,
             specificity    = rec.specificity,
+            mct_id         = rec.mct_id,
         )
     end
 
@@ -313,6 +317,7 @@ function lookup_mct(
             suppressed     = true,
             source         = SOURCE_EXCEPTION,
             specificity    = rec.specificity,
+            mct_id         = rec.mct_id,
         )
     end
 
@@ -327,6 +332,7 @@ function lookup_mct(
             suppressed     = false,
             source         = SOURCE_STATION_STANDARD,
             specificity    = rec.specificity,
+            mct_id         = rec.mct_id,
         )
     end
 
@@ -338,6 +344,7 @@ function lookup_mct(
         suppressed     = false,
         source         = SOURCE_GLOBAL_DEFAULT,
         specificity    = UInt32(0),
+        mct_id         = Int32(0),
     )
 end
 
@@ -399,6 +406,8 @@ function _build_mct_record(r)::Tuple{StationCode, MCTStatus, MCTRecord}
     !isempty(arr_body_str)    && (sp |= MCT_BIT_ARR_BODY)
     !isempty(dep_body_str)    && (sp |= MCT_BIT_DEP_BODY)
 
+    mct_id_val = Int32(_safe_missing(r.mct_id, 0))
+
     rec_partial = MCTRecord(
         arr_carrier    = isempty(arr_carrier_str) ? NO_AIRLINE : AirlineCode(arr_carrier_str),
         dep_carrier    = isempty(dep_carrier_str) ? NO_AIRLINE : AirlineCode(dep_carrier_str),
@@ -417,6 +426,7 @@ function _build_mct_record(r)::Tuple{StationCode, MCTStatus, MCTRecord}
         suppressed     = Bool(_safe_missing(r.suppress, false)),
         station_standard = Bool(_safe_missing(r.station_standard, false)),
         specificity    = UInt32(0),   # recomputed below
+        mct_id         = mct_id_val,
     )
 
     # Recompute specificity now that specified bitmask is set
@@ -439,6 +449,7 @@ function _build_mct_record(r)::Tuple{StationCode, MCTStatus, MCTRecord}
         suppressed     = rec_partial.suppressed,
         station_standard = rec_partial.station_standard,
         specificity    = spec,
+        mct_id         = mct_id_val,
     )
 
     (station_key, status, rec)
@@ -485,6 +496,7 @@ function materialize_mct_lookup(
     quoted = join(["'" * String(s) * "'" for s in active_stations], ", ")
     sql = """
         SELECT
+            mct_id,
             arr_stn, dep_stn, mct_status, time_minutes, suppress, station_standard,
             arr_carrier, dep_carrier,
             arr_acft_body, dep_acft_body,

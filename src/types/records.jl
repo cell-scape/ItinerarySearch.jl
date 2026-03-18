@@ -134,7 +134,8 @@ end
 
 Result of an MCT lookup query. Contains the matched time, the status that was
 queried vs the status that matched (may differ during fallback), suppression
-flag, match source, and SSIM8 specificity score.
+flag, match source, SSIM8 specificity score, and the primary key of the matched
+`mct` table row for audit traceability.
 """
 @kwdef struct MCTResult
     time::Minutes                   # MCT in minutes (0 if suppressed)
@@ -143,6 +144,7 @@ flag, match source, and SSIM8 specificity score.
     suppressed::Bool
     source::MCTSource               # SOURCE_EXCEPTION, SOURCE_STATION_STANDARD, SOURCE_GLOBAL_DEFAULT
     specificity::UInt32             # higher = more specific match
+    mct_id::Int32 = Int32(0)        # PK from mct table (0 = global default)
 end
 
 

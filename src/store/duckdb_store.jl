@@ -893,7 +893,7 @@ function query_mct(store::DuckDBStore, arr_carrier::AirlineCode, dep_carrier::Ai
     # NOTE: dep_carrier is accepted for API compatibility but not used in queries
     # until Subsystem 2 implements full SSIM8 hierarchical MCT lookup.
     result = DBInterface.execute(store.db, """
-    SELECT time_minutes, suppress, arr_carrier FROM mct
+    SELECT mct_id, time_minutes, suppress, arr_carrier FROM mct
     WHERE arr_stn = ? AND dep_stn = ? AND mct_status = ?
       AND (arr_carrier = ? OR arr_carrier = '')
       AND suppress = false
@@ -913,6 +913,7 @@ function query_mct(store::DuckDBStore, arr_carrier::AirlineCode, dep_carrier::Ai
             suppressed      = Bool(_safe_missing(r.suppress, false)),
             source          = source,
             specificity     = UInt32(isempty(strip(carrier_val)) ? 50 : 100),
+            mct_id          = Int32(_safe_missing(r.mct_id, 0)),
         )
     end
 
@@ -924,6 +925,7 @@ function query_mct(store::DuckDBStore, arr_carrier::AirlineCode, dep_carrier::Ai
         suppressed     = false,
         source         = SOURCE_GLOBAL_DEFAULT,
         specificity    = UInt32(0),
+        mct_id         = Int32(0),
     )
 end
 
