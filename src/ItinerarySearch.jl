@@ -14,6 +14,7 @@ include("ingest/schemas.jl")
 include("store/interface.jl")
 include("store/julia_store.jl")
 include("store/duckdb_store.jl")
+include("ingest/ssim.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
@@ -33,6 +34,9 @@ export pack_date, unpack_date
 
 # Exports — config
 export SearchConfig, load_config
+
+# Exports — ingest
+export ingest_ssim!
 
 # Exports — store interface
 export AbstractStore, JuliaStore, DuckDBStore
