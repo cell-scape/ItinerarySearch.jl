@@ -29,6 +29,7 @@ include("graph/rules_itn.jl")
 include("graph/connect.jl")
 include("graph/search.jl")
 include("graph/builder.jl")
+include("output/formats.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
@@ -116,5 +117,8 @@ export RuntimeContext, search_itineraries
 
 # Exports — graph: builder and FlightGraph
 export FlightGraph, build_graph!, search
+
+# Exports — output formats
+export itinerary_long_format, itinerary_wide_format
 
 end # module
