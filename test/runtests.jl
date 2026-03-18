@@ -50,6 +50,7 @@ using Dates
     end
 
     include("test_config.jl")
+    include("test_compression.jl")
 
     @testset "Record Types" begin
         @testset "LegRecord" begin
