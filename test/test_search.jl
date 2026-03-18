@@ -45,6 +45,8 @@ using Dates
         mct_status_arr='D',
         leg_seq=UInt8(1),
         trc="",
+        dep_utc_offset=Int16(0),
+        arr_utc_offset=Int16(0),
     )
         LegRecord(
             airline=AirlineCode(airline),
@@ -60,8 +62,8 @@ using Dates
             pax_arr=pax_arr,
             ac_dep=pax_dep,
             ac_arr=pax_arr,
-            dep_utc_offset=Int16(0),
-            arr_utc_offset=Int16(0),
+            dep_utc_offset=dep_utc_offset,
+            arr_utc_offset=arr_utc_offset,
             dep_date_var=Int8(0),
             arr_date_var=arr_date_var,
             eqp=InlineString7(eqp),
@@ -456,6 +458,102 @@ using Dates
             # elapsed = (420 + 1440) - 1380 = 480 min
             @test _compute_elapsed(itn) == Int32(480)
         end
+
+        @testset "UTC elapsed: ORD (UTC-5) dep 09:00 → LHR (UTC+0) arr 22:00" begin
+            # ORD offset = -300 min (UTC-5), LHR offset = 0 min (UTC+0)
+            # local dep = 09:00 = 540 min, local arr = 22:00 = 1320 min
+            # utc_dep = 540 - (-300) = 840  (14:00 UTC)
+            # utc_arr = 1320 - 0     = 1320 (22:00 UTC)
+            # elapsed = 1320 - 840 = 480 min (8h block) — local math would give 780 (13h)
+            ord_stn = GraphStation(_stn_rec("ORD", "US", "NAM"))
+            lhr_stn = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+            rec = _leg_rec(
+                org="ORD", dst="LHR",
+                pax_dep=Int16(540), pax_arr=Int16(1320),
+                dep_utc_offset=Int16(-300), arr_utc_offset=Int16(0),
+                arr_date_var=Int8(0),
+            )
+            leg = GraphLeg(rec, ord_stn, lhr_stn)
+            cp = nonstop_connection(leg, ord_stn)
+            itn = Itinerary(connections=GraphConnection[cp])
+            @test _compute_elapsed(itn) == Int32(480)
+        end
+
+        @testset "UTC elapsed: same-TZ nonstop is unchanged" begin
+            # JFK (UTC-5, offset=-300) dep 08:00 → BOS (UTC-5, offset=-300) arr 09:20
+            # utc_dep = 480 - (-300) = 780, utc_arr = 560 - (-300) = 860
+            # elapsed = 860 - 780 = 80 min — same as local-time diff
+            jfk_stn = GraphStation(_stn_rec("JFK", "US", "NAM"))
+            bos_stn = GraphStation(_stn_rec("BOS", "US", "NAM"))
+            rec = _leg_rec(
+                org="JFK", dst="BOS",
+                pax_dep=Int16(480), pax_arr=Int16(560),
+                dep_utc_offset=Int16(-300), arr_utc_offset=Int16(-300),
+                arr_date_var=Int8(0),
+            )
+            leg = GraphLeg(rec, jfk_stn, bos_stn)
+            cp = nonstop_connection(leg, jfk_stn)
+            itn = Itinerary(connections=GraphConnection[cp])
+            @test _compute_elapsed(itn) == Int32(80)
+        end
+    end
+
+    # ── UTC elapsed via search_itineraries ────────────────────────────────────
+
+    @testset "UTC elapsed time" begin
+        using ItinerarySearch: _compute_elapsed
+
+        # Verify that elapsed_time on committed itineraries uses UTC math.
+        # Build a nonstop JFK→LHR with UTC offsets: JFK=-300, LHR=0.
+        # Local: dep 09:00 (540), arr 22:00 (1320) → local diff = 780 (13h)
+        # UTC:   dep 840 (14:00), arr 1320 (22:00) → UTC diff  = 480 (8h)
+        jfk_stn = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr_stn = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+
+        rec_ns = _leg_rec(
+            airline="UA", flt_no=100,
+            org="JFK", dst="LHR",
+            pax_dep=Int16(540), pax_arr=Int16(1320),
+            dep_utc_offset=Int16(-300), arr_utc_offset=Int16(0),
+            arr_date_var=Int8(0),
+            distance=3451.0f0,
+        )
+        leg_ns = GraphLeg(rec_ns, jfk_stn, lhr_stn)
+        push!(jfk_stn.departures, leg_ns)
+        push!(lhr_stn.arrivals, leg_ns)
+
+        constraints = SearchConstraints(
+            defaults=ParameterSet(
+                max_stops=Int16(0),
+                circuity_factor=5.0,
+                circuity_extra_miles=50_000.0,
+                itinerary_circuity=5.0,
+            ),
+        )
+        cnx_ctx = (
+            config=SearchConfig(interline=INTERLINE_ALL),
+            constraints=constraints,
+            build_stats=BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
+            mct_cache=Dict{UInt64,MCTResult}(),
+            gc_cache=Dict{UInt64,Float64}(),
+        )
+        cnx_rules = build_cnx_rules(SearchConfig(interline=INTERLINE_ALL), constraints, MCTLookup())
+        stations = Dict{StationCode,GraphStation}(
+            StationCode("JFK") => jfk_stn,
+            StationCode("LHR") => lhr_stn,
+        )
+        build_connections!(stations, cnx_rules, cnx_ctx)
+
+        ctx = _search_ctx(max_stops=0)
+        itns = search_itineraries(
+            stations, StationCode("JFK"), StationCode("LHR"),
+            Date(2026, 6, 15), ctx,
+        )
+
+        @test !isempty(itns)
+        nonstop = first(filter(i -> i.num_stops == Int16(0), itns))
+        # UTC-corrected elapsed must be 480 min (8h), not 780 (13h local)
+        @test nonstop.elapsed_time == Int32(480)
     end
 
     # ── Direction pruning ──────────────────────────────────────────────────────
@@ -547,6 +645,7 @@ using Dates
         @test isempty(ctx.itn_rules)
         @test ctx.target_date == UInt32(0)
         @test ctx.target_dow == StatusBits(0)
+        @test ctx.utc_dep_origin == Int32(0)
         @test isempty(ctx.results)
         @test ctx.search_stats isa SearchStats
         @test ctx.build_stats isa BuildStats

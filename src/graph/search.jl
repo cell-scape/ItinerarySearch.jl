@@ -203,34 +203,26 @@ end
 function _compute_elapsed(itn::Itinerary)::Int32
     isempty(itn.connections) && return Int32(0)
 
+    # connections[1] is always the nonstop self-connection of the departure leg;
+    # from_leg === to_leg.  Accumulate first leg's UTC block time as the base.
     first_leg = itn.connections[1].from_leg::GraphLeg
     fr = first_leg.record
     utc_dep_first = Int32(fr.pax_dep) - Int32(fr.dep_utc_offset)
+    utc_arr_first =
+        Int32(fr.pax_arr) - Int32(fr.arr_utc_offset) + Int32(fr.arr_date_var) * Int32(1440)
+    total = utc_arr_first - utc_dep_first
 
-    total = Int32(0)
-
-    for (i, cp) in enumerate(itn.connections)
-        leg = cp.from_leg::GraphLeg
-        r = leg.record
-        if i == 1
-            utc_arr = Int32(r.pax_arr) - Int32(r.arr_utc_offset) + Int32(r.arr_date_var) * Int32(1440)
-            total = utc_arr - utc_dep_first
-        else
-            total += Int32(cp.cnx_time)
-            utc_dep = Int32(r.pax_dep) - Int32(r.dep_utc_offset)
-            utc_arr = Int32(r.pax_arr) - Int32(r.arr_utc_offset) + Int32(r.arr_date_var) * Int32(1440)
-            total += utc_arr - utc_dep
-        end
-
-        # Final to_leg of a connecting itinerary (to_leg !== from_leg)
-        if i == length(itn.connections) && !(cp.from_leg === cp.to_leg)
-            to_leg = cp.to_leg::GraphLeg
-            tr = to_leg.record
-            total += Int32(cp.cnx_time)
-            utc_dep_to = Int32(tr.pax_dep) - Int32(tr.dep_utc_offset)
-            utc_arr_to = Int32(tr.pax_arr) - Int32(tr.arr_utc_offset) + Int32(tr.arr_date_var) * Int32(1440)
-            total += utc_arr_to - utc_dep_to
-        end
+    # For each subsequent connecting cp, add the ground time plus the outbound
+    # leg's UTC block time.  cp.to_leg is always the new departing leg.
+    for i in 2:length(itn.connections)
+        cp = itn.connections[i]::GraphConnection
+        total += Int32(cp.cnx_time)
+        to = cp.to_leg::GraphLeg
+        tr = to.record
+        utc_dep = Int32(tr.pax_dep) - Int32(tr.dep_utc_offset)
+        utc_arr =
+            Int32(tr.pax_arr) - Int32(tr.arr_utc_offset) + Int32(tr.arr_date_var) * Int32(1440)
+        total += utc_arr - utc_dep
     end
 
     return max(Int32(0), total)
