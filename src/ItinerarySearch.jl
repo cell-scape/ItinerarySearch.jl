@@ -8,6 +8,7 @@ using CEnum
 include("types/aliases.jl")
 include("types/enums.jl")
 include("types/records.jl")
+include("types/graph.jl")
 include("config.jl")
 include("compression.jl")
 include("ingest/schemas.jl")
@@ -33,6 +34,9 @@ export parse_mct_status, MCT_DEFAULTS
 export LegRecord, StationRecord, MCTResult, SegmentRecord
 export flight_id, segment_id, full_id
 export pack_date, unpack_date
+
+# Exports — graph stubs (Subsystem 2)
+export GraphStation, GraphSegment, GraphConnection
 
 # Exports — config
 export SearchConfig, load_config
