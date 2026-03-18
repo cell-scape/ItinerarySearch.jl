@@ -278,4 +278,49 @@ end
         close(store)
     end
 
+    @testset "Distance gap-fill" begin
+        # Legs with non-zero distance in record should carry that distance directly.
+        store = DuckDBStore()
+        _insert_builder_test_data!(store)
+
+        config = SearchConfig(leading_days = 0, trailing_days = 0)
+        graph = build_graph!(store, config, Date(2026, 6, 15))
+
+        # Both test legs have positive distances in the INSERT (800 and 3941 miles).
+        @test all(leg -> leg.distance > Distance(0), graph.legs)
+
+        close(store)
+
+        # Now insert a leg with distance == 0 but stations with known coordinates;
+        # the gap-fill pass should compute a geodesic distance for it.
+        store2 = DuckDBStore()
+        DBInterface.execute(store2.db, """
+        INSERT INTO legs VALUES (
+            1, 1, 'UA', 500, ' ', 1, ' ', 1, 'J',
+            'ORD', 'LHR',
+            720, 1320, 715, 1325,
+            -300, 0, 0, 0,
+            '1', '2', '789', 'W', 'UA',
+            '2026-06-01', '2026-06-30', 127,
+            'D', 'I', '', ' ',
+            '', 0.0, false
+        )
+        """)
+        DBInterface.execute(store2.db, """
+            INSERT INTO stations VALUES
+            ('ORD','US','IL','CHI','NOA',41.9742,-87.9073,-300)
+        """)
+        DBInterface.execute(store2.db, """
+            INSERT INTO stations VALUES
+            ('LHR','GB','','LON','EUR',51.4775,-0.4614,0)
+        """)
+
+        graph2 = build_graph!(store2, config, Date(2026, 6, 15))
+        @test length(graph2.legs) == 1
+        # Gap-fill should have computed a positive geodesic distance (~3900+ miles)
+        @test graph2.legs[1].distance > Distance(0)
+
+        close(store2)
+    end
+
 end

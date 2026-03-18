@@ -110,6 +110,7 @@ const _ZERO_MCT_RESULT = MCTResult(
     suppressed=false,
     source=SOURCE_GLOBAL_DEFAULT,
     specificity=UInt32(0),
+    mct_id=Int32(0),
 )
 
 # ── GraphSegment ──────────────────────────────────────────────────────────────
@@ -207,6 +208,8 @@ const _ZERO_GRAPH_STATION = GraphStation()
 - `segment::GraphSegment` — parent segment (all legs sharing the same flight identity)
 - `connect_to::Vector{Any}` — `GraphConnection` elements where this leg is `from_leg`
 - `connect_from::Vector{Any}` — `GraphConnection` elements where this leg is `to_leg`
+- `distance::Distance` — flown distance in miles; copied from `record.distance` and
+  gap-filled from geodesic when zero during `build_graph!`
 """
 @kwdef mutable struct GraphLeg
     record::LegRecord = _ZERO_LEG_RECORD
@@ -215,6 +218,7 @@ const _ZERO_GRAPH_STATION = GraphStation()
     segment::GraphSegment = _ZERO_GRAPH_SEGMENT
     connect_to::Vector{Any} = Any[]
     connect_from::Vector{Any} = Any[]
+    distance::Distance = Distance(0)
 end
 
 # Sentinel used as the default for GraphConnection.from_leg / GraphConnection.to_leg
@@ -378,7 +382,7 @@ true
 ```
 """
 function GraphLeg(record::LegRecord, org::GraphStation, dst::GraphStation)
-    GraphLeg(record=record, org=org, dst=dst)
+    GraphLeg(record=record, org=org, dst=dst, distance=record.distance)
 end
 
 """

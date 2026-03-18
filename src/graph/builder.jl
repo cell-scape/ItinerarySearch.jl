@@ -177,6 +177,31 @@ function build_graph!(
     end
     @info "Created legs" count = length(legs)
 
+    # 4b. Gap-fill leg distances from geodesic when record.distance == 0
+    n_filled = 0
+    for leg in legs
+        if leg.distance == Distance(0)
+            org_stn = get(stations, leg.record.org, nothing)
+            dst_stn = get(stations, leg.record.dst, nothing)
+            if org_stn !== nothing &&
+               dst_stn !== nothing &&
+               (org_stn.record.lat != 0.0 || org_stn.record.lng != 0.0) &&
+               (dst_stn.record.lat != 0.0 || dst_stn.record.lng != 0.0)
+                leg.distance = Distance(
+                    _geodesic_distance(
+                        config,
+                        org_stn.record.lat,
+                        org_stn.record.lng,
+                        dst_stn.record.lat,
+                        dst_stn.record.lng,
+                    ),
+                )
+                n_filled += 1
+            end
+        end
+    end
+    n_filled > 0 && @info "Gap-filled leg distances" count = n_filled
+
     # 5. Create segments and link legs
     segments = Dict{UInt64,GraphSegment}()
     for leg in legs
