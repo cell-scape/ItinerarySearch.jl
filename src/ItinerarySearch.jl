@@ -25,6 +25,7 @@ include("ingest/reference.jl")
 include("graph/mct_lookup.jl")
 include("graph/rules_cnx.jl")
 include("graph/rules_itn.jl")
+include("graph/connect.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
@@ -103,5 +104,8 @@ export check_itn_suppcodes, check_itn_maft
 export build_itn_rules
 export FAIL_ITN_SCOPE, FAIL_ITN_OPDAYS, FAIL_ITN_CIRCUITY
 export FAIL_ITN_SUPPCODE, FAIL_ITN_MAFT
+
+# Exports — graph: connection builder
+export build_connections_at_station!, build_connections!
 
 end # module

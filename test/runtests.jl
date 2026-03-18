@@ -62,6 +62,7 @@ using Dates
     include("test_mct_lookup.jl")
     include("test_rules_cnx.jl")
     include("test_rules_itn.jl")
+    include("test_connect.jl")
 
     @testset "SSIM Parsing Helpers" begin
         using ItinerarySearch: parse_ddmonyy, parse_hhmm, parse_frequency_bitmask
