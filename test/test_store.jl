@@ -171,6 +171,24 @@ end
 
         mct = query_mct(store, AirlineCode("UA"), AirlineCode("UA"), StationCode("ORD"), MCT_DD)
         @test mct.time == Int16(45)
+        @test mct.source == SOURCE_EXCEPTION  # carrier-specific match
+
+        # Insert a station standard (arr_carrier = '')
+        DBInterface.execute(store.db, """
+        INSERT INTO mct VALUES (
+            2, 0, 'ORD', 'ORD', 'II', 90,
+            '', '', '', '', '', '',
+            '', '', '', '', '', '',
+            '', '', '', '',
+            0, 0, 0, 0,
+            '', '', '', '',
+            '1900-01-01', '2099-12-31', false, '', '', '',
+            '', false, 0
+        )
+        """)
+        mct_std = query_mct(store, AirlineCode("DL"), AirlineCode("DL"), StationCode("ORD"), MCT_II)
+        @test mct_std.time == Int16(90)
+        @test mct_std.source == SOURCE_STATION_STANDARD
 
         # Global default fallback
         mct_default = query_mct(store, AirlineCode("XX"), AirlineCode("XX"), StationCode("ZZZ"), MCT_II)

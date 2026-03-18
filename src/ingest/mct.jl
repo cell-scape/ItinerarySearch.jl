@@ -21,9 +21,9 @@ function _build_schedule_filters(store::DuckDBStore)::Tuple{Set{String}, Set{Str
     stations = Set{String}()
     carriers = Set{String}()
 
-    result = DBInterface.execute(store.db, "SELECT DISTINCT org FROM legs UNION SELECT DISTINCT dst FROM legs")
+    result = DBInterface.execute(store.db, "SELECT DISTINCT org AS stn FROM legs UNION SELECT DISTINCT dst AS stn FROM legs")
     for row in result
-        s = strip(String(row.org))
+        s = strip(String(row.stn))
         isempty(s) || push!(stations, s)
     end
 

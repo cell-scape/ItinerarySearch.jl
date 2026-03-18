@@ -860,9 +860,11 @@ function query_mct(store::DuckDBStore, arr_carrier::AirlineCode, dep_carrier::Ai
                  status == MCT_DI ? "DI" :
                  status == MCT_ID ? "ID" : "II"
 
-    # Try carrier-specific exception first, then station standard
+    # Try carrier-specific exception first, then station standard.
+    # NOTE: dep_carrier is accepted for API compatibility but not used in queries
+    # until Subsystem 2 implements full SSIM8 hierarchical MCT lookup.
     result = DBInterface.execute(store.db, """
-    SELECT time_minutes, suppress FROM mct
+    SELECT time_minutes, suppress, arr_carrier FROM mct
     WHERE arr_stn = ? AND dep_stn = ? AND mct_status = ?
       AND (arr_carrier = ? OR arr_carrier = '')
       AND suppress = false
@@ -873,13 +875,15 @@ function query_mct(store::DuckDBStore, arr_carrier::AirlineCode, dep_carrier::Ai
     rows = collect(result)
     if !isempty(rows)
         r = rows[1]
+        carrier_val = _safe_string(r.arr_carrier)
+        source = isempty(strip(carrier_val)) ? SOURCE_STATION_STANDARD : SOURCE_EXCEPTION
         return MCTResult(
             time            = Int16(_safe_missing(r.time_minutes, 0)),
             queried_status  = status,
             matched_status  = status,
             suppressed      = Bool(_safe_missing(r.suppress, false)),
-            source          = SOURCE_EXCEPTION,
-            specificity     = UInt32(100),
+            source          = source,
+            specificity     = UInt32(isempty(strip(carrier_val)) ? 50 : 100),
         )
     end
 
