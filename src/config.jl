@@ -20,9 +20,9 @@ using JSON3
 function _default_path(filename::String)::String
     dir = pkgdir(@__MODULE__)
     if dir === nothing
-        return joinpath("data", "demo", filename)
+        return joinpath("data", "input", filename)
     end
-    joinpath(dir, "data", "demo", filename)
+    joinpath(dir, "data", "input", filename)
 end
 
 """
@@ -32,8 +32,8 @@ Parse a scope string from JSON config to ScopeMode enum.
 """
 function _parse_scope(s::AbstractString)::ScopeMode
     s = lowercase(String(s))
-    s == "all"  && return SCOPE_ALL
-    s == "dom"  && return SCOPE_DOM
+    s == "all" && return SCOPE_ALL
+    s == "dom" && return SCOPE_DOM
     s == "intl" && return SCOPE_INTL
     error("Unknown scope mode: $s. Expected: all, dom, intl")
 end
@@ -45,9 +45,9 @@ Parse an interline string from JSON config to InterlineMode enum.
 """
 function _parse_interline(s::AbstractString)::InterlineMode
     s = lowercase(String(s))
-    s == "online"    && return INTERLINE_ONLINE
+    s == "online" && return INTERLINE_ONLINE
     s == "codeshare" && return INTERLINE_CODESHARE
-    s == "all"       && return INTERLINE_ALL
+    s == "all" && return INTERLINE_ALL
     error("Unknown interline mode: $s. Expected: online, codeshare, all")
 end
 
@@ -75,21 +75,21 @@ the reference — no locking, no mutation.
     interline::InterlineMode = INTERLINE_CODESHARE
     max_days::Int = 1
     trailing_days::Int = 0
-    ssim_path::String = _default_path("ssim_demo.dat.zst")
-    mct_path::String = _default_path("mct_demo.dat.zst")
-    airports_path::String = _default_path("airports.txt")
-    regions_path::String = _default_path("regions.dat")
-    aircrafts_path::String = _default_path("aircrafts.txt")
-    seats_path::String = _default_path("seats.dat")
-    classmap_path::String = _default_path("classmap.txt")
-    serviceclass_path::String = _default_path("serviceclass.dat")
-    oa_control_path::String = _default_path("oa_control.csv")
-    leading_days::Int = 1
-    metrics_level::Symbol = :basic        # :basic, :aircraft, :full
-    graph_export_path::String = ""
-    graph_import_path::String = ""
-    constraints_path::String = ""
-    event_log_path::String = ""
+    ssim_path::String = _default_path("uaoa_ssim.new.dat")
+    mct_path::String = _default_path("MCTIMFILUA.DAT")
+    airports_path::String = _default_path("mdstua.txt")
+    regions_path::String = _default_path("REGIMFILUA.DAT")
+    aircrafts_path::String = _default_path("aircraft.txt")
+    seats_path::String = _default_path("seats_ua.txt.DAT")
+    classmap_path::String = _default_path("classmaptable.txt")
+    serviceclass_path::String = _default_path("servclasstable.dat")
+    oa_control_path::String = _default_path("oa_control_table.csv")
+    leading_days::Int = 2
+    metrics_level::Symbol = :full        # :basic, :aircraft, :full
+    graph_export_path::String = "data/output"
+    graph_import_path::String = "data/output"
+    constraints_path::String = "data/output"
+    event_log_path::String = "data/output"
     output_formats::Vector{Symbol} = [:json, :yaml, :csv]
 end
 
@@ -102,7 +102,7 @@ end
 
 Return the string value of `obj[key]` if it is a `String`, otherwise `nothing`.
 """
-function _json_str(obj::JSON3.Object, key::Symbol)::Union{String, Nothing}
+function _json_str(obj::JSON3.Object, key::Symbol)::Union{String,Nothing}
     haskey(obj, key) || return nothing
     val = obj[key]
     val isa String ? val : nothing
@@ -113,7 +113,7 @@ end
 
 Return the integer value of `obj[key]` if it is an `Int64`, otherwise `nothing`.
 """
-function _json_int(obj::JSON3.Object, key::Symbol)::Union{Int, Nothing}
+function _json_int(obj::JSON3.Object, key::Symbol)::Union{Int,Nothing}
     haskey(obj, key) || return nothing
     val = obj[key]
     val isa Int64 ? Int(val) : nothing
@@ -125,11 +125,11 @@ end
 Return the float value of `obj[key]` coerced from `Float64` or `Int64`,
 otherwise `nothing`.
 """
-function _json_float(obj::JSON3.Object, key::Symbol)::Union{Float64, Nothing}
+function _json_float(obj::JSON3.Object, key::Symbol)::Union{Float64,Nothing}
     haskey(obj, key) || return nothing
     val = obj[key]
     val isa Float64 && return val
-    val isa Int64   && return Float64(val)
+    val isa Int64 && return Float64(val)
     nothing
 end
 
@@ -139,7 +139,7 @@ end
 Return the nested object value of `raw[key]` if it is a `JSON3.Object`,
 otherwise `nothing`.
 """
-function _json_obj(raw::JSON3.Object, key::Symbol)::Union{JSON3.Object, Nothing}
+function _json_obj(raw::JSON3.Object, key::Symbol)::Union{JSON3.Object,Nothing}
     haskey(raw, key) || return nothing
     val = raw[key]
     val isa JSON3.Object ? val : nothing
@@ -169,53 +169,77 @@ function load_config(path::String)::SearchConfig
     raw = JSON3.read(read(path, String))
     raw isa JSON3.Object || return SearchConfig()
 
-    kwargs = Dict{Symbol, Any}()
+    kwargs = Dict{Symbol,Any}()
 
     store = _json_obj(raw, :store)
     if store !== nothing
-        s = _json_str(store, :backend);  s !== nothing && (kwargs[:backend] = s)
-        s = _json_str(store, :path);     s !== nothing && (kwargs[:db_path]  = s)
+        s = _json_str(store, :backend)
+        s !== nothing && (kwargs[:backend] = s)
+        s = _json_str(store, :path)
+        s !== nothing && (kwargs[:db_path] = s)
     end
 
     search = _json_obj(raw, :search)
     if search !== nothing
-        v = _json_int(search, :max_stops);              v !== nothing && (kwargs[:max_stops]              = v)
-        v = _json_int(search, :max_connection_minutes); v !== nothing && (kwargs[:max_connection_minutes] = v)
-        v = _json_int(search, :max_elapsed_minutes);    v !== nothing && (kwargs[:max_elapsed_minutes]    = v)
-        f = _json_float(search, :circuity_factor);      f !== nothing && (kwargs[:circuity_factor]        = f)
-        f = _json_float(search, :circuity_extra_miles); f !== nothing && (kwargs[:circuity_extra_miles]   = f)
-        s = _json_str(search, :scope);     s !== nothing && (kwargs[:scope]     = _parse_scope(s))
-        s = _json_str(search, :interline); s !== nothing && (kwargs[:interline] = _parse_interline(s))
+        v = _json_int(search, :max_stops)
+        v !== nothing && (kwargs[:max_stops] = v)
+        v = _json_int(search, :max_connection_minutes)
+        v !== nothing && (kwargs[:max_connection_minutes] = v)
+        v = _json_int(search, :max_elapsed_minutes)
+        v !== nothing && (kwargs[:max_elapsed_minutes] = v)
+        f = _json_float(search, :circuity_factor)
+        f !== nothing && (kwargs[:circuity_factor] = f)
+        f = _json_float(search, :circuity_extra_miles)
+        f !== nothing && (kwargs[:circuity_extra_miles] = f)
+        s = _json_str(search, :scope)
+        s !== nothing && (kwargs[:scope] = _parse_scope(s))
+        s = _json_str(search, :interline)
+        s !== nothing && (kwargs[:interline] = _parse_interline(s))
     end
 
     data = _json_obj(raw, :data)
     if data !== nothing
-        s = _json_str(data, :ssim);         s !== nothing && (kwargs[:ssim_path]         = s)
-        s = _json_str(data, :mct);          s !== nothing && (kwargs[:mct_path]          = s)
-        s = _json_str(data, :airports);     s !== nothing && (kwargs[:airports_path]     = s)
-        s = _json_str(data, :regions);      s !== nothing && (kwargs[:regions_path]      = s)
-        s = _json_str(data, :aircrafts);    s !== nothing && (kwargs[:aircrafts_path]    = s)
-        s = _json_str(data, :seats);        s !== nothing && (kwargs[:seats_path]        = s)
-        s = _json_str(data, :classmap);     s !== nothing && (kwargs[:classmap_path]     = s)
-        s = _json_str(data, :serviceclass); s !== nothing && (kwargs[:serviceclass_path] = s)
-        s = _json_str(data, :oa_control);   s !== nothing && (kwargs[:oa_control_path]   = s)
+        s = _json_str(data, :ssim)
+        s !== nothing && (kwargs[:ssim_path] = s)
+        s = _json_str(data, :mct)
+        s !== nothing && (kwargs[:mct_path] = s)
+        s = _json_str(data, :airports)
+        s !== nothing && (kwargs[:airports_path] = s)
+        s = _json_str(data, :regions)
+        s !== nothing && (kwargs[:regions_path] = s)
+        s = _json_str(data, :aircrafts)
+        s !== nothing && (kwargs[:aircrafts_path] = s)
+        s = _json_str(data, :seats)
+        s !== nothing && (kwargs[:seats_path] = s)
+        s = _json_str(data, :classmap)
+        s !== nothing && (kwargs[:classmap_path] = s)
+        s = _json_str(data, :serviceclass)
+        s !== nothing && (kwargs[:serviceclass_path] = s)
+        s = _json_str(data, :oa_control)
+        s !== nothing && (kwargs[:oa_control_path] = s)
     end
 
     sched = _json_obj(raw, :schedule)
     if sched !== nothing
-        v = _json_int(sched, :max_days);      v !== nothing && (kwargs[:max_days]      = v)
-        v = _json_int(sched, :trailing_days); v !== nothing && (kwargs[:trailing_days] = v)
-        v = _json_int(sched, :leading_days);  v !== nothing && (kwargs[:leading_days]  = v)
+        v = _json_int(sched, :max_days)
+        v !== nothing && (kwargs[:max_days] = v)
+        v = _json_int(sched, :trailing_days)
+        v !== nothing && (kwargs[:trailing_days] = v)
+        v = _json_int(sched, :leading_days)
+        v !== nothing && (kwargs[:leading_days] = v)
     end
 
     if data !== nothing
-        s = _json_str(data, :constraints); s !== nothing && (kwargs[:constraints_path] = s)
+        s = _json_str(data, :constraints)
+        s !== nothing && (kwargs[:constraints_path] = s)
     end
 
     graph = _json_obj(raw, :graph)
     if graph !== nothing
-        s = _json_str(graph, :export_path); s !== nothing && (kwargs[:graph_export_path] = s)
-        s = _json_str(graph, :import_path); s !== nothing && (kwargs[:graph_import_path] = s)
+        s = _json_str(graph, :export_path)
+        s !== nothing && (kwargs[:graph_export_path] = s)
+        s = _json_str(graph, :import_path)
+        s !== nothing && (kwargs[:graph_import_path] = s)
     end
 
     output = _json_obj(raw, :output)
@@ -225,7 +249,8 @@ function load_config(path::String)::SearchConfig
             sym = Symbol(lowercase(s))
             sym in (:basic, :aircraft, :full) && (kwargs[:metrics_level] = sym)
         end
-        s = _json_str(output, :event_log_path); s !== nothing && (kwargs[:event_log_path] = s)
+        s = _json_str(output, :event_log_path)
+        s !== nothing && (kwargs[:event_log_path] = s)
         if haskey(output, :output_formats)
             fmts_val = output[:output_formats]
             if fmts_val isa JSON3.Array

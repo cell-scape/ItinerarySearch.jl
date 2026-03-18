@@ -50,7 +50,7 @@ using ItinerarySearch: _default_path
 
     @testset "Default paths point to demo data" begin
         cfg = SearchConfig()
-        @test endswith(cfg.ssim_path, "ssim_demo.dat.zst")
-        @test endswith(cfg.mct_path, "mct_demo.dat.zst")
+        @test endswith(cfg.ssim_path, "uaoa_ssim.new.dat")
+        @test endswith(cfg.mct_path, "MCTIMFILUA.DAT")
     end
 end

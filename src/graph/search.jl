@@ -226,7 +226,7 @@ No-ops when `stn.code == NO_STATION` or a field is empty.
 function _add_station_geo!(metros, states, countries, regions, stn::GraphStation)
     stn.code == NO_STATION && return
     rec = stn.record
-    rec.city != InlineString31("") && push!(metros, rec.city)
+    rec.metro_area != InlineString3("") && push!(metros, rec.metro_area)
     rec.state != InlineString3("") && push!(states, rec.state)
     rec.country != InlineString3("") && push!(countries, rec.country)
     rec.region != InlineString3("") && push!(regions, rec.region)

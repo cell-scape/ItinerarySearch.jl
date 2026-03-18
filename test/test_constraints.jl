@@ -86,11 +86,11 @@ using InlineStrings
 
     @testset "SearchConfig new fields" begin
         cfg = SearchConfig()
-        @test cfg.leading_days == 1
-        @test cfg.metrics_level == :basic
-        @test cfg.graph_export_path == ""
-        @test cfg.constraints_path == ""
-        @test cfg.event_log_path == ""
+        @test cfg.leading_days == 2
+        @test cfg.metrics_level == :full
+        @test cfg.graph_export_path == "data/output"
+        @test cfg.constraints_path == "data/output"
+        @test cfg.event_log_path == "data/output"
         @test cfg.output_formats == [:json, :yaml, :csv]
     end
 

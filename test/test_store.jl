@@ -50,8 +50,8 @@ end
     """)
 
     # Insert stations with lat/lng for spatial distance computation
-    DBInterface.execute(store.db, "INSERT INTO stations VALUES ('ORD','US','IL','Chicago','NOA',41.9742,-87.9073,-300)")
-    DBInterface.execute(store.db, "INSERT INTO stations VALUES ('LHR','GB','','London','EUR',51.4700,-0.4543,0)")
+    DBInterface.execute(store.db, "INSERT INTO stations VALUES ('ORD','US','IL','CHI','NOA',41.9742,-87.9073,-300)")
+    DBInterface.execute(store.db, "INSERT INTO stations VALUES ('LHR','GB','','LON','EUR',51.4700,-0.4543,0)")
 
     # Run post-ingest
     post_ingest_sql!(store)
@@ -90,8 +90,8 @@ end
         'D', 'I', '', ' ', 'JCDZPY', 3941.0, false
     )
     """)
-    DBInterface.execute(store.db, "INSERT INTO stations VALUES ('ORD','US','IL','Chicago','NOA',41.9742,-87.9073,-300)")
-    DBInterface.execute(store.db, "INSERT INTO stations VALUES ('LHR','GB','','London','EUR',51.4700,-0.4543,0)")
+    DBInterface.execute(store.db, "INSERT INTO stations VALUES ('ORD','US','IL','CHI','NOA',41.9742,-87.9073,-300)")
+    DBInterface.execute(store.db, "INSERT INTO stations VALUES ('LHR','GB','','LON','EUR',51.4700,-0.4543,0)")
 
     post_ingest_sql!(store)
 
@@ -207,7 +207,7 @@ end
     write(ssim_path, make_test_ssim())  # from test_ingest.jl (included before this file)
     write(mct_path, make_test_mct())    # from test_ingest.jl
 
-    write(airports_path, "ORD\tO'Hare\tChicago\tUS\tIL\t41.9742\t-87.9073\t-300\tNOA\nLHR\tHeathrow\tLondon\tGB\t\t51.4700\t-0.4543\t0\tEUR\n")
+    write(airports_path, make_test_airports())
 
     # Build config pointing to temp files
     config = SearchConfig(
@@ -227,7 +227,7 @@ end
     stats = table_stats(store)
     @test stats.legs > 0
     @test stats.dei > 0
-    @test stats.stations == 2
+    @test stats.stations == 3
     @test stats.mct > 0
     @test stats.expanded_legs > 0
     @test stats.segments > 0
@@ -236,7 +236,7 @@ end
     # Query tests
     stn = query_station(store, StationCode("ORD"))
     @test stn !== nothing
-    @test stn.lat ≈ 41.9742
+    @test stn.lat ≈ 41.97 atol=0.01
 
     # Market distance
     d = query_market_distance(store, StationCode("ORD"), StationCode("LHR"))

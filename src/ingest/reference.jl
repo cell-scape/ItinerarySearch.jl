@@ -96,8 +96,11 @@ function load_airports!(store::DuckDBStore, path::String)::Nothing
 
             country = strip(string(rec.country))
             state = strip(string(rec.state))
-            city = strip(string(rec.metro_area))
-            region = strip(string(rec.metro_area))
+            subctry = strip(string(rec.location_subctry))
+            state = (state == "" || state == "00") ? subctry : state
+            state = state == "00" ? "" : state
+            metro_area = strip(string(rec.metro_area))
+            region = ""  # populated later from regions table
 
             utc_minutes = _parse_utc_minutes(string(rec.utc_var))
 
@@ -109,8 +112,8 @@ function load_airports!(store::DuckDBStore, path::String)::Nothing
             # Skip records with no coordinate data
             (lat == 0.0 && lng == 0.0) && continue
 
-            # Column order matches stations DDL: code, country, state, city, region, lat, lng, utc_offset
-            DBInterface.execute(stmt, [code, country, state, city, region, lat, lng, utc_minutes])
+            # Column order matches stations DDL: code, country, state, metro_area, region, lat, lng, utc_offset
+            DBInterface.execute(stmt, [code, country, state, metro_area, region, lat, lng, utc_minutes])
             loaded += 1
         end
     finally
@@ -153,9 +156,9 @@ function load_regions!(store::DuckDBStore, path::String)::Nothing
         for rec in iter
             region = strip(string(rec.region))
             airport = strip(string(rec.airport))
-            city = strip(string(rec.city))
+            metro_area = strip(string(rec.city))
             (isempty(region) || isempty(airport)) && continue
-            DBInterface.execute(stmt, [region, airport, city])
+            DBInterface.execute(stmt, [region, airport, metro_area])
             loaded += 1
         end
     finally

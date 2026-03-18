@@ -212,7 +212,7 @@ using Dates
                 code = StationCode("ORD"),
                 country = InlineString3("US"),
                 state = InlineString3("IL"),
-                city = InlineString31("Chicago"),
+                metro_area = InlineString3("CHI"),
                 region = InlineString3("NOA"),
                 lat = 41.9742,
                 lng = -87.9073,

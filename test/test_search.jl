@@ -7,12 +7,12 @@ using Dates
 
     # ── Test helpers ──────────────────────────────────────────────────────────
 
-    function _stn_rec(code, country, region; lat=0.0, lng=0.0, city="", state="")
+    function _stn_rec(code, country, region; lat=0.0, lng=0.0, metro_area="", state="")
         StationRecord(
             code=StationCode(code),
             country=InlineString3(country),
             state=InlineString3(state),
-            city=InlineString31(city),
+            metro_area=InlineString3(metro_area),
             region=InlineString3(region),
             lat=lat,
             lng=lng,
@@ -136,15 +136,15 @@ using Dates
     )
         jfk_stn = GraphStation(
             _stn_rec("JFK", jfk_country, jfk_region;
-                lat=jfk_lat, lng=jfk_lng, city="New York", state="NY")
+                lat=jfk_lat, lng=jfk_lng, metro_area="NYC", state="NY")
         )
         ord_stn = GraphStation(
             _stn_rec("ORD", ord_country, ord_region;
-                lat=ord_lat, lng=ord_lng, city="Chicago", state="IL")
+                lat=ord_lat, lng=ord_lng, metro_area="CHI", state="IL")
         )
         lhr_stn = GraphStation(
             _stn_rec("LHR", lhr_country, lhr_region;
-                lat=lhr_lat, lng=lhr_lng, city="London")
+                lat=lhr_lat, lng=lhr_lng, metro_area="LON")
         )
 
         # Leg 1: JFK → ORD  dep 08:00 (480 min)  arr 10:00 (600 min)

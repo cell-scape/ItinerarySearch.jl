@@ -55,15 +55,15 @@ function _insert_builder_test_data!(store::DuckDBStore)
     # Station reference table
     DBInterface.execute(store.db, """
         INSERT INTO stations VALUES
-        ('JFK','US','NY','New York','NOA',40.6413,-73.7781,-300)
+        ('JFK','US','NY','NYC','NOA',40.6413,-73.7781,-300)
     """)
     DBInterface.execute(store.db, """
         INSERT INTO stations VALUES
-        ('ORD','US','IL','Chicago','NOA',41.9742,-87.9073,-300)
+        ('ORD','US','IL','CHI','NOA',41.9742,-87.9073,-300)
     """)
     DBInterface.execute(store.db, """
         INSERT INTO stations VALUES
-        ('LHR','GB','','London','EUR',51.4775,-0.4614,0)
+        ('LHR','GB','','LON','EUR',51.4775,-0.4614,0)
     """)
 end
 

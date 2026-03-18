@@ -189,9 +189,7 @@ end
 
     # Shared airports file content (used across subtests)
     airports_content =
-        "ORD\tO'Hare\tChicago\tUS\tIL\t41.9742\t-87.9073\t-300\tNOA\n" *
-        "JFK\tJFK Intl\tNew York\tUS\tNY\t40.6413\t-73.7781\t-300\tNOA\n" *
-        "LHR\tHeathrow\tLondon\tGB\t\t51.4775\t-0.4614\t0\tEUR\n"
+        make_test_airports()
 
     @testset "Full pipeline: ingest → graph → search" begin
         ssim_path = tempname()

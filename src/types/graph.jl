@@ -73,7 +73,7 @@ const _ZERO_STATION_RECORD = StationRecord(
     code=StationCode(""),
     country=InlineString3(""),
     state=InlineString3(""),
-    city=InlineString31(""),
+    metro_area=InlineString3(""),
     region=InlineString3(""),
     lat=0.0,
     lng=0.0,
@@ -335,7 +335,7 @@ end
 # Examples
 ```julia
 julia> rec = StationRecord(code=StationCode("ORD"), country=InlineString3("US"),
-               state=InlineString3("IL"), city=InlineString31("Chicago"),
+               state=InlineString3("IL"), metro_area=InlineString3("CHI"),
                region=InlineString3("NAM"), lat=41.97, lng=-87.91,
                utc_offset=Int16(-360));
 julia> stn = GraphStation(rec);

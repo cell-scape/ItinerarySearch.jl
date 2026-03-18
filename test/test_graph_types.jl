@@ -10,7 +10,7 @@ using Dates
             code=StationCode(code),
             country=InlineString3(country),
             state=InlineString3(""),
-            city=InlineString31(""),
+            metro_area=InlineString3(""),
             region=InlineString3(region),
             lat=0.0,
             lng=0.0,

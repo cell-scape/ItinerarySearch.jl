@@ -46,7 +46,7 @@ println("="^50)
 # Station lookup
 stn = query_station(store, StationCode("ORD"))
 if stn !== nothing
-    println("\nStation ORD: $(stn.city), $(stn.country) ($(stn.lat), $(stn.lng))")
+    println("\nStation ORD: $(stn.metro_area), $(stn.country) ($(stn.lat), $(stn.lng))")
 end
 
 # Market distance

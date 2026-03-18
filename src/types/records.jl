@@ -118,14 +118,14 @@ full_id(r::LegRecord) = "$(segment_id(r))/L$(lpad(r.leg_seq, 2, '0'))"
 Immutable record for station/airport reference data.
 """
 @kwdef struct StationRecord
-    code::StationCode
-    country::InlineString3          # 2-char ISO
-    state::InlineString3            # 2-char, may be empty
-    city::InlineString31
-    region::InlineString3           # 3-char IATA region
-    lat::Float64
-    lng::Float64
-    utc_offset::Int16               # minutes from UTC
+    code::StationCode = ""
+    country::InlineString3 = ""          # 2-char ISO
+    state::InlineString3 = ""           # 2-char, may be empty
+    metro_area::InlineString3 = ""
+    region::InlineString3 = ""          # 3-char IATA region
+    lat::Float64 = 0.
+    lng::Float64 = 0.
+    utc_offset::Int16 = 0              # minutes from UTC
 end
 
 

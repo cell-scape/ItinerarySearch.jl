@@ -153,6 +153,91 @@ function make_test_mct()::String
     join([t1, t2, t3], "\n") * "\n"
 end
 
+# Build a fixed-width airport record (176 bytes) matching the MDSTUA schema.
+function _make_airport_line(;
+    country::String, state::String="00", airport::String,
+    utc_var::String="+0000",
+    lat_deg::String="00", lat_min::String="00", lat_sec::String="00", lat_hem::String="N",
+    lng_deg::String="000", lng_min::String="00", lng_sec::String="00", lng_hem::String="W",
+    metro_area::String="   ", location_subctry::String="00",
+)::String
+    buf = repeat(' ', 176)
+    buf = collect(buf)
+    # country: 1-2
+    for (i, c) in enumerate(country); i <= 2 && (buf[i] = c); end
+    # state: 5-6
+    for (i, c) in enumerate(state); i <= 2 && (buf[4+i] = c); end
+    # airport: 7-9
+    for (i, c) in enumerate(airport); i <= 3 && (buf[6+i] = c); end
+    # utc_var: 11-15
+    for (i, c) in enumerate(utc_var); i <= 5 && (buf[10+i] = c); end
+    # lat degrees: 140-141
+    for (i, c) in enumerate(lat_deg); i <= 2 && (buf[139+i] = c); end
+    # lat minutes: 143-144
+    for (i, c) in enumerate(lat_min); i <= 2 && (buf[142+i] = c); end
+    # lat seconds: 146-147
+    for (i, c) in enumerate(lat_sec); i <= 2 && (buf[145+i] = c); end
+    # lat hemisphere: 148
+    buf[148] = lat_hem[1]
+    # lng degrees: 149-151
+    for (i, c) in enumerate(lng_deg); i <= 3 && (buf[148+i] = c); end
+    # lng minutes: 153-154
+    for (i, c) in enumerate(lng_min); i <= 2 && (buf[152+i] = c); end
+    # lng seconds: 156-157
+    for (i, c) in enumerate(lng_sec); i <= 2 && (buf[155+i] = c); end
+    # lng hemisphere: 158
+    buf[158] = lng_hem[1]
+    # metro_area: 159-161
+    for (i, c) in enumerate(metro_area); i <= 3 && (buf[158+i] = c); end
+    # location_subctry: 167-168
+    for (i, c) in enumerate(location_subctry); i <= 2 && (buf[166+i] = c); end
+    String(buf)
+end
+
+function make_test_airports()::String
+    # ORD: Chicago O'Hare — 41°58'28"N 087°54'26"W, UTC-0500
+    ord = _make_airport_line(
+        country="US", state="IL", airport="ORD", utc_var="-0500",
+        lat_deg="41", lat_min="58", lat_sec="28", lat_hem="N",
+        lng_deg="087", lng_min="54", lng_sec="26", lng_hem="W",
+        metro_area="CHI",
+    )
+    # LHR: Heathrow — 51°28'39"N 000°27'41"W, UTC+0000
+    lhr = _make_airport_line(
+        country="GB", state="00", airport="LHR", utc_var="+0000",
+        lat_deg="51", lat_min="28", lat_sec="39", lat_hem="N",
+        lng_deg="000", lng_min="27", lng_sec="41", lng_hem="W",
+        metro_area="LON",
+    )
+    # JFK: John F Kennedy — 40°38'29"N 073°46'41"W, UTC-0500
+    jfk = _make_airport_line(
+        country="US", state="NY", airport="JFK", utc_var="-0500",
+        lat_deg="40", lat_min="38", lat_sec="29", lat_hem="N",
+        lng_deg="073", lng_min="46", lng_sec="41", lng_hem="W",
+        metro_area="NYC",
+    )
+    join([ord, lhr, jfk], "\n") * "\n"
+end
+
+# Build a fixed-width aircraft record (102 bytes) matching the aircraft schema.
+function _make_aircraft_line(; equip::String, bodytype::String=" ", description::String="")::String
+    buf = repeat(' ', 102)
+    buf = collect(buf)
+    # equip: 7-9
+    for (i, c) in enumerate(equip); i <= 3 && (buf[6+i] = c); end
+    # description: 12-51
+    for (i, c) in enumerate(description); i <= 40 && (buf[11+i] = c); end
+    # bodytype: 60
+    buf[60] = bodytype[1]
+    String(buf)
+end
+
+function make_test_aircrafts()::String
+    a789 = _make_aircraft_line(equip="789", bodytype="W", description="Boeing 787-9 Dreamliner")
+    a320 = _make_aircraft_line(equip="320", bodytype="N", description="Airbus A320")
+    join([a789, a320], "\n") * "\n"
+end
+
 @testset "MCT Ingest" begin
     path = tempname()
     write(path, make_test_mct())
@@ -262,16 +347,17 @@ end
 @testset "Reference Table Loaders" begin
     @testset "Airports" begin
         path = tempname()
-        # Tab-delimited: code, name, city, country, state, lat, lng, utc_offset, region
-        write(path, "ORD\tO'Hare International\tChicago\tUS\tIL\t41.9742\t-87.9073\t-360\tNOA\nLHR\tHeathrow\tLondon\tGB\t\t51.4700\t-0.4543\t0\tEUR\n")
+        write(path, make_test_airports())
         store = DuckDBStore()
         load_airports!(store, path)
-        @test table_stats(store).stations == 2
+        @test table_stats(store).stations == 3
 
         result = DBInterface.execute(store.db, "SELECT * FROM stations WHERE code = 'ORD'")
         row = first(result)
         @test strip(String(row.country)) == "US"
-        @test row.lat ≈ 41.9742
+        @test strip(String(row.state)) == "IL"
+        @test strip(String(row.metro_area)) == "CHI"
+        @test row.lat ≈ 41.97 atol=0.01
 
         close(store)
         rm(path)
@@ -279,8 +365,8 @@ end
 
     @testset "Regions" begin
         path = tempname()
-        # Format: region, airport, metro_area (space-delimited)
-        write(path, "NOA ORD CHI\nNOA LAX LAX\nEUR LHR LON\n")
+        # 9-byte fixed-width records: region(1-3), airport(4-6), metro_area(7-9)
+        write(path, "NOAORDCHI\nNOALAXLAX\nEURLHRLON\n")
         store = DuckDBStore()
         load_regions!(store, path)
         result = DBInterface.execute(store.db, "SELECT COUNT(*) AS n FROM regions")
@@ -302,8 +388,7 @@ end
 
     @testset "Aircrafts" begin
         path = tempname()
-        # Tab-delimited: code, body_type, description
-        write(path, "789\tW\tBoeing 787-9 Dreamliner\n320\tN\tAirbus A320\n")
+        write(path, make_test_aircrafts())
         store = DuckDBStore()
         load_aircrafts!(store, path)
         result = DBInterface.execute(store.db, "SELECT COUNT(*) AS n FROM aircrafts")

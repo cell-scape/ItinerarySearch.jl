@@ -7,12 +7,12 @@ using Dates
 
     # ── Test helpers (identical to test_search.jl helpers) ────────────────────
 
-    function _stn_rec(code, country, region; lat=0.0, lng=0.0, city="", state="")
+    function _stn_rec(code, country, region; lat=0.0, lng=0.0, metro_area="", state="")
         StationRecord(
             code=StationCode(code),
             country=InlineString3(country),
             state=InlineString3(state),
-            city=InlineString31(city),
+            metro_area=InlineString3(metro_area),
             region=InlineString3(region),
             lat=lat,
             lng=lng,
