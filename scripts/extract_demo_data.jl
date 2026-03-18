@@ -39,7 +39,8 @@ function extract_ssim(input_path::String, output_path::String)
     type3_count = 0
     type4_count = 0
 
-    open(ZstdCompressorStream, output_path, "w"; level=19) do out
+    open(output_path, "w") do raw_out
+        out = ZstdCompressorStream(raw_out)
         current_type3_included = false
         for line in eachline(input_path)
             length(line) < 1 && continue
@@ -65,6 +66,7 @@ function extract_ssim(input_path::String, output_path::String)
                 end
             end
         end
+        close(out)
     end
 
     println("  Type 3: $type3_count legs")
@@ -76,7 +78,8 @@ function extract_mct(input_path::String, output_path::String)
     println("Extracting MCT from $input_path...")
     count = 0
 
-    open(ZstdCompressorStream, output_path, "w"; level=19) do out
+    open(output_path, "w") do raw_out
+        out = ZstdCompressorStream(raw_out)
         for line in eachline(input_path)
             length(line) < 1 && continue
             rt = line[1]
@@ -100,17 +103,36 @@ function extract_mct(input_path::String, output_path::String)
                 count += 1
             end
         end
+        close(out)
     end
 
     println("  MCT records: $count")
     println("  Written to $output_path")
 end
 
+function _find_project_root()
+    # In a worktree, @__DIR__ is inside .worktrees/branch/scripts/
+    # Use git to find the main working tree reliably
+    d = dirname(@__DIR__)
+    try
+        main_tree = strip(read(`git -C $d rev-parse --path-format=absolute --git-common-dir`, String))
+        # git-common-dir returns the .git dir of the main worktree
+        return dirname(main_tree)
+    catch
+        return d  # fallback: assume we're in the main checkout
+    end
+end
+
 function main()
-    # Default paths
-    ssim_in = get(ENV, "SSIM_PATH", joinpath(@__DIR__, "..", "..", "TripBuilder", "data", "dataset", "uaoa_ssim.new.dat"))
-    mct_in = get(ENV, "MCT_PATH", joinpath(@__DIR__, "..", "..", "TripBuilder", "data", "MCTIMFILUA.DAT"))
-    outdir = get(ENV, "OUTDIR", joinpath(@__DIR__, "..", "data", "demo"))
+    # Default paths — resolve relative to the flightgraph project root
+    # (works from worktrees and the main checkout)
+    project_root = _find_project_root()
+    flightgraph_root = dirname(project_root)
+    tripbuilder_data = joinpath(flightgraph_root, "TripBuilder", "data")
+
+    ssim_in = get(ENV, "SSIM_PATH", joinpath(tripbuilder_data, "dataset", "uaoa_ssim.new.dat"))
+    mct_in = get(ENV, "MCT_PATH", joinpath(tripbuilder_data, "MCTIMFILUA.DAT"))
+    outdir = get(ENV, "OUTDIR", joinpath(project_root, "data", "demo"))
 
     mkpath(outdir)
 
@@ -129,7 +151,7 @@ function main()
     end
 
     # Copy reference tables (small, no filtering needed)
-    ref_dir = joinpath(@__DIR__, "..", "..", "TripBuilder", "data")
+    ref_dir = tripbuilder_data
     for file in ["mdstua.txt", "REGIMFILUA.DAT", "aircraft.txt"]
         src = joinpath(ref_dir, file)
         if isfile(src)
