@@ -252,7 +252,8 @@ function viz_network_map(
           integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN2GqNk=" crossorigin=""></script>
   <style>
     * { box-sizing: border-box; margin: 0; padding: 0; }
-    body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; }
+    html, body { margin: 0; padding: 0; height: 100%; }
+    body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; display: flex; flex-direction: column; }
     #header { padding: 10px 16px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 16px; }
     #header h1 { font-size: 16px; font-weight: 600; color: #f0f6fc; }
     #stats { font-size: 12px; color: #8b949e; }

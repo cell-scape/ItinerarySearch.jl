@@ -195,21 +195,19 @@ viz_timeline(timeline_file, sample_itns;
 )
 println("  Timeline     → $(timeline_file)")
 
-# Trip comparison — search a round-trip and compare results
-if !isempty(od_pairs)
-    o, d = od_pairs[1]
-    trip_legs = [
-        TripLeg(origin=o, destination=d, date=target),
-        TripLeg(origin=d, destination=o, date=target + Day(3), min_stay=60*12),
-    ]
-    trips = search_trip(store, graph, trip_legs, ctx_viz; max_trips=20)
-    trips_file = joinpath(viz_dir, "trips_$(target).html")
-    viz_trip_comparison(trips_file, trips;
-        title  = "Trip Comparison: $(o)↔$(d) — $(target)",
-        top_n  = 10,
-    )
-    println("  Trip chart   → $(trips_file)")
-end
+# Trip comparison — use a known hub pair for reliable results
+trip_od = (StationCode("ORD"), StationCode("SFO"))
+trip_legs = [
+    TripLeg(origin=trip_od[1], destination=trip_od[2], date=target),
+    TripLeg(origin=trip_od[2], destination=trip_od[1], date=target + Day(3), min_stay=60*12),
+]
+trips = search_trip(store, graph, trip_legs, ctx_viz; max_trips=20)
+trips_file = joinpath(viz_dir, "trips_$(target).html")
+viz_trip_comparison(trips_file, trips;
+    title  = "Trip Comparison: $(trip_od[1])↔$(trip_od[2]) — $(target)",
+    top_n  = 10,
+)
+println("  Trip chart   → $(trips_file) ($(length(trips)) trips)")
 
 close(store)
 println("\nDone!")
