@@ -29,6 +29,7 @@ include("graph/rules_itn.jl")
 include("graph/connect.jl")
 include("graph/search.jl")
 include("graph/builder.jl")
+include("graph/layer1.jl")
 include("output/formats.jl")
 
 # Exports — type aliases
@@ -66,6 +67,7 @@ export resolve_params
 
 # Exports — graph types (Subsystem 2)
 export GraphStation, GraphLeg, GraphSegment, GraphConnection, Itinerary
+export OneStopConnection, OneStopIndex
 export nonstop_connection
 
 # Exports — config
@@ -111,6 +113,9 @@ export FAIL_ITN_SUPPCODE, FAIL_ITN_MAFT
 
 # Exports — graph: connection builder
 export build_connections_at_station!, build_connections!
+
+# Exports — graph: Layer 1 one-via pre-computation
+export build_layer1!
 
 # Exports — graph: DFS search
 export RuntimeContext, search_itineraries

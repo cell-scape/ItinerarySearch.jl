@@ -63,6 +63,7 @@ using Dates
     include("test_rules_cnx.jl")
     include("test_rules_itn.jl")
     include("test_connect.jl")
+    include("test_layer1.jl")
     include("test_search.jl")
     include("test_builder.jl")
     include("test_formats.jl")
