@@ -1,8 +1,14 @@
 # src/graph/layer1.jl — Layer 1 one-via pre-computation (multi-threaded)
 #
+# EXPERIMENTAL: Layer 1 is disabled by default. It pre-computes two-stop paths
+# which can accelerate DFS search in distributed scenarios where the build cost
+# is amortized across many searches. For single-session use, the DFS without
+# Layer 1 is fast enough (15-30ms per OD) and Layer 1 adds ~2.5s build time
+# with significant memory pressure.
+#
 # Layer 1 pairs every inbound connection at a station with every outbound
 # connection sharing the same transit leg, producing pre-computed two-stop
-# paths (OneStopConnection) indexed by (origin, destination).
+# paths (OneStopConnection) indexed by (via_station, destination).
 #
 # Threading model: each station's work is independent, so threads write to
 # private chunk vectors and the merge into graph.layer1 is single-threaded.
