@@ -115,7 +115,7 @@ export FAIL_ITN_SUPPCODE, FAIL_ITN_MAFT
 export build_connections_at_station!, build_connections!
 
 # Exports — graph: Layer 1 one-via pre-computation
-export build_layer1!
+export build_layer1!, export_layer1!, import_layer1!, export_layer1_parquet!
 
 # Exports — graph: DFS search
 export RuntimeContext, search_itineraries

@@ -255,3 +255,89 @@ function _compute_fingerprint(graph::FlightGraph)::Tuple{UInt64,UInt64,UInt64}
 
     return (schedule_hash, mct_hash, config_hash)
 end
+
+"""
+    `function export_layer1!(store::DuckDBStore, graph::FlightGraph)::Nothing`
+---
+
+# Description
+- Flushes the in-memory Layer 1 one-stop index from `graph.layer1` into the
+  DuckDB tables `layer1_metadata` and `layer1_connections`
+- Clears both tables before writing so the result is always a complete snapshot
+  of the current in-memory state
+- Writes one row to `layer1_metadata` recording the fingerprint hashes, the
+  schedule window, the build timestamp, and the total connection count
+- Writes one row per `OneStopConnection` to `layer1_connections` using a
+  prepared statement for efficiency
+- Logs elapsed time and total connection count via `@info`
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store (tables must already exist)
+2. `graph::FlightGraph`: a fully built graph with `layer1_built == true`
+
+# Returns
+- `::Nothing`
+
+# Examples
+```julia
+julia> store = DuckDBStore();
+julia> build_layer1!(graph);
+julia> export_layer1!(store, graph);
+```
+"""
+function export_layer1!(store::DuckDBStore, graph::FlightGraph)::Nothing
+    t0 = time_ns()
+    schedule_hash, mct_hash, config_hash = _compute_fingerprint(graph)
+
+    DBInterface.execute(store.db, "DELETE FROM layer1_metadata")
+    DBInterface.execute(store.db, "DELETE FROM layer1_connections")
+
+    total = sum(length(oscs) for (_, oscs) in graph.layer1; init = 0)
+
+    DBInterface.execute(
+        store.db,
+        """
+        INSERT INTO layer1_metadata VALUES (?, ?, ?, ?, ?, CURRENT_TIMESTAMP, ?)
+    """,
+        [
+            reinterpret(Int64, schedule_hash),
+            reinterpret(Int64, mct_hash),
+            reinterpret(Int64, config_hash),
+            graph.window_start,
+            graph.window_end,
+            total,
+        ],
+    )
+
+    stmt = DBInterface.prepare(
+        store.db,
+        """
+        INSERT INTO layer1_connections VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    """,
+    )
+    for ((via_stn, dest), oscs) in graph.layer1
+        for osc in oscs
+            DBInterface.execute(
+                stmt,
+                [
+                    String(via_stn),
+                    String(dest),
+                    reinterpret(Int64, osc.via_leg.record.row_number),
+                    reinterpret(Int64, osc.first.from_leg.record.row_number),
+                    reinterpret(Int64, osc.first.to_leg.record.row_number),
+                    reinterpret(Int64, osc.second.from_leg.record.row_number),
+                    reinterpret(Int64, osc.second.to_leg.record.row_number),
+                    Float64(osc.total_distance),
+                    unpack_date(osc.valid_from),
+                    unpack_date(osc.valid_to),
+                    Int8(osc.valid_days),
+                ],
+            )
+        end
+    end
+    DBInterface.close!(stmt)
+
+    elapsed_ms = round((time_ns() - t0) / 1.0e6; digits = 1)
+    @info "Exported Layer 1" connections = total elapsed_ms = elapsed_ms
+    return nothing
+end
