@@ -95,6 +95,32 @@ function Base.show(io::IO, itn::Itinerary)
     print(io, "Itinerary($(flight_str), $(stops) stops, $(elapsed)min, $(dist)mi, circ=$(circ), $(status_str))")
 end
 
+"""
+    `Base.show(io::IO, trip::Trip)`
+
+Human-friendly summary: route chain, type, itinerary count, elapsed, distance.
+"""
+function Base.show(io::IO, trip::Trip)
+    # Build route chain: origin of each itinerary + final destination
+    parts = String[]
+    for itn in trip.itineraries
+        isempty(itn.connections) && continue
+        push!(parts, String(itn.connections[1].from_leg.org.code))
+    end
+    if !isempty(trip.itineraries)
+        last_itn = trip.itineraries[end]
+        if !isempty(last_itn.connections)
+            last_cp = last_itn.connections[end]
+            dst = (last_cp.to_leg === last_cp.from_leg) ?
+                last_cp.from_leg.dst.code : last_cp.to_leg.dst.code
+            push!(parts, String(dst))
+        end
+    end
+    route = join(parts, "→")
+    dist = round(Int, trip.total_distance)
+    print(io, "Trip($(trip.trip_id): $(route), $(trip.trip_type), $(length(trip.itineraries)) itineraries, $(trip.total_elapsed)min, $(dist)mi)")
+end
+
 # ── Long format ───────────────────────────────────────────────────────────────
 
 """
@@ -483,4 +509,97 @@ function _write_itn_leg_row(io::IO, itn_idx, leg_seq, leg::GraphLeg,
         is_codeshare(itn.status),
     ])
     return 1
+end
+
+# ── Trip output ──────────────────────────────────────────────────────────────
+
+"""
+    `function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date; header::Bool=true)::Int`
+---
+
+# Description
+- Write trips to a pipe-delimited file (one row per leg per itinerary per trip)
+- Prepends `trip_id`, `trip_type`, `itinerary_seq` to the standard itinerary leg columns
+
+# Arguments
+1. `io::IO`: output stream
+2. `trips::Vector{Trip}`: trip containers
+3. `graph::FlightGraph`: built flight graph
+4. `date::Date`: target operating date
+
+# Returns
+- `::Int`: number of rows written
+"""
+function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date; header::Bool=true)::Int
+    if header
+        _write_row(io, [
+            "trip_id", "trip_type", "itinerary_seq",
+            "itinerary_id", "leg_seq",
+            "record_serial", "row_number",
+            "airline", "flt_no", "operational_suffix", "itin_var", "leg_seq_ssim", "svc_type",
+            "codeshare_airline", "codeshare_flt_no", "is_operating",
+            "org", "dst", "market",
+            "dep_date", "dep_time", "arr_time", "arr_date_var",
+            "eqp", "body_type", "dep_term", "arr_term",
+            "distance_miles",
+            "dei_10", "dei_127", "wet_lease", "aircraft_owner",
+            "cnx_type", "cnx_time", "mct", "mct_id",
+            "num_stops", "elapsed_time",
+            "total_distance_miles", "market_distance_miles", "circuity",
+            "is_international", "has_interline", "has_codeshare",
+        ])
+    end
+
+    n = 0
+    for trip in trips
+        for (itn_seq, itn) in enumerate(trip.itineraries)
+            # Flatten connections into legs (same logic as write_itineraries)
+            legs_out = Tuple{GraphLeg, String, Int, Int, Int32}[]
+            n_cnx = length(itn.connections)
+            for (i, cp) in enumerate(itn.connections)
+                is_nonstop = cp.from_leg === cp.to_leg
+                mid = cp.mct_result.mct_id
+                if i == 1
+                    ct = is_nonstop && n_cnx == 1 ? "L" : (cp.is_through ? "S" : "C")
+                    push!(legs_out, (cp.from_leg, ct, 0, 0, Int32(0)))
+                else
+                    ct = cp.is_through ? "S" : "C"
+                    push!(legs_out, (cp.from_leg, ct, Int(cp.cnx_time), Int(cp.mct), mid))
+                end
+                if i == n_cnx && !is_nonstop
+                    push!(legs_out, (cp.to_leg, "C", Int(cp.cnx_time), Int(cp.mct), mid))
+                end
+            end
+
+            for (seq, (leg, cnx_type, cnx_time, mct_val, mct_id)) in enumerate(legs_out)
+                r = leg.record
+                flags = _resolve_flags(r)
+                org = strip(String(r.org))
+                dst = strip(String(r.dst))
+
+                _write_row(io, [
+                    Int(trip.trip_id), trip.trip_type, itn_seq,
+                    itn_seq, seq,
+                    Int(r.record_serial), Int(r.row_number),
+                    strip(String(r.airline)), Int(r.flt_no), r.operational_suffix,
+                    Int(r.itin_var), Int(r.leg_seq), r.svc_type,
+                    flags.cs_al, flags.cs_flt, flags.is_operating,
+                    org, dst, _market(org, dst),
+                    date, _format_time(r.ac_dep), _format_time(r.ac_arr), Int(r.arr_date_var),
+                    String(r.eqp), r.body_type, strip(String(r.dep_term)), strip(String(r.arr_term)),
+                    _miles(leg.distance),
+                    strip(r.dei_10), strip(r.dei_127), r.wet_lease, flags.owner,
+                    cnx_type, cnx_time, mct_val, Int(mct_id),
+                    Int(itn.num_stops), Int(itn.elapsed_time),
+                    _miles(itn.total_distance), _miles(itn.market_distance),
+                    round(Float64(itn.circuity); digits=2),
+                    is_international(itn.status),
+                    is_interline(itn.status),
+                    is_codeshare(itn.status),
+                ])
+                n += 1
+            end
+        end
+    end
+    return n
 end

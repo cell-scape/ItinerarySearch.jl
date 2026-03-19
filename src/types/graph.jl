@@ -364,6 +364,68 @@ const OneStopIndex = Dict{Tuple{StationCode,StationCode},Vector{OneStopConnectio
     num_regions::Int16 = Int16(0)
 end
 
+# ── Trip ─────────────────────────────────────────────────────────────────────
+
+"""
+    mutable struct Trip
+
+Booking-level journey container grouping one or more `Itinerary` objects.
+A one-way trip has 1 itinerary, a round-trip has 2, multi-city has N.
+
+# Fields
+- `trip_id::Int32` — unique identifier
+- `itineraries::Vector{Itinerary}` — ordered sequence (outbound first, return second, etc.)
+- `origin::StationCode` — ultimate origin (first itinerary's departure)
+- `destination::StationCode` — ultimate destination (last itinerary's arrival; same as origin for round-trip)
+- `trip_type::Symbol` — `:oneway`, `:roundtrip`, or `:multicity`
+- `total_elapsed::Int32` — sum of itinerary elapsed times (minutes)
+- `total_distance::Distance` — sum of itinerary total distances (miles)
+"""
+@kwdef mutable struct Trip
+    trip_id::Int32 = Int32(0)
+    itineraries::Vector{Itinerary} = Itinerary[]
+    origin::StationCode = NO_STATION
+    destination::StationCode = NO_STATION
+    trip_type::Symbol = :oneway
+    total_elapsed::Int32 = Int32(0)
+    total_distance::Distance = Distance(0)
+end
+
+"""
+    `Trip(itineraries::Vector{Itinerary}; trip_id::Int32=Int32(0))::Trip`
+
+Construct a Trip from a sequence of itineraries, inferring origin, destination,
+trip type, and aggregate metrics.
+"""
+function Trip(itineraries::Vector{Itinerary}; trip_id::Int32=Int32(0))
+    isempty(itineraries) && return Trip(trip_id=trip_id)
+
+    first_itn = itineraries[1]
+    origin = first_itn.connections[1].from_leg.org.code
+
+    last_itn = itineraries[end]
+    last_cp = last_itn.connections[end]
+    destination = (last_cp.to_leg === last_cp.from_leg) ?
+        last_cp.from_leg.dst.code : last_cp.to_leg.dst.code
+
+    trip_type = if length(itineraries) == 1
+        :oneway
+    elseif origin == destination
+        :roundtrip
+    else
+        :multicity
+    end
+
+    total_elapsed = Int32(sum(itn.elapsed_time for itn in itineraries))
+    total_distance = sum(itn.total_distance for itn in itineraries; init=Distance(0))
+
+    Trip(
+        trip_id=trip_id, itineraries=itineraries,
+        origin=origin, destination=destination, trip_type=trip_type,
+        total_elapsed=total_elapsed, total_distance=total_distance,
+    )
+end
+
 # ── Convenience constructors ──────────────────────────────────────────────────
 
 """

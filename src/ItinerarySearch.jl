@@ -66,7 +66,7 @@ export ParameterSet, MarketOverride, SearchConstraints
 export resolve_params
 
 # Exports — graph types (Subsystem 2)
-export GraphStation, GraphLeg, GraphSegment, GraphConnection, Itinerary
+export GraphStation, GraphLeg, GraphSegment, GraphConnection, Itinerary, Trip
 export OneStopConnection, OneStopIndex
 export nonstop_connection
 
@@ -125,6 +125,6 @@ export FlightGraph, build_graph!, search
 
 # Exports — output formats
 export itinerary_long_format, itinerary_wide_format
-export write_legs, write_itineraries
+export write_legs, write_itineraries, write_trips
 
 end # module
