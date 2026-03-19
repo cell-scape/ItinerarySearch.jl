@@ -761,6 +761,100 @@ using Dates
         end
     end
 
+    # ── export_layer1_parquet! ───────────────────────────────────────────────────
+
+    @testset "export_layer1_parquet! writes Parquet files" begin
+        using ItinerarySearch: export_layer1!, export_layer1_parquet!
+        using DuckDB
+        using DBInterface
+
+        # Build the same 4-station JFK→ORD→DEN→LAX topology.
+        stn_a = GraphStation(_make_stn_rec("JFK",  40.64,  -73.78))
+        stn_b = GraphStation(_make_stn_rec("ORD",  41.97,  -87.91))
+        stn_c = GraphStation(_make_stn_rec("DEN",  39.86, -104.67))
+        stn_d = GraphStation(_make_stn_rec("LAX",  33.94, -118.41))
+
+        leg_ab = GraphLeg(
+            _make_leg_rec(org = "JFK", dst = "ORD", flt_no = 901,
+                pax_dep = Int16(480), pax_arr = Int16(570), distance = 740.0f0),
+            stn_a, stn_b,
+        )
+        leg_bc = GraphLeg(
+            _make_leg_rec(org = "ORD", dst = "DEN", flt_no = 902,
+                pax_dep = Int16(660), pax_arr = Int16(780), distance = 920.0f0),
+            stn_b, stn_c,
+        )
+        leg_cd = GraphLeg(
+            _make_leg_rec(org = "DEN", dst = "LAX", flt_no = 903,
+                pax_dep = Int16(840), pax_arr = Int16(960), distance = 860.0f0),
+            stn_c, stn_d,
+        )
+
+        push!(stn_a.departures, leg_ab)
+        push!(stn_b.arrivals,   leg_ab)
+        push!(stn_b.departures, leg_bc)
+        push!(stn_c.arrivals,   leg_bc)
+        push!(stn_c.departures, leg_cd)
+        push!(stn_d.arrivals,   leg_cd)
+
+        cnx_b = GraphConnection(
+            from_leg = leg_ab, to_leg = leg_bc, station = stn_b,
+            valid_from = UInt32(20260101), valid_to = UInt32(20261231),
+            valid_days = UInt8(0x7f),
+        )
+        push!(stn_b.connections, cnx_b)
+        push!(leg_ab.connect_to,   cnx_b)
+        push!(leg_bc.connect_from, cnx_b)
+
+        cnx_c = GraphConnection(
+            from_leg = leg_bc, to_leg = leg_cd, station = stn_c,
+            valid_from = UInt32(20260101), valid_to = UInt32(20261231),
+            valid_days = UInt8(0x7f),
+        )
+        push!(stn_c.connections, cnx_c)
+        push!(leg_bc.connect_to,   cnx_c)
+        push!(leg_cd.connect_from, cnx_c)
+
+        ns_ab = nonstop_connection(leg_ab, stn_a)
+        ns_bc = nonstop_connection(leg_bc, stn_b)
+        ns_cd = nonstop_connection(leg_cd, stn_c)
+        push!(stn_a.connections, ns_ab)
+        push!(stn_b.connections, ns_bc)
+        push!(stn_c.connections, ns_cd)
+
+        graph = FlightGraph(
+            stations = Dict(
+                StationCode("JFK") => stn_a,
+                StationCode("ORD") => stn_b,
+                StationCode("DEN") => stn_c,
+                StationCode("LAX") => stn_d,
+            ),
+            legs = [leg_ab, leg_bc, leg_cd],
+            config = SearchConfig(circuity_factor = 3.0),
+            window_start = Date(2026, 1, 1),
+            window_end   = Date(2026, 12, 31),
+        )
+
+        build_layer1!(graph)
+        @test graph.layer1_built
+
+        store = DuckDBStore()
+        try
+            export_layer1!(store, graph)
+
+            parquet_dir  = mktempdir()
+            parquet_path = joinpath(parquet_dir, "layer1")
+            export_layer1_parquet!(parquet_path, store)
+
+            @test isfile(parquet_path * "_connections.parquet")
+            @test isfile(parquet_path * "_metadata.parquet")
+            @test filesize(parquet_path * "_connections.parquet") > 0
+            @test filesize(parquet_path * "_metadata.parquet") > 0
+        finally
+            close(store)
+        end
+    end
+
     # ── _is_valid_on_date helper ────────────────────────────────────────────────
 
     @testset "_is_valid_on_date" begin

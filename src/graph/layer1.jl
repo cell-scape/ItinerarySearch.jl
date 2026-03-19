@@ -341,3 +341,42 @@ function export_layer1!(store::DuckDBStore, graph::FlightGraph)::Nothing
     @info "Exported Layer 1" connections = total elapsed_ms = elapsed_ms
     return nothing
 end
+
+"""
+    `function export_layer1_parquet!(path::String, store::DuckDBStore)::Nothing`
+---
+
+# Description
+- Exports the `layer1_connections` and `layer1_metadata` DuckDB tables to
+  Parquet files for distribution (e.g. S3 or EFS)
+- Output file paths are `{path}_connections.parquet` and
+  `{path}_metadata.parquet`
+- The parent directory of `path` is created if it does not already exist
+- Intended to be called after `export_layer1!` has populated the DuckDB tables
+
+# Arguments
+1. `path::String`: base path prefix for the two output files (no extension)
+2. `store::DuckDBStore`: the DuckDB-backed store containing the Layer 1 tables
+
+# Returns
+- `::Nothing`
+
+# Examples
+```julia
+julia> export_layer1_parquet!("/tmp/layer1/out", store);
+# creates /tmp/layer1/out_connections.parquet and /tmp/layer1/out_metadata.parquet
+```
+"""
+function export_layer1_parquet!(path::String, store::DuckDBStore)::Nothing
+    mkpath(dirname(path))
+    DBInterface.execute(
+        store.db,
+        "COPY layer1_connections TO '$(path)_connections.parquet' (FORMAT PARQUET)",
+    )
+    DBInterface.execute(
+        store.db,
+        "COPY layer1_metadata TO '$(path)_metadata.parquet' (FORMAT PARQUET)",
+    )
+    @info "Exported Layer 1 to Parquet" path = path
+    return nothing
+end
