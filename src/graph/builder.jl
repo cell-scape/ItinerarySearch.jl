@@ -38,6 +38,8 @@ using UUIDs
 - `build_id::UUID` — unique identifier for this build instance
 - `build_stats::BuildStats` — per-build instrumentation accumulator
 - `config::SearchConfig` — snapshot of the config used to build this graph
+- `layer1_built::Bool` — `true` once the Layer 1 one-stop index has been built
+- `layer1::OneStopIndex` — pre-computed `(org, dst) → Vector{OneStopConnection}` index
 """
 @kwdef mutable struct FlightGraph
     stations::Dict{StationCode,GraphStation} = Dict{StationCode,GraphStation}()
@@ -57,6 +59,10 @@ using UUIDs
 
     # Configuration snapshot
     config::SearchConfig = SearchConfig()
+
+    # Layer 1 (one-stop pre-computed index)
+    layer1_built::Bool = false
+    layer1::OneStopIndex = OneStopIndex()
 end
 
 # ── Codeshare resolution helper ───────────────────────────────────────────────

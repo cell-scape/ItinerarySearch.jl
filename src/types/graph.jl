@@ -276,6 +276,50 @@ const _ZERO_GRAPH_LEG = GraphLeg()
     num_valid_dates::Int16 = Int16(0)
 end
 
+# ── OneStopConnection ─────────────────────────────────────────────────────────
+
+"""
+    mutable struct OneStopConnection
+---
+
+# Description
+- Pre-computed two-connection path sharing a transit leg
+- `first` is a connection at the transit leg's origin station;
+  `second` is a connection at the transit leg's destination station
+- Full path: `first.from_leg.org → via_org → transit_leg → via_dst → second.to_leg.dst`
+  (3 legs, 2 stops)
+- `valid_from` / `valid_to` / `valid_days` are the intersection of all three
+  legs' validity windows and frequency bitmasks
+
+# Fields
+- `first::GraphConnection` — first connection (inbound to the transit leg's origin)
+- `second::GraphConnection` — second connection (outbound from the transit leg's destination)
+- `via_leg::GraphLeg` — the shared transit leg connecting `first` and `second`
+- `total_distance::Distance` — sum of all three flown leg distances (miles)
+- `valid_from::UInt32` — packed YYYYMMDD start of combined validity window
+- `valid_to::UInt32` — packed YYYYMMDD end of combined validity window
+- `valid_days::UInt8` — 7-bit DOW bitmask of operating days
+"""
+@kwdef mutable struct OneStopConnection
+    first::GraphConnection = GraphConnection()
+    second::GraphConnection = GraphConnection()
+    via_leg::GraphLeg = _ZERO_GRAPH_LEG
+    total_distance::Distance = Distance(0)
+    valid_from::UInt32 = UInt32(0)
+    valid_to::UInt32 = UInt32(0)
+    valid_days::UInt8 = UInt8(0)
+end
+
+"""
+    const OneStopIndex
+
+`Dict{Tuple{StationCode, StationCode}, Vector{OneStopConnection}}`
+
+Maps `(origin_station, destination_station)` pairs to all pre-computed
+`OneStopConnection` paths between them (Layer 1 index).
+"""
+const OneStopIndex = Dict{Tuple{StationCode,StationCode},Vector{OneStopConnection}}
+
 # ── Itinerary ─────────────────────────────────────────────────────────────────
 
 """

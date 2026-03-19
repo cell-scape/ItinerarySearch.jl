@@ -33,6 +33,8 @@
 - `results::Vector{Itinerary}` — committed itineraries from the current search
 - `build_stats::BuildStats` — connection-build instrumentation accumulator
 - `search_stats::SearchStats` — search instrumentation accumulator
+- `layer1_built::Bool` — `true` once the Layer 1 one-stop index has been populated
+- `layer1::OneStopIndex` — pre-computed `(org, dst) → Vector{OneStopConnection}` index
 - `mct_selections::Vector{MCTSelectionRow}` — MCT cascade audit log (Tier 1)
 - `event_log::Vector{Any}` — structured event log (Tier 3; empty when disabled)
 """
@@ -54,6 +56,10 @@
     utc_dep_origin::Int32 = Int32(0)        # UTC dep of first leg (minutes), set per departure
     _max_elapsed_threshold::Int32 = Int32(2160)  # 1.5 * max_elapsed, pre-computed
     _circuity_threshold::Float64 = 2.5           # itinerary_circuity, pre-computed
+
+    # Layer 1 (one-stop pre-computed index; populated externally)
+    layer1_built::Bool = false
+    layer1::OneStopIndex = OneStopIndex()
 
     results::Vector{Itinerary} = Itinerary[]
 
