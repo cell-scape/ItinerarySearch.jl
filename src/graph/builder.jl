@@ -389,6 +389,11 @@ function search(
         itn_rules = build_itn_rules(config),
     )
 
+    if graph.layer1_built
+        ctx.layer1_built = true
+        ctx.layer1 = graph.layer1
+    end
+
     results = search_itineraries(graph.stations, origin, dest, target_date, ctx)
     # Return a copy — ctx.results is reused on subsequent searches
     return copy(results)

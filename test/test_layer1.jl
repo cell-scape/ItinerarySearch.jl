@@ -196,9 +196,11 @@ using Dates
         build_layer1!(graph)
         @test graph.layer1_built == true
 
-        # ── Verify (JFK, LAX) entry exists ────────────────────────────────────
+        # ── Verify (ORD, LAX) entry exists ────────────────────────────────────
+        # Index is keyed by (via_station, destination) so the DFS can look up
+        # two-hop completions using (current_leg.dst.code, dest.code).
 
-        key = (StationCode("JFK"), StationCode("LAX"))
+        key = (StationCode("ORD"), StationCode("LAX"))
         @test haskey(graph.layer1, key)
 
         oscs = graph.layer1[key]
@@ -220,7 +222,7 @@ using Dates
         @test osc.valid_to == UInt32(20261231)
         @test osc.valid_days == UInt8(0x7f)
 
-        # No reverse path (LAX → JFK) should exist
+        # No reverse path (DEN → JFK) should exist from the transit station
         @test !haskey(graph.layer1, (StationCode("LAX"), StationCode("JFK")))
     end
 
@@ -286,7 +288,8 @@ using Dates
 
         build_layer1!(graph)
 
-        key = (StationCode("JFK"), StationCode("LAX"))
+        # Index keyed by (via_station=ORD, destination=LAX)
+        key = (StationCode("ORD"), StationCode("LAX"))
         @test haskey(graph.layer1, key)
         osc = graph.layer1[key][1]::OneStopConnection
 
@@ -358,7 +361,8 @@ using Dates
         build_layer1!(graph)
 
         # DOW intersection is 0x01 & 0x02 = 0x00 → path must not appear
-        @test !haskey(graph.layer1, (StationCode("JFK"), StationCode("LAX")))
+        # (keyed by via_station=ORD, destination=LAX)
+        @test !haskey(graph.layer1, (StationCode("ORD"), StationCode("LAX")))
     end
 
     # ── Round-trip filter ───────────────────────────────────────────────────────
@@ -421,6 +425,149 @@ using Dates
 
         # JFK → JFK is a round-trip and must be filtered out
         @test !haskey(graph.layer1, (StationCode("JFK"), StationCode("JFK")))
+    end
+
+    # ── Layer 1 integration: DFS uses Layer 1 index ─────────────────────────────
+
+    @testset "DFS uses Layer 1 index (layer1_hits)" begin
+        using ItinerarySearch: search_itineraries, _is_valid_on_date
+
+        # Reuse the same 4-station JFK→ORD→DEN→LAX topology as the basic test.
+        stn_a = GraphStation(_make_stn_rec("JFK",  40.64, -73.78))
+        stn_b = GraphStation(_make_stn_rec("ORD",  41.97, -87.91))
+        stn_c = GraphStation(_make_stn_rec("DEN",  39.86, -104.67))
+        stn_d = GraphStation(_make_stn_rec("LAX",  33.94, -118.41))
+
+        leg_ab = GraphLeg(
+            _make_leg_rec(org = "JFK", dst = "ORD", flt_no = 501,
+                pax_dep = Int16(480), pax_arr = Int16(570), distance = 740.0f0),
+            stn_a, stn_b,
+        )
+        leg_bc = GraphLeg(
+            _make_leg_rec(org = "ORD", dst = "DEN", flt_no = 502,
+                pax_dep = Int16(660), pax_arr = Int16(780), distance = 920.0f0),
+            stn_b, stn_c,
+        )
+        leg_cd = GraphLeg(
+            _make_leg_rec(org = "DEN", dst = "LAX", flt_no = 503,
+                pax_dep = Int16(840), pax_arr = Int16(960), distance = 860.0f0),
+            stn_c, stn_d,
+        )
+
+        push!(stn_a.departures, leg_ab)
+        push!(stn_b.arrivals,   leg_ab)
+        push!(stn_b.departures, leg_bc)
+        push!(stn_c.arrivals,   leg_bc)
+        push!(stn_c.departures, leg_cd)
+        push!(stn_d.arrivals,   leg_cd)
+
+        # Connecting connections
+        cnx_b = GraphConnection(
+            from_leg = leg_ab, to_leg = leg_bc, station = stn_b,
+            valid_from = UInt32(20260101), valid_to = UInt32(20261231),
+            valid_days = UInt8(0x7f),
+        )
+        push!(stn_b.connections, cnx_b)
+        push!(leg_ab.connect_to,   cnx_b)
+        push!(leg_bc.connect_from, cnx_b)
+
+        cnx_c = GraphConnection(
+            from_leg = leg_bc, to_leg = leg_cd, station = stn_c,
+            valid_from = UInt32(20260101), valid_to = UInt32(20261231),
+            valid_days = UInt8(0x7f),
+        )
+        push!(stn_c.connections, cnx_c)
+        push!(leg_bc.connect_to,   cnx_c)
+        push!(leg_cd.connect_from, cnx_c)
+
+        # Nonstop self-connections (required by search_itineraries)
+        ns_ab = nonstop_connection(leg_ab, stn_a)
+        ns_bc = nonstop_connection(leg_bc, stn_b)
+        ns_cd = nonstop_connection(leg_cd, stn_c)
+        push!(stn_a.connections, ns_ab)
+        push!(stn_b.connections, ns_bc)
+        push!(stn_c.connections, ns_cd)
+
+        stations = Dict(
+            StationCode("JFK") => stn_a,
+            StationCode("ORD") => stn_b,
+            StationCode("DEN") => stn_c,
+            StationCode("LAX") => stn_d,
+        )
+
+        graph = FlightGraph(
+            stations = stations,
+            legs = [leg_ab, leg_bc, leg_cd],
+            config = SearchConfig(circuity_factor = 3.0),
+        )
+
+        build_layer1!(graph)
+        @test graph.layer1_built
+
+        # Wire Layer 1 into a RuntimeContext
+        ctx = RuntimeContext(
+            layer1_built = true,
+            layer1 = graph.layer1,
+            itn_rules = build_itn_rules(SearchConfig()),
+        )
+
+        target = Date(2026, 6, 1)   # Monday — all days valid
+        itns = search_itineraries(stations, StationCode("JFK"), StationCode("LAX"), target, ctx)
+
+        @test !isempty(itns)
+        @test ctx.search_stats.layer1_hits > 0
+    end
+
+    @testset "DFS Layer 1 miss counter increments for unknown pair" begin
+        using ItinerarySearch: search_itineraries
+
+        # Single leg JFK→ORD; no Layer 1 entry for ORD→anywhere
+        stn_a = GraphStation(_make_stn_rec("JFK", 40.64, -73.78))
+        stn_b = GraphStation(_make_stn_rec("ORD", 41.97, -87.91))
+        stn_c = GraphStation(_make_stn_rec("LAX", 33.94, -118.41))
+
+        leg_ab = GraphLeg(
+            _make_leg_rec(org = "JFK", dst = "ORD", flt_no = 601,
+                pax_dep = Int16(480), pax_arr = Int16(570), distance = 740.0f0),
+            stn_a, stn_b,
+        )
+
+        push!(stn_a.departures, leg_ab)
+        push!(stn_b.arrivals,   leg_ab)
+
+        ns_ab = nonstop_connection(leg_ab, stn_a)
+        push!(stn_a.connections, ns_ab)
+
+        # Build an empty Layer 1 (no entries) and attach to ctx
+        graph = FlightGraph(
+            stations = Dict(
+                StationCode("JFK") => stn_a,
+                StationCode("ORD") => stn_b,
+                StationCode("LAX") => stn_c,
+            ),
+            legs = [leg_ab],
+            config = SearchConfig(circuity_factor = 3.0),
+        )
+        build_layer1!(graph)   # will produce no entries for this tiny graph
+
+        stations = Dict(
+            StationCode("JFK") => stn_a,
+            StationCode("ORD") => stn_b,
+            StationCode("LAX") => stn_c,
+        )
+
+        ctx = RuntimeContext(
+            layer1_built = true,
+            layer1 = graph.layer1,
+            itn_rules = build_itn_rules(SearchConfig()),
+        )
+
+        target = Date(2026, 6, 1)
+        # Search JFK→LAX — ORD arrives but has no onward connections to LAX, so
+        # the Layer 1 lookup for (ORD, LAX) will miss.
+        search_itineraries(stations, StationCode("JFK"), StationCode("LAX"), target, ctx)
+
+        @test ctx.search_stats.layer1_misses > 0
     end
 
     # ── _is_valid_on_date helper ────────────────────────────────────────────────

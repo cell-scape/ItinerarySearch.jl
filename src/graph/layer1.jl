@@ -88,8 +88,9 @@ end
 
 # Returns
 - `::Vector{Tuple{StationCode, StationCode, OneStopConnection}}`: list of
-  `(origin_code, destination_code, osc)` tuples ready for insertion into
-  `graph.layer1`
+  `(via_station_code, destination_code, osc)` tuples ready for insertion into
+  `graph.layer1`, keyed by the transit (connect-point) station so the DFS can
+  look up two-hop completions using `(current_leg.dst.code, dest.code)`
 """
 function _build_layer1_at_station(
     stn::GraphStation,
@@ -152,7 +153,7 @@ function _build_layer1_at_station(
                 push!(
                     results,
                     (
-                        org_stn.code,
+                        stn.code,
                         dst_stn.code,
                         OneStopConnection(
                             first = arr_cp,

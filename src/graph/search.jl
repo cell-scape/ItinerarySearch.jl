@@ -354,6 +354,73 @@ function _validate_and_commit!(itn::Itinerary, ctx::RuntimeContext)
     return nothing
 end
 
+# ── Layer 1 path helper ─────────────────────────────────────────────────────────
+
+"""
+    `function _try_layer1_path!(itn::Itinerary, osc::OneStopConnection, ctx::RuntimeContext)::Nothing`
+---
+
+# Description
+- Pushes both connections of a pre-computed `OneStopConnection` onto the working
+  itinerary, calls `_validate_and_commit!`, then restores all mutable fields
+- Used as a fast-path from the DFS loop when a Layer 1 entry covers the
+  remaining two hops to the destination
+- Saves and restores `status`, `num_stops`, `num_eqp_changes`, `elapsed_time`,
+  and `total_distance`
+
+# Arguments
+1. `itn::Itinerary`: working itinerary (mutated then restored)
+2. `osc::OneStopConnection`: the pre-computed two-hop path
+3. `ctx::RuntimeContext`: search context (results and stats may be updated)
+"""
+function _try_layer1_path!(
+    itn::Itinerary,
+    osc::OneStopConnection,
+    ctx::RuntimeContext,
+)::Nothing
+    # Save state
+    old_status = itn.status
+    old_stops = itn.num_stops
+    old_eqp = itn.num_eqp_changes
+    old_elapsed = itn.elapsed_time
+    old_distance = itn.total_distance
+
+    # Push first connection
+    push!(itn.connections, osc.first)
+    itn.status |= osc.first.status
+    itn.num_stops += Int16(1)
+    itn.total_distance += osc.first.to_leg.distance
+    itn.elapsed_time += Int32(osc.first.cnx_time)
+    if !osc.first.is_through && osc.first.from_leg.record.eqp != osc.first.to_leg.record.eqp
+        itn.num_eqp_changes += Int16(1)
+    end
+
+    # Push second connection
+    push!(itn.connections, osc.second)
+    itn.status |= osc.second.status
+    itn.num_stops += Int16(1)
+    itn.total_distance += osc.second.to_leg.distance
+    itn.elapsed_time += Int32(osc.second.cnx_time)
+    if !osc.second.is_through &&
+       osc.second.from_leg.record.eqp != osc.second.to_leg.record.eqp
+        itn.num_eqp_changes += Int16(1)
+    end
+
+    # Validate and commit
+    _validate_and_commit!(itn, ctx)
+
+    # Restore state
+    pop!(itn.connections)
+    pop!(itn.connections)
+    itn.status = old_status
+    itn.num_stops = old_stops
+    itn.num_eqp_changes = old_eqp
+    itn.elapsed_time = old_elapsed
+    itn.total_distance = old_distance
+
+    return nothing
+end
+
 # ── DFS core ────────────────────────────────────────────────────────────────────
 
 """
@@ -393,6 +460,25 @@ function _dfs!(
     # Max-depth guard
     max_stops = Int(ctx.constraints.defaults.max_stops)
     depth >= max_stops && return
+
+    # Layer 1 shortcut: look up pre-computed two-hop paths to the destination.
+    # Requires depth + 1 < max_stops so the two hops fit within the stop budget.
+    if ctx.layer1_built && depth + 1 < max_stops
+        key = (current_leg.dst.code, dest.code)
+        oscs = get(ctx.layer1, key, nothing)
+        if oscs !== nothing
+            ctx.search_stats.layer1_hits += Int64(1)
+            packed = ctx.target_date
+            dow = ctx.target_dow
+            @inbounds for osc_idx in 1:length(oscs)
+                osc = oscs[osc_idx]
+                _is_valid_on_date(osc, packed, dow) || continue
+                _try_layer1_path!(itn, osc, ctx)
+            end
+        else
+            ctx.search_stats.layer1_misses += Int64(1)
+        end
+    end
 
     connect_to = current_leg.connect_to
     @inbounds for i in 1:length(connect_to)
