@@ -343,6 +343,140 @@ function export_layer1!(store::DuckDBStore, graph::FlightGraph)::Nothing
 end
 
 """
+    `function import_layer1!(store::DuckDBStore, graph::FlightGraph)::Bool`
+---
+
+# Description
+- Loads the pre-computed Layer 1 one-stop index from DuckDB tables
+  `layer1_metadata` and `layer1_connections` into `graph.layer1`
+- Returns `false` immediately when the tables are empty or the stored
+  fingerprint does not match the current graph (staleness detection)
+- Resolves each connection row back to live `GraphLeg` / `GraphConnection`
+  objects by matching `row_number` fields; rows whose legs cannot be found
+  are skipped and counted in `n_skipped`
+- Sets `graph.layer1_built = true` on success
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store (tables must already exist)
+2. `graph::FlightGraph`: a graph whose connections have already been built
+   (via `build_connections!`) so that `connect_to` vectors are populated
+
+# Returns
+- `::Bool`: `true` when Layer 1 was successfully imported, `false` when the
+  stored index is absent or stale
+
+# Examples
+```julia
+julia> store = DuckDBStore();
+julia> export_layer1!(store, graph);
+julia> graph2 = FlightGraph(stations=graph.stations, legs=graph.legs,
+                             config=graph.config);
+julia> import_layer1!(store, graph2)
+true
+```
+"""
+function import_layer1!(store::DuckDBStore, graph::FlightGraph)::Bool
+    # Check metadata exists
+    meta_result = collect(DBInterface.execute(store.db, "SELECT * FROM layer1_metadata LIMIT 1"))
+    isempty(meta_result) && return false
+    meta = meta_result[1]
+
+    # Compare fingerprint — stored as Int64, computed as UInt64
+    schedule_hash, mct_hash, config_hash = _compute_fingerprint(graph)
+    reinterpret(Int64, schedule_hash) != meta.schedule_hash && return false
+    reinterpret(Int64, mct_hash)      != meta.mct_hash      && return false
+    reinterpret(Int64, config_hash)   != meta.config_hash   && return false
+
+    # Build row_number → GraphLeg lookup
+    rowid_to_leg = Dict{UInt64,GraphLeg}()
+    for leg in graph.legs
+        rowid_to_leg[leg.record.row_number] = leg
+    end
+
+    # Load and reconstruct
+    rows = collect(DBInterface.execute(store.db, "SELECT * FROM layer1_connections"))
+    n_loaded = 0
+    n_skipped = 0
+
+    for r in rows
+        # Resolve legs by row_number (stored as Int64, convert back to UInt64)
+        via_leg = get(rowid_to_leg, UInt64(r.via_leg_row_id), nothing)
+        via_leg === nothing && (n_skipped += 1; continue)
+
+        first_from = get(rowid_to_leg, UInt64(r.first_from_row_id), nothing)
+        first_to   = get(rowid_to_leg, UInt64(r.first_to_row_id),   nothing)
+        (first_from === nothing || first_to === nothing) && (n_skipped += 1; continue)
+
+        second_from = get(rowid_to_leg, UInt64(r.second_from_row_id), nothing)
+        second_to   = get(rowid_to_leg, UInt64(r.second_to_row_id),   nothing)
+        (second_from === nothing || second_to === nothing) && (n_skipped += 1; continue)
+
+        # Resolve GraphConnections by scanning connect_to on the from_leg
+        first_cp = _find_connection(first_from, first_to)
+        first_cp === nothing && (n_skipped += 1; continue)
+
+        second_cp = _find_connection(second_from, second_to)
+        second_cp === nothing && (n_skipped += 1; continue)
+
+        # valid_from / valid_to arrive as Date (or DateTime) from DuckDB DATE column
+        vf_raw = r.valid_from
+        vt_raw = r.valid_to
+        vf_date = vf_raw isa DateTime ? Date(vf_raw) : Date(vf_raw)
+        vt_date = vt_raw isa DateTime ? Date(vt_raw) : Date(vt_raw)
+
+        osc = OneStopConnection(
+            first          = first_cp,
+            second         = second_cp,
+            via_leg        = via_leg,
+            total_distance = Distance(r.total_distance),
+            valid_from     = pack_date(vf_date),
+            valid_to       = pack_date(vt_date),
+            valid_days     = UInt8(r.valid_days),
+        )
+
+        key = (
+            StationCode(strip(String(r.via_station))),
+            StationCode(strip(String(r.destination))),
+        )
+        vec = get!(graph.layer1, key) do
+            OneStopConnection[]
+        end
+        push!(vec, osc)
+        n_loaded += 1
+    end
+
+    graph.layer1_built = true
+    @info "Imported Layer 1" loaded = n_loaded skipped = n_skipped
+    return true
+end
+
+"""
+    `function _find_connection(from_leg::GraphLeg, to_leg::GraphLeg)::Union{GraphConnection, Nothing}`
+---
+
+# Description
+- Searches `from_leg.connect_to` for a `GraphConnection` whose `to_leg` is
+  identical (by `===`) to `to_leg`
+- Used by `import_layer1!` to re-resolve stored row-number pairs back to live
+  `GraphConnection` objects after importing from DuckDB
+
+# Arguments
+1. `from_leg::GraphLeg`: the leg whose `connect_to` list is scanned
+2. `to_leg::GraphLeg`: the expected destination leg of the connection
+
+# Returns
+- `::Union{GraphConnection, Nothing}`: the matching connection, or `nothing` if
+  not found
+"""
+function _find_connection(from_leg::GraphLeg, to_leg::GraphLeg)::Union{GraphConnection,Nothing}
+    for cp_any in from_leg.connect_to
+        cp = cp_any::GraphConnection
+        cp.to_leg === to_leg && return cp
+    end
+    return nothing
+end
+
+"""
     `function export_layer1_parquet!(path::String, store::DuckDBStore)::Nothing`
 ---
 

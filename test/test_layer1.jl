@@ -855,6 +855,273 @@ using Dates
         end
     end
 
+    # ── import_layer1!: round-trip export → import ──────────────────────────────
+
+    @testset "import_layer1! round-trip export→import" begin
+        using ItinerarySearch: export_layer1!, import_layer1!
+        using DuckDB
+        using DBInterface
+
+        stn_a = GraphStation(_make_stn_rec("JFK",  40.64,  -73.78))
+        stn_b = GraphStation(_make_stn_rec("ORD",  41.97,  -87.91))
+        stn_c = GraphStation(_make_stn_rec("DEN",  39.86, -104.67))
+        stn_d = GraphStation(_make_stn_rec("LAX",  33.94, -118.41))
+
+        # Helper: rebuild LegRecord with a unique row_number
+        function _with_row_number(rec::LegRecord, rn::UInt64)::LegRecord
+            LegRecord(
+                airline            = rec.airline,
+                flt_no             = rec.flt_no,
+                operational_suffix = rec.operational_suffix,
+                itin_var           = rec.itin_var,
+                itin_var_overflow  = rec.itin_var_overflow,
+                leg_seq            = rec.leg_seq,
+                svc_type           = rec.svc_type,
+                org                = rec.org,
+                dst                = rec.dst,
+                pax_dep            = rec.pax_dep,
+                pax_arr            = rec.pax_arr,
+                ac_dep             = rec.ac_dep,
+                ac_arr             = rec.ac_arr,
+                dep_utc_offset     = rec.dep_utc_offset,
+                arr_utc_offset     = rec.arr_utc_offset,
+                dep_date_var       = rec.dep_date_var,
+                arr_date_var       = rec.arr_date_var,
+                eqp                = rec.eqp,
+                body_type          = rec.body_type,
+                dep_term           = rec.dep_term,
+                arr_term           = rec.arr_term,
+                aircraft_owner     = rec.aircraft_owner,
+                operating_date     = rec.operating_date,
+                day_of_week        = rec.day_of_week,
+                eff_date           = rec.eff_date,
+                disc_date          = rec.disc_date,
+                frequency          = rec.frequency,
+                mct_status_dep     = rec.mct_status_dep,
+                mct_status_arr     = rec.mct_status_arr,
+                trc                = rec.trc,
+                trc_overflow       = rec.trc_overflow,
+                record_serial      = rec.record_serial,
+                row_number         = rn,
+                segment_hash       = rec.segment_hash,
+                distance           = rec.distance,
+                codeshare_airline  = rec.codeshare_airline,
+                codeshare_flt_no   = rec.codeshare_flt_no,
+                dei_10             = rec.dei_10,
+                wet_lease          = rec.wet_lease,
+                dei_127            = rec.dei_127,
+                prbd               = rec.prbd,
+            )
+        end
+
+        leg_ab = GraphLeg(
+            _with_row_number(
+                _make_leg_rec(org = "JFK", dst = "ORD", flt_no = 1201,
+                    pax_dep = Int16(480), pax_arr = Int16(570), distance = 740.0f0),
+                UInt64(1201),
+            ),
+            stn_a, stn_b,
+        )
+        leg_bc = GraphLeg(
+            _with_row_number(
+                _make_leg_rec(org = "ORD", dst = "DEN", flt_no = 1202,
+                    pax_dep = Int16(660), pax_arr = Int16(780), distance = 920.0f0),
+                UInt64(1202),
+            ),
+            stn_b, stn_c,
+        )
+        leg_cd = GraphLeg(
+            _with_row_number(
+                _make_leg_rec(org = "DEN", dst = "LAX", flt_no = 1203,
+                    pax_dep = Int16(840), pax_arr = Int16(960), distance = 860.0f0),
+                UInt64(1203),
+            ),
+            stn_c, stn_d,
+        )
+
+        push!(stn_a.departures, leg_ab)
+        push!(stn_b.arrivals,   leg_ab)
+        push!(stn_b.departures, leg_bc)
+        push!(stn_c.arrivals,   leg_bc)
+        push!(stn_c.departures, leg_cd)
+        push!(stn_d.arrivals,   leg_cd)
+
+        cnx_b = GraphConnection(
+            from_leg = leg_ab, to_leg = leg_bc, station = stn_b,
+            valid_from = UInt32(20260101), valid_to = UInt32(20261231),
+            valid_days = UInt8(0x7f),
+        )
+        push!(stn_b.connections, cnx_b)
+        push!(leg_ab.connect_to,   cnx_b)
+        push!(leg_bc.connect_from, cnx_b)
+
+        cnx_c = GraphConnection(
+            from_leg = leg_bc, to_leg = leg_cd, station = stn_c,
+            valid_from = UInt32(20260101), valid_to = UInt32(20261231),
+            valid_days = UInt8(0x7f),
+        )
+        push!(stn_c.connections, cnx_c)
+        push!(leg_bc.connect_to,   cnx_c)
+        push!(leg_cd.connect_from, cnx_c)
+
+        ns_ab = nonstop_connection(leg_ab, stn_a)
+        ns_bc = nonstop_connection(leg_bc, stn_b)
+        ns_cd = nonstop_connection(leg_cd, stn_c)
+        push!(stn_a.connections, ns_ab)
+        push!(stn_b.connections, ns_bc)
+        push!(stn_c.connections, ns_cd)
+
+        graph = FlightGraph(
+            stations = Dict(
+                StationCode("JFK") => stn_a,
+                StationCode("ORD") => stn_b,
+                StationCode("DEN") => stn_c,
+                StationCode("LAX") => stn_d,
+            ),
+            legs = [leg_ab, leg_bc, leg_cd],
+            config = SearchConfig(circuity_factor = 3.0),
+            window_start = Date(2026, 1, 1),
+            window_end   = Date(2026, 12, 31),
+        )
+
+        build_layer1!(graph)
+        @test graph.layer1_built
+
+        expected_total = sum(length(v) for (_, v) in graph.layer1; init = 0)
+        @test expected_total > 0
+
+        store = DuckDBStore()
+        try
+            export_layer1!(store, graph)
+
+            # Clear in-memory layer1 and reset flag, keep legs/connections intact
+            empty!(graph.layer1)
+            graph.layer1_built = false
+
+            # Import should succeed and restore the same count
+            result = import_layer1!(store, graph)
+            @test result == true
+            @test graph.layer1_built == true
+
+            imported_total = sum(length(v) for (_, v) in graph.layer1; init = 0)
+            @test imported_total == expected_total
+
+            # Spot-check: (ORD, LAX) entry exists with valid live leg pointers
+            key = (StationCode("ORD"), StationCode("LAX"))
+            @test haskey(graph.layer1, key)
+            osc = graph.layer1[key][1]::OneStopConnection
+            @test osc.via_leg.record.row_number > UInt64(0)
+            @test osc.first.from_leg.record.row_number > UInt64(0)
+            @test osc.second.to_leg.record.row_number > UInt64(0)
+        finally
+            close(store)
+        end
+    end
+
+    # ── import_layer1!: staleness detection ────────────────────────────────────
+
+    @testset "import_layer1! staleness detection" begin
+        using ItinerarySearch: export_layer1!, import_layer1!
+        using DuckDB
+
+        # Build and export a graph with one leg set
+        stn_a = GraphStation(_make_stn_rec("JFK",  40.64,  -73.78))
+        stn_b = GraphStation(_make_stn_rec("ORD",  41.97,  -87.91))
+        stn_c = GraphStation(_make_stn_rec("DEN",  39.86, -104.67))
+        stn_d = GraphStation(_make_stn_rec("LAX",  33.94, -118.41))
+
+        leg_ab = GraphLeg(
+            _make_leg_rec(org = "JFK", dst = "ORD", flt_no = 1301,
+                pax_dep = Int16(480), pax_arr = Int16(570), distance = 740.0f0),
+            stn_a, stn_b,
+        )
+        leg_bc = GraphLeg(
+            _make_leg_rec(org = "ORD", dst = "DEN", flt_no = 1302,
+                pax_dep = Int16(660), pax_arr = Int16(780), distance = 920.0f0),
+            stn_b, stn_c,
+        )
+        leg_cd = GraphLeg(
+            _make_leg_rec(org = "DEN", dst = "LAX", flt_no = 1303,
+                pax_dep = Int16(840), pax_arr = Int16(960), distance = 860.0f0),
+            stn_c, stn_d,
+        )
+
+        graph_orig = FlightGraph(
+            stations = Dict(
+                StationCode("JFK") => stn_a,
+                StationCode("ORD") => stn_b,
+                StationCode("DEN") => stn_c,
+                StationCode("LAX") => stn_d,
+            ),
+            legs = [leg_ab, leg_bc, leg_cd],
+            config = SearchConfig(circuity_factor = 3.0),
+            window_start = Date(2026, 1, 1),
+            window_end   = Date(2026, 12, 31),
+        )
+        build_layer1!(graph_orig)
+
+        store = DuckDBStore()
+        try
+            export_layer1!(store, graph_orig)
+
+            # Build a different graph with a different leg set — fingerprint differs
+            stn_x = GraphStation(_make_stn_rec("SFO",  37.61, -122.38))
+            stn_y = GraphStation(_make_stn_rec("SEA",  47.44, -122.30))
+            leg_xy = GraphLeg(
+                _make_leg_rec(org = "SFO", dst = "SEA", flt_no = 2001,
+                    pax_dep = Int16(480), pax_arr = Int16(600), distance = 680.0f0),
+                stn_x, stn_y,
+            )
+            graph_new = FlightGraph(
+                stations = Dict(
+                    StationCode("SFO") => stn_x,
+                    StationCode("SEA") => stn_y,
+                ),
+                legs = [leg_xy],
+                config = SearchConfig(circuity_factor = 3.0),
+            )
+
+            result = import_layer1!(store, graph_new)
+            @test result == false
+            @test graph_new.layer1_built == false
+        finally
+            close(store)
+        end
+    end
+
+    # ── import_layer1!: empty store returns false ───────────────────────────────
+
+    @testset "import_layer1! empty store returns false" begin
+        using ItinerarySearch: import_layer1!
+        using DuckDB
+
+        stn_a = GraphStation(_make_stn_rec("JFK", 40.64, -73.78))
+        stn_b = GraphStation(_make_stn_rec("ORD", 41.97, -87.91))
+        leg_ab = GraphLeg(
+            _make_leg_rec(org = "JFK", dst = "ORD", flt_no = 1401,
+                pax_dep = Int16(480), pax_arr = Int16(570), distance = 740.0f0),
+            stn_a, stn_b,
+        )
+        graph = FlightGraph(
+            stations = Dict(
+                StationCode("JFK") => stn_a,
+                StationCode("ORD") => stn_b,
+            ),
+            legs = [leg_ab],
+            config = SearchConfig(circuity_factor = 3.0),
+        )
+
+        store = DuckDBStore()
+        try
+            # Fresh store — layer1_metadata is empty → must return false
+            result = import_layer1!(store, graph)
+            @test result == false
+            @test graph.layer1_built == false
+        finally
+            close(store)
+        end
+    end
+
     # ── _is_valid_on_date helper ────────────────────────────────────────────────
 
     @testset "_is_valid_on_date" begin
