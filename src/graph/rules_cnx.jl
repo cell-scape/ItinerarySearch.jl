@@ -334,9 +334,9 @@ end
 ---
 
 # Description
-- Callable struct implementing the Maximum Feasible Travel Time (MAFT) rule
-- Rejects connections where the total block time of both legs exceeds the maximum
-  feasible travel time computed from their combined distances
+- Callable struct implementing the Maximum Allowable Flying Time (MAFT) rule
+- Rejects connections where the accumulated block time of both legs exceeds the
+  MAFT derived from the combined route distance
 - Round-trip connections (`STATUS_ROUNDTRIP` set) always pass
 - MAFT = max(total_distance / speed × 60, 30.0) + rest_time
 
@@ -382,8 +382,9 @@ function (r::MAFTRule)(cp::GraphConnection, ctx)::Int
     to_block = Int32(to_rec.pax_arr) - Int32(to_rec.pax_dep) + Int32(to_rec.arr_date_var) * Int32(1440)
     actual_block = Float64(from_block + to_block)
 
-    # MAFT = max feasible travel time from combined distance
+    # MAFT from combined distance (pass when distance is unknown)
     total_dist = Float64(cp.from_leg.distance) + Float64(cp.to_leg.distance)
+    total_dist <= 0.0 && return PASS
     maft = max((total_dist / r.speed) * 60.0, 30.0) + r.rest_time
 
     return actual_block <= maft ? PASS : FAIL_MAFT
