@@ -49,6 +49,7 @@
     min_total_distance::Distance = Distance(0.0)
     max_total_distance::Distance = Distance(Inf32)
     itinerary_circuity::Float64 = 2.5
+    max_results::Int32 = Int32(0)           # 0 = unlimited; stop search after N results per OD
 end
 
 """

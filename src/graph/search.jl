@@ -596,16 +596,25 @@ function _dfs!(
     max_stops = Int(ctx.constraints.defaults.max_stops)
     depth >= max_stops && return
 
+    # Max-results early termination
+    max_res = Int(ctx.constraints.defaults.max_results)
+    max_res > 0 && length(ctx.results) >= max_res && return
+
     # Layer 1 shortcut: look up pre-computed two-hop paths to the destination.
     # Requires depth + 1 < max_stops so the two hops fit within the stop budget.
+    # When Layer 1 has entries for this (station, dest) pair, skip the Layer 0
+    # traversal at this depth to avoid duplicate 2-stop paths.
+    layer1_hit = false
     if ctx.layer1_built && depth + 1 < max_stops
         key = (current_leg.dst.code, dest.code)
         oscs = get(ctx.layer1, key, nothing)
         if oscs !== nothing
+            layer1_hit = true
             ctx.search_stats.layer1_hits += Int64(1)
             packed = ctx.target_date
             dow = ctx.target_dow
             @inbounds for osc_idx in 1:length(oscs)
+                max_res > 0 && length(ctx.results) >= max_res && break
                 osc = oscs[osc_idx]
                 _is_valid_on_date(osc, packed, dow) || continue
                 _try_layer1_path!(itn, osc, ctx)
@@ -626,6 +635,13 @@ function _dfs!(
         cp.from_leg === cp.to_leg && continue
 
         next_leg = cp.to_leg::GraphLeg
+
+        # Layer 1 dedup: if Layer 1 covered this (station, dest) pair,
+        # skip connections that would recurse deeper (they produce duplicates).
+        # Keep connections that reach dest directly (1-stop paths Layer 1 doesn't cover).
+        if layer1_hit && next_leg.dst !== dest
+            continue
+        end
 
         # Elapsed-time pruning (UTC-based)
         next_utc_arr = Int32(next_leg.record.pax_arr) - Int32(next_leg.record.arr_utc_offset) +
