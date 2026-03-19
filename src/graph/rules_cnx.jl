@@ -374,6 +374,7 @@ MAFTRule() = MAFTRule(400.0, 480.0)
 """
 function (r::MAFTRule)(cp::GraphConnection, ctx)::Int
     is_roundtrip(cp.status) && return PASS
+    cp.from_leg === cp.to_leg && return PASS  # nonstop: MAFT is tautological
 
     # Actual block time from schedule: arrival - departure (with overnight wrap)
     from_rec = cp.from_leg.record
