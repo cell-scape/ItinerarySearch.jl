@@ -74,8 +74,8 @@ const FAIL_TRFREST  = Int(-11)
 - `::Int`: always `PASS`
 """
 function check_cnx_roundtrip(cp::GraphConnection, ctx)::Int
-    from_org = cp.from_leg.org.code
-    to_dst = cp.to_leg.dst.code
+    from_org = ((cp.from_leg::GraphLeg).org::GraphStation).code
+    to_dst = ((cp.to_leg::GraphLeg).dst::GraphStation).code
     if from_org != NO_STATION && to_dst != NO_STATION && from_org == to_dst
         cp.status |= STATUS_ROUNDTRIP
     end
@@ -213,7 +213,7 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
         r.lookup,
         from_leg.record.airline,
         to_leg.record.airline,
-        cp.station.code,
+        (cp.station::GraphStation).code,
         mct_status;
         arr_body = from_leg.record.body_type,
         dep_body = to_leg.record.body_type,
@@ -309,16 +309,18 @@ end
 - `::Int`: `PASS` or `FAIL_SUPPCODE`
 """
 function check_cnx_suppcodes(cp::GraphConnection, ctx)::Int
-    from_trc = cp.from_leg.record.trc
-    to_trc = cp.to_leg.record.trc
+    from_leg = cp.from_leg::GraphLeg
+    to_leg_r = cp.to_leg::GraphLeg
+    from_trc = from_leg.record.trc
+    to_trc = to_leg_r.record.trc
 
-    from_seq = Int(cp.from_leg.record.leg_seq)
+    from_seq = Int(from_leg.record.leg_seq)
     if from_seq > 0 && from_seq <= length(from_trc)
         ch = from_trc[from_seq]
         ch == 'A' && return FAIL_SUPPCODE
     end
 
-    to_seq = Int(cp.to_leg.record.leg_seq)
+    to_seq = Int(to_leg_r.record.leg_seq)
     if to_seq > 0 && to_seq <= length(to_trc)
         ch = to_trc[to_seq]
         ch == 'A' && return FAIL_SUPPCODE
@@ -376,15 +378,18 @@ function (r::MAFTRule)(cp::GraphConnection, ctx)::Int
     is_roundtrip(cp.status) && return PASS
     cp.from_leg === cp.to_leg && return PASS  # nonstop: MAFT is tautological
 
+    from_l = cp.from_leg::GraphLeg
+    to_l = cp.to_leg::GraphLeg
+
     # Actual block time from schedule: arrival - departure (with overnight wrap)
-    from_rec = cp.from_leg.record
-    to_rec = cp.to_leg.record
+    from_rec = from_l.record
+    to_rec = to_l.record
     from_block = Int32(from_rec.pax_arr) - Int32(from_rec.pax_dep) + Int32(from_rec.arr_date_var) * Int32(1440)
     to_block = Int32(to_rec.pax_arr) - Int32(to_rec.pax_dep) + Int32(to_rec.arr_date_var) * Int32(1440)
     actual_block = Float64(from_block + to_block)
 
     # MAFT from combined distance (pass when distance is unknown)
-    total_dist = Float64(cp.from_leg.distance) + Float64(cp.to_leg.distance)
+    total_dist = Float64(from_l.distance) + Float64(to_l.distance)
     total_dist <= 0.0 && return PASS
     maft = max((total_dist / r.speed) * 60.0, 30.0) + r.rest_time
 
@@ -443,8 +448,10 @@ CircuityRule() = CircuityRule(2.0, 500.0)
 function (r::CircuityRule)(cp::GraphConnection, ctx)::Int
     is_roundtrip(cp.status) && return PASS
 
-    from_org = cp.from_leg.org
-    to_dst = cp.to_leg.dst
+    from_l = cp.from_leg::GraphLeg
+    to_l = cp.to_leg::GraphLeg
+    from_org = from_l.org::GraphStation
+    to_dst = to_l.dst::GraphStation
     (from_org.code == NO_STATION || to_dst.code == NO_STATION) && return PASS
     from_org.code == to_dst.code && return PASS  # same O-D, never circuitous
 
@@ -459,7 +466,7 @@ function (r::CircuityRule)(cp::GraphConnection, ctx)::Int
         ctx.gc_cache[gc_key] = gc_dist
     end
 
-    route_dist = Float64(cp.from_leg.distance) + Float64(cp.to_leg.distance)
+    route_dist = Float64(from_l.distance) + Float64(to_l.distance)
     return route_dist <= r.factor * gc_dist + r.extra_miles ? PASS : FAIL_CIRCUITY
 end
 
@@ -596,14 +603,16 @@ end
 - `::Int`: `PASS` or `FAIL_TRFREST`
 """
 function check_cnx_trfrest(cp::GraphConnection, ctx)::Int
-    from_trc = cp.from_leg.record.trc
-    from_seq = Int(cp.from_leg.record.leg_seq)
+    from_l = cp.from_leg::GraphLeg
+    to_l = cp.to_leg::GraphLeg
+    from_trc = from_l.record.trc
+    from_seq = Int(from_l.record.leg_seq)
     if from_seq > 0 && from_seq <= length(from_trc)
         _is_trc_blocked(from_trc[from_seq]) && return FAIL_TRFREST
     end
 
-    to_trc = cp.to_leg.record.trc
-    to_seq = Int(cp.to_leg.record.leg_seq)
+    to_trc = to_l.record.trc
+    to_seq = Int(to_l.record.leg_seq)
     if to_seq > 0 && to_seq <= length(to_trc)
         _is_trc_blocked(to_trc[to_seq]) && return FAIL_TRFREST
     end

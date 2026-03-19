@@ -137,8 +137,9 @@ end
 """
 function check_itn_suppcodes(itn::Itinerary, ctx)::Int
     for cp in itn.connections
-        trc = cp.from_leg.record.trc
-        seq = Int(cp.from_leg.record.leg_seq)
+        from_l = cp.from_leg::GraphLeg
+        trc = from_l.record.trc
+        seq = Int(from_l.record.leg_seq)
         if seq > 0 && seq <= length(trc)
             trc[seq] == 'I' && return FAIL_ITN_SUPPCODE
         end
@@ -180,7 +181,7 @@ function check_itn_maft(itn::Itinerary, ctx)::Int
     # Sum block times (approximated from leg distances at 400 knots cruise)
     total_bt = 0.0
     for cp in itn.connections
-        total_bt += Float64(cp.from_leg.distance) / 400.0 * 60.0
+        total_bt += Float64((cp.from_leg::GraphLeg).distance) / 400.0 * 60.0
     end
 
     return total_bt <= maft ? PASS : FAIL_ITN_MAFT

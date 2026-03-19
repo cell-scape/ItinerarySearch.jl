@@ -66,6 +66,7 @@ export ParameterSet, MarketOverride, SearchConstraints
 export resolve_params
 
 # Exports — graph types (Subsystem 2)
+export AbstractGraphNode, AbstractGraphEdge
 export GraphStation, GraphLeg, GraphSegment, GraphConnection, Itinerary, Trip
 export TripLeg, TripScoringWeights
 export OneStopConnection, OneStopIndex

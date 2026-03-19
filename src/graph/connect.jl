@@ -36,8 +36,8 @@ function _set_connection_status!(
 )::Nothing
     # International: different non-empty countries at arrival origin and
     # departure destination endpoints
-    arr_country = arr_leg.org.country
-    dep_country = dep_leg.dst.country
+    arr_country = (arr_leg.org::GraphStation).country
+    dep_country = (dep_leg.dst::GraphStation).country
     if arr_country != InlineString3("") && dep_country != InlineString3("") &&
        arr_country != dep_country
         cp.status |= STATUS_INTERNATIONAL
@@ -156,7 +156,7 @@ function build_connections_at_station!(
 
     # ── Step 1: nonstop self-connections for each departure ───────────────────
     for i in 1:n_dep
-        dep_leg = departures[i]::GraphLeg
+        dep_leg = departures[i]
         ns_cp = nonstop_connection(dep_leg, station)
         push!(station.connections, ns_cp)
         stats.num_nonstops += Int32(1)
@@ -167,19 +167,19 @@ function build_connections_at_station!(
 
     # Track arrival distances
     for i in 1:n_arr
-        arr_leg = arrivals[i]::GraphLeg
+        arr_leg = arrivals[i]
         stats.total_arr_distance += Float64(arr_leg.distance)
     end
 
     # Early exit: nothing to pair
     (n_arr == 0 || n_dep == 0) && return nothing
 
-    # ── Step 2: O(n²) pairing ────────────────────────────────────────────────
+    # ── Step 2: O(n^2) pairing ────────────────────────────────────────────────
     for i in 1:n_arr
-        arr_leg = arrivals[i]::GraphLeg
+        arr_leg = arrivals[i]
 
         for j in 1:n_dep
-            dep_leg = departures[j]::GraphLeg
+            dep_leg = departures[j]
 
             # Skip self-connection (nonstops already created above)
             arr_leg === dep_leg && continue

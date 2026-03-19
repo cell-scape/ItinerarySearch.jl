@@ -49,12 +49,14 @@ Human-friendly one-line summary. Nonstop self-connections display as
 connect-point code, and MCT vs available connection time.
 """
 function Base.show(io::IO, cp::GraphConnection)
-    from_id = flight_id(cp.from_leg.record)
-    to_id = flight_id(cp.to_leg.record)
+    from_l = cp.from_leg::GraphLeg
+    to_l = cp.to_leg::GraphLeg
+    from_id = flight_id(from_l.record)
+    to_id = flight_id(to_l.record)
     if cp.from_leg === cp.to_leg
-        print(io, "GraphConnection(nonstop $(from_id) $(cp.from_leg.record.org)→$(cp.from_leg.record.dst))")
+        print(io, "GraphConnection(nonstop $(from_id) $(from_l.record.org)->$(from_l.record.dst))")
     else
-        print(io, "GraphConnection($(from_id)→$(to_id) at $(cp.station.code), cnx=$(cp.cnx_time)min, mct=$(cp.mct)min)")
+        print(io, "GraphConnection($(from_id)->$(to_id) at $((cp.station::GraphStation).code), cnx=$(cp.cnx_time)min, mct=$(cp.mct)min)")
     end
 end
 
@@ -78,10 +80,10 @@ function Base.show(io::IO, itn::Itinerary)
     flights = String[]
     for (i, cp) in enumerate(itn.connections)
         if i == 1
-            push!(flights, flight_id(cp.from_leg.record))
+            push!(flights, flight_id((cp.from_leg::GraphLeg).record))
         end
         if !(cp.from_leg === cp.to_leg) && i > 1
-            push!(flights, flight_id(cp.to_leg.record))
+            push!(flights, flight_id((cp.to_leg::GraphLeg).record))
         end
     end
     flight_str = join(flights, " -> ")
@@ -105,18 +107,18 @@ function Base.show(io::IO, trip::Trip)
     parts = String[]
     for itn in trip.itineraries
         isempty(itn.connections) && continue
-        push!(parts, String(itn.connections[1].from_leg.org.code))
+        push!(parts, String(((itn.connections[1].from_leg::GraphLeg).org::GraphStation).code))
     end
     if !isempty(trip.itineraries)
         last_itn = trip.itineraries[end]
         if !isempty(last_itn.connections)
             last_cp = last_itn.connections[end]
-            dst = (last_cp.to_leg === last_cp.from_leg) ?
-                last_cp.from_leg.dst.code : last_cp.to_leg.dst.code
-            push!(parts, String(dst))
+            dst_leg = (last_cp.to_leg === last_cp.from_leg ?
+                last_cp.from_leg : last_cp.to_leg)::GraphLeg
+            push!(parts, String((dst_leg.dst::GraphStation).code))
         end
     end
-    route = join(parts, "→")
+    route = join(parts, "->")
     dist = round(Int, trip.total_distance)
     print(io, "Trip($(trip.trip_id): $(route), $(trip.trip_type), $(length(trip.itineraries)) itineraries, $(trip.total_elapsed)min, $(dist)mi)")
 end
@@ -458,19 +460,21 @@ function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::Flight
         legs_out = Tuple{GraphLeg, String, Int, Int, Int32}[]  # (leg, cnx_type, cnx_time, mct, mct_id)
         n_cnx = length(itn.connections)
         for (i, cp) in enumerate(itn.connections)
+            from_l = cp.from_leg::GraphLeg
+            to_l = cp.to_leg::GraphLeg
             is_nonstop = cp.from_leg === cp.to_leg
             mid = cp.mct_result.mct_id
             if i == 1
                 # First leg: L if nonstop itinerary, C/S if connecting
                 ct = is_nonstop && n_cnx == 1 ? "L" : (cp.is_through ? "S" : "C")
-                push!(legs_out, (cp.from_leg, ct, 0, 0, Int32(0)))
+                push!(legs_out, (from_l, ct, 0, 0, Int32(0)))
             else
                 ct = cp.is_through ? "S" : "C"
-                push!(legs_out, (cp.from_leg, ct, Int(cp.cnx_time), Int(cp.mct), mid))
+                push!(legs_out, (from_l, ct, Int(cp.cnx_time), Int(cp.mct), mid))
             end
             # Final arriving leg of a connecting itinerary
             if i == n_cnx && !is_nonstop
-                push!(legs_out, (cp.to_leg, "C", Int(cp.cnx_time), Int(cp.mct), mid))
+                push!(legs_out, (to_l, "C", Int(cp.cnx_time), Int(cp.mct), mid))
             end
         end
 
@@ -557,17 +561,19 @@ function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date
             legs_out = Tuple{GraphLeg, String, Int, Int, Int32}[]
             n_cnx = length(itn.connections)
             for (i, cp) in enumerate(itn.connections)
+                from_l = cp.from_leg::GraphLeg
+                to_l = cp.to_leg::GraphLeg
                 is_nonstop = cp.from_leg === cp.to_leg
                 mid = cp.mct_result.mct_id
                 if i == 1
                     ct = is_nonstop && n_cnx == 1 ? "L" : (cp.is_through ? "S" : "C")
-                    push!(legs_out, (cp.from_leg, ct, 0, 0, Int32(0)))
+                    push!(legs_out, (from_l, ct, 0, 0, Int32(0)))
                 else
                     ct = cp.is_through ? "S" : "C"
-                    push!(legs_out, (cp.from_leg, ct, Int(cp.cnx_time), Int(cp.mct), mid))
+                    push!(legs_out, (from_l, ct, Int(cp.cnx_time), Int(cp.mct), mid))
                 end
                 if i == n_cnx && !is_nonstop
-                    push!(legs_out, (cp.to_leg, "C", Int(cp.cnx_time), Int(cp.mct), mid))
+                    push!(legs_out, (to_l, "C", Int(cp.cnx_time), Int(cp.mct), mid))
                 end
             end
 

@@ -99,8 +99,7 @@ function _build_layer1_at_station(
     results = Tuple{StationCode,StationCode,OneStopConnection}[]
     circ_limit = Float64(graph.config.circuity_factor)
 
-    for transit_leg_any in stn.departures
-        transit_leg = transit_leg_any::GraphLeg
+    for transit_leg in stn.departures
 
         # connect_from on a leg = connections where this leg is to_leg
         # (connections at stn that brought traffic TO transit_leg)
@@ -112,13 +111,11 @@ function _build_layer1_at_station(
         dep_cps = transit_leg.connect_to
         isempty(dep_cps) && continue
 
-        for arr_cp_any in arr_cps
-            arr_cp = arr_cp_any::GraphConnection
+        for arr_cp in arr_cps
             # Skip nonstop self-connections
             arr_cp.from_leg === arr_cp.to_leg && continue
 
-            for dep_cp_any in dep_cps
-                dep_cp = dep_cp_any::GraphConnection
+            for dep_cp in dep_cps
                 dep_cp.from_leg === dep_cp.to_leg && continue
 
                 # Intersect validity windows
@@ -131,15 +128,17 @@ function _build_layer1_at_station(
                 vd == 0x00 && continue
 
                 # Total flown distance (3 legs: arr, transit, dep)
+                arr_from = arr_cp.from_leg::GraphLeg
+                dep_to = dep_cp.to_leg::GraphLeg
                 dist =
-                    arr_cp.from_leg.distance + transit_leg.distance + dep_cp.to_leg.distance
+                    arr_from.distance + transit_leg.distance + dep_to.distance
 
                 # Skip round-trips (origin == destination)
-                org_stn = arr_cp.from_leg.org
-                dst_stn = dep_cp.to_leg.dst
+                org_stn = arr_from.org::GraphStation
+                dst_stn = dep_to.dst::GraphStation
                 org_stn.code == dst_stn.code && continue
 
-                # Circuity check against great-circle origin→destination
+                # Circuity check against great-circle origin->destination
                 gc = _haversine_distance(
                     org_stn.record.lat,
                     org_stn.record.lng,
@@ -323,10 +322,10 @@ function export_layer1!(store::DuckDBStore, graph::FlightGraph)::Nothing
                     String(via_stn),
                     String(dest),
                     reinterpret(Int64, osc.via_leg.record.row_number),
-                    reinterpret(Int64, osc.first.from_leg.record.row_number),
-                    reinterpret(Int64, osc.first.to_leg.record.row_number),
-                    reinterpret(Int64, osc.second.from_leg.record.row_number),
-                    reinterpret(Int64, osc.second.to_leg.record.row_number),
+                    reinterpret(Int64, (osc.first.from_leg::GraphLeg).record.row_number),
+                    reinterpret(Int64, (osc.first.to_leg::GraphLeg).record.row_number),
+                    reinterpret(Int64, (osc.second.from_leg::GraphLeg).record.row_number),
+                    reinterpret(Int64, (osc.second.to_leg::GraphLeg).record.row_number),
                     Float64(osc.total_distance),
                     unpack_date(osc.valid_from),
                     unpack_date(osc.valid_to),
@@ -469,8 +468,7 @@ end
   not found
 """
 function _find_connection(from_leg::GraphLeg, to_leg::GraphLeg)::Union{GraphConnection,Nothing}
-    for cp_any in from_leg.connect_to
-        cp = cp_any::GraphConnection
+    for cp in from_leg.connect_to
         cp.to_leg === to_leg && return cp
     end
     return nothing

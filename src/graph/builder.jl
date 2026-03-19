@@ -78,8 +78,8 @@ When no codeshare is present the operating carrier equals the marketing carrier
 from the first leg.
 """
 function _resolve_codeshare!(seg::GraphSegment)::Nothing
-    for leg_any in seg.legs
-        leg = leg_any::GraphLeg
+    for leg_node in seg.legs
+        leg = leg_node::GraphLeg  # legs is Vector{AbstractGraphNode}
         if leg.record.codeshare_airline != NO_AIRLINE
             seg.operating_airline = leg.record.codeshare_airline
             seg.operating_flt_no = leg.record.codeshare_flt_no
@@ -89,7 +89,7 @@ function _resolve_codeshare!(seg::GraphSegment)::Nothing
     end
     # No codeshare — operating carrier is the marketing carrier
     if !isempty(seg.legs)
-        first_leg = seg.legs[1]::GraphLeg
+        first_leg = seg.legs[1]::GraphLeg  # legs is Vector{AbstractGraphNode}
         seg.operating_airline = first_leg.record.airline
         seg.operating_flt_no = first_leg.record.flt_no
     end

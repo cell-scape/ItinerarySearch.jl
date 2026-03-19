@@ -1,20 +1,36 @@
-# src/types/graph.jl — Subsystem 2 graph types
+# src/types/graph.jl — Subsystem 2 graph types with abstract type hierarchy
 #
-# Type ordering note: GraphStation and GraphLeg are mutually referential.
-# GraphStation holds departure/arrival/connection vectors; GraphLeg holds
-# org/dst station references. Both also contain forward references to
-# GraphConnection. Julia does not support forward declarations, so the
-# circular dependency is broken by typing the intra-graph vectors as
-# Vector{Any}. In practice, these vectors only ever hold the stated concrete
-# type. If hot-path performance demands it, typed wrapper arrays can be
-# introduced later without changing the struct API.
+# Abstract type hierarchy breaks the mutual reference between GraphStation,
+# GraphLeg, and GraphConnection without resorting to Vector{Any}.
 #
-# Dependency order:
-#   GraphSegment    — no intra-graph references
-#   GraphStation    — holds Vector{Any} for departures / arrivals / connections
-#   GraphLeg        — references GraphStation + GraphSegment; holds Vector{Any}
-#   GraphConnection — references GraphLeg + GraphStation
-#   Itinerary       — references GraphConnection (concrete Vector)
+# AbstractGraphNode — supertype for GraphLeg, GraphStation, _UninitNode
+# AbstractGraphEdge — supertype for GraphConnection
+#
+# Fields that hold a single cross-reference to a not-yet-defined concrete type
+# are typed AbstractGraphNode (e.g. GraphLeg.org, GraphConnection.from_leg).
+# These are single pointer dereferences, acceptable in non-iterated paths.
+#
+# Vectors iterated in hot loops use CONCRETE element types:
+#   GraphStation.departures  :: Vector{GraphLeg}
+#   GraphStation.arrivals    :: Vector{GraphLeg}
+#   GraphStation.connections :: Vector{GraphConnection}
+#   GraphLeg.connect_to      :: Vector{GraphConnection}
+#   GraphLeg.connect_from    :: Vector{GraphConnection}
+#
+# Dependency order (definition order in this file):
+#   abstract types + _UninitNode sentinel
+#   SegmentRecord sentinel (_ZERO_SEGMENT_RECORD)
+#   GraphSegment (legs::Vector{AbstractGraphNode})
+#   _ZERO_GRAPH_SEGMENT sentinel
+#   MCTResult sentinel (_ZERO_MCT_RESULT)
+#   GraphConnection <: AbstractGraphEdge (from_leg/to_leg/station :: AbstractGraphNode)
+#   LegRecord sentinel (_ZERO_LEG_RECORD)
+#   GraphLeg <: AbstractGraphNode (org/dst :: AbstractGraphNode, connect_to/from :: Vector{GraphConnection})
+#   _ZERO_GRAPH_LEG sentinel
+#   StationRecord sentinel (_ZERO_STATION_RECORD)
+#   GraphStation <: AbstractGraphNode (departures/arrivals :: Vector{GraphLeg}, connections :: Vector{GraphConnection})
+#   _ZERO_GRAPH_STATION sentinel
+#   OneStopConnection, Itinerary, TripLeg, TripScoringWeights, Trip
 #
 # Zero-arg defaults: @kwdef generates a zero-arg keyword-dispatch stub for every
 # struct it processes. Defining a separate TypeName() outer constructor would
@@ -23,7 +39,179 @@
 # @kwdef default expression. Sentinels are declared in the dependency order
 # shown above, interleaved with the struct definitions that need them.
 
+# ── Abstract type hierarchy ──────────────────────────────────────────────────
+
+"""
+    abstract type AbstractGraphNode end
+
+Supertype for flight network graph nodes (`GraphLeg`, `GraphStation`).
+Used for cross-reference fields where the concrete type is not yet defined
+at the point of struct declaration.
+"""
+abstract type AbstractGraphNode end
+
+"""
+    abstract type AbstractGraphEdge end
+
+Supertype for flight network graph edges (`GraphConnection`).
+"""
+abstract type AbstractGraphEdge end
+
+"""
+    mutable struct _UninitNode <: AbstractGraphNode
+
+Minimal sentinel type for `AbstractGraphNode` fields on structs defined before
+`GraphLeg` and `GraphStation`. Used only as a default value in `GraphConnection`
+keyword constructors.
+"""
+mutable struct _UninitNode <: AbstractGraphNode end
+
+"""Sentinel value for uninitialised `AbstractGraphNode` fields."""
+const _UNINIT_NODE = _UninitNode()
+
 # ── Record sentinels (declared before graph structs that embed them) ──────────
+
+const _ZERO_SEGMENT_RECORD = SegmentRecord(
+    segment_hash=UInt64(0),
+    airline=AirlineCode(""),
+    flt_no=FlightNumber(0),
+    op_suffix=' ',
+    itin_var=UInt8(0),
+    itin_var_overflow=' ',
+    svc_type=' ',
+    operating_date=UInt32(0),
+    num_legs=UInt8(0),
+    first_leg_seq=UInt8(0),
+    last_leg_seq=UInt8(0),
+    segment_org=StationCode(""),
+    segment_dst=StationCode(""),
+    flown_distance=Distance(0),
+    market_distance=Distance(0),
+    segment_circuity=Float32(0),
+    segment_pax_dep=Minutes(0),
+    segment_pax_arr=Minutes(0),
+    segment_ac_dep=Minutes(0),
+    segment_ac_arr=Minutes(0),
+)
+
+# ── GraphSegment ──────────────────────────────────────────────────────────────
+
+"""
+    mutable struct GraphSegment
+---
+
+# Description
+- Segment node in the flight network graph; wraps a `SegmentRecord` with its
+  constituent leg list and the operating-carrier identity
+- `legs` is `Vector{AbstractGraphNode}` because `GraphLeg` is not yet defined;
+  elements are always `GraphLeg` instances at runtime
+- `is_codeshare` is `true` when the marketing carrier differs from
+  `operating_airline`
+
+# Fields
+- `record::SegmentRecord` — precomputed segment-level aggregates from DuckDB
+- `legs::Vector{AbstractGraphNode}` — ordered list of `GraphLeg` (leg_seq ascending)
+- `operating_airline::AirlineCode` — IATA carrier code of the operating carrier
+- `operating_flt_no::FlightNumber` — flight number of the operating carrier
+- `is_codeshare::Bool` — `true` when marketing ≠ operating carrier
+"""
+@kwdef mutable struct GraphSegment
+    record::SegmentRecord = _ZERO_SEGMENT_RECORD
+    legs::Vector{AbstractGraphNode} = AbstractGraphNode[]
+    operating_airline::AirlineCode = NO_AIRLINE
+    operating_flt_no::FlightNumber = NO_FLIGHTNO
+    is_codeshare::Bool = false
+end
+
+# Sentinel used as the default for GraphLeg.segment
+const _ZERO_GRAPH_SEGMENT = GraphSegment()
+
+const _ZERO_MCT_RESULT = MCTResult(
+    time=NO_MINUTES,
+    queried_status=MCT_DD,
+    matched_status=MCT_DD,
+    suppressed=false,
+    source=SOURCE_GLOBAL_DEFAULT,
+    specificity=UInt32(0),
+    mct_id=Int32(0),
+)
+
+# ── GraphConnection ───────────────────────────────────────────────────────────
+
+"""
+    mutable struct GraphConnection <: AbstractGraphEdge
+---
+
+# Description
+- Connection edge between two `GraphLeg` nodes at a connect-point `GraphStation`
+- A *nonstop self-connection* has `from_leg === to_leg`; this represents a
+  passthrough or self-connection used in the DFS search as a nonstop leg
+- `from_leg`, `to_leg`, and `station` are typed `AbstractGraphNode` because
+  `GraphLeg` and `GraphStation` are defined after `GraphConnection`; at runtime
+  they are always `GraphLeg` or `GraphStation` instances respectively
+- `mct` is the minimum connecting time (minutes) from the MCT cascade;
+  `mxct` is the maximum connecting time (minutes) enforced by `SearchConfig`
+- `cnx_time` is the actual available connection time (`to_leg.record.ac_dep -
+  from_leg.record.ac_arr`) in minutes
+- `valid_from` / `valid_to` / `valid_days` are the intersection of the two legs'
+  validity windows and frequency bitmasks; `num_valid_dates` is the count of
+  operating dates in the intersection (0 = not yet computed)
+- `status` carries `DOW_*` bits (from `valid_days`) plus `STATUS_*` classification
+  bits set during `build_connections!`
+- `is_through` mirrors `STATUS_THROUGH` in `status` as a fast boolean cache
+
+# Fields
+- `from_leg::AbstractGraphNode` — the arriving leg of this connection (always `GraphLeg`)
+- `to_leg::AbstractGraphNode` — the departing leg of this connection (always `GraphLeg`)
+- `station::AbstractGraphNode` — the connect-point airport (always `GraphStation`)
+- `mct::Minutes` — minimum connecting time (from MCT cascade)
+- `mxct::Minutes` — maximum connecting time (from `SearchConfig`)
+- `cnx_time::Minutes` — actual available connection time
+- `status::StatusBits` — DOW + classification bitmask
+- `mct_result::MCTResult` — full result of the MCT lookup for this connection
+- `is_through::Bool` — true when same flight number, different leg (through-service)
+- `valid_from::UInt32` — packed YYYYMMDD start of combined validity window
+- `valid_to::UInt32` — packed YYYYMMDD end of combined validity window
+- `valid_days::UInt8` — 7-bit DOW bitmask of operating days
+- `num_valid_dates::Int16` — count of dates in the validity intersection (0 = uncached)
+"""
+mutable struct GraphConnection <: AbstractGraphEdge
+    from_leg::AbstractGraphNode
+    to_leg::AbstractGraphNode
+    station::AbstractGraphNode
+    mct::Minutes
+    mxct::Minutes
+    cnx_time::Minutes
+    status::StatusBits
+    mct_result::MCTResult
+    is_through::Bool
+    valid_from::UInt32
+    valid_to::UInt32
+    valid_days::UInt8
+    num_valid_dates::Int16
+
+    # Keyword constructor (also serves as zero-arg constructor via defaults)
+    function GraphConnection(;
+        from_leg::AbstractGraphNode=_UNINIT_NODE,
+        to_leg::AbstractGraphNode=_UNINIT_NODE,
+        station::AbstractGraphNode=_UNINIT_NODE,
+        mct::Minutes=NO_MINUTES,
+        mxct::Minutes=NO_MINUTES,
+        cnx_time::Minutes=Minutes(0),
+        status::StatusBits=StatusBits(0),
+        mct_result::MCTResult=_ZERO_MCT_RESULT,
+        is_through::Bool=false,
+        valid_from::UInt32=UInt32(0),
+        valid_to::UInt32=UInt32(0),
+        valid_days::UInt8=UInt8(0),
+        num_valid_dates::Int16=Int16(0),
+    )
+        new(from_leg, to_leg, station, mct, mxct, cnx_time, status, mct_result,
+            is_through, valid_from, valid_to, valid_days, num_valid_dates)
+    end
+end
+
+# ── GraphLeg ──────────────────────────────────────────────────────────────────
 
 const _ZERO_LEG_RECORD = LegRecord(
     airline=AirlineCode(""),
@@ -69,6 +257,43 @@ const _ZERO_LEG_RECORD = LegRecord(
     prbd=InlineString31(""),
 )
 
+"""
+    mutable struct GraphLeg <: AbstractGraphNode
+---
+
+# Description
+- Flight leg node in the flight network graph
+- References its origin/destination stations (typed `AbstractGraphNode` because
+  `GraphStation` is not yet defined) and parent `GraphSegment`
+- `connect_to` holds outbound `GraphConnection` elements where this leg is the
+  arriving flight; `connect_from` holds inbound connections where this leg departs
+- Connection vectors use concrete `Vector{GraphConnection}` for hot-path iteration
+
+# Fields
+- `record::LegRecord` — full leg identity and schedule data from DuckDB
+- `org::AbstractGraphNode` — origin station node (always `GraphStation` at runtime)
+- `dst::AbstractGraphNode` — destination station node (always `GraphStation` at runtime)
+- `segment::GraphSegment` — parent segment (all legs sharing the same flight identity)
+- `connect_to::Vector{GraphConnection}` — connections where this leg is `from_leg`
+- `connect_from::Vector{GraphConnection}` — connections where this leg is `to_leg`
+- `distance::Distance` — flown distance in miles; copied from `record.distance` and
+  gap-filled from geodesic when zero during `build_graph!`
+"""
+@kwdef mutable struct GraphLeg <: AbstractGraphNode
+    record::LegRecord = _ZERO_LEG_RECORD
+    org::AbstractGraphNode = _UNINIT_NODE
+    dst::AbstractGraphNode = _UNINIT_NODE
+    segment::GraphSegment = _ZERO_GRAPH_SEGMENT
+    connect_to::Vector{GraphConnection} = GraphConnection[]
+    connect_from::Vector{GraphConnection} = GraphConnection[]
+    distance::Distance = Distance(0)
+end
+
+# Sentinel used as the default for OneStopConnection.via_leg
+const _ZERO_GRAPH_LEG = GraphLeg()
+
+# ── GraphStation ──────────────────────────────────────────────────────────────
+
 const _ZERO_STATION_RECORD = StationRecord(
     code=StationCode(""),
     country=InlineString3(""),
@@ -80,75 +305,8 @@ const _ZERO_STATION_RECORD = StationRecord(
     utc_offset=Int16(0),
 )
 
-const _ZERO_SEGMENT_RECORD = SegmentRecord(
-    segment_hash=UInt64(0),
-    airline=AirlineCode(""),
-    flt_no=FlightNumber(0),
-    op_suffix=' ',
-    itin_var=UInt8(0),
-    itin_var_overflow=' ',
-    svc_type=' ',
-    operating_date=UInt32(0),
-    num_legs=UInt8(0),
-    first_leg_seq=UInt8(0),
-    last_leg_seq=UInt8(0),
-    segment_org=StationCode(""),
-    segment_dst=StationCode(""),
-    flown_distance=Distance(0),
-    market_distance=Distance(0),
-    segment_circuity=Float32(0),
-    segment_pax_dep=Minutes(0),
-    segment_pax_arr=Minutes(0),
-    segment_ac_dep=Minutes(0),
-    segment_ac_arr=Minutes(0),
-)
-
-const _ZERO_MCT_RESULT = MCTResult(
-    time=NO_MINUTES,
-    queried_status=MCT_DD,
-    matched_status=MCT_DD,
-    suppressed=false,
-    source=SOURCE_GLOBAL_DEFAULT,
-    specificity=UInt32(0),
-    mct_id=Int32(0),
-)
-
-# ── GraphSegment ──────────────────────────────────────────────────────────────
-
 """
-    mutable struct GraphSegment
----
-
-# Description
-- Segment node in the flight network graph; wraps a `SegmentRecord` with its
-  constituent leg list and the operating-carrier identity
-- `legs` is `Vector{Any}` to break the circular dependency with `GraphLeg`;
-  elements are always `GraphLeg` instances at runtime
-- `is_codeshare` is `true` when the marketing carrier differs from
-  `operating_airline`
-
-# Fields
-- `record::SegmentRecord` — precomputed segment-level aggregates from DuckDB
-- `legs::Vector{Any}` — ordered list of `GraphLeg` (leg_seq ascending)
-- `operating_airline::AirlineCode` — IATA carrier code of the operating carrier
-- `operating_flt_no::FlightNumber` — flight number of the operating carrier
-- `is_codeshare::Bool` — `true` when marketing ≠ operating carrier
-"""
-@kwdef mutable struct GraphSegment
-    record::SegmentRecord = _ZERO_SEGMENT_RECORD
-    legs::Vector{Any} = Any[]
-    operating_airline::AirlineCode = NO_AIRLINE
-    operating_flt_no::FlightNumber = NO_FLIGHTNO
-    is_codeshare::Bool = false
-end
-
-# Sentinel used as the default for GraphLeg.segment
-const _ZERO_GRAPH_SEGMENT = GraphSegment()
-
-# ── GraphStation ──────────────────────────────────────────────────────────────
-
-"""
-    mutable struct GraphStation
+    mutable struct GraphStation <: AbstractGraphNode
 ---
 
 # Description
@@ -156,125 +314,34 @@ const _ZERO_GRAPH_SEGMENT = GraphSegment()
 - Holds departure/arrival leg lists, connection references, and always-on
   station-level metrics
 - `region` and `country` are cached from `record` for cache-line efficiency
-  in the O(n²) connection builder: accessing them directly avoids pointer
+  in the O(n^2) connection builder: accessing them directly avoids pointer
   indirection into `record`
-- `departures`, `arrivals`, and `connections` are `Vector{Any}` to break the
-  circular dependency with `GraphLeg` / `GraphConnection`; elements are always
-  `GraphLeg` or `GraphConnection` at runtime
+- `departures` and `arrivals` use concrete `Vector{GraphLeg}` for hot-path
+  iteration; `connections` uses concrete `Vector{GraphConnection}`
 
 # Fields
 - `code::StationCode` — 3-char IATA airport code
 - `record::StationRecord` — full reference record (coordinates, timezone, etc.)
 - `region::InlineString3` — cached IATA region from `record.region`
 - `country::InlineString3` — cached ISO-2 country from `record.country`
-- `departures::Vector{Any}` — `GraphLeg` elements: legs departing this station
-- `arrivals::Vector{Any}` — `GraphLeg` elements: legs arriving at this station
-- `connections::Vector{Any}` — `GraphConnection` elements built at this station
+- `departures::Vector{GraphLeg}` — legs departing this station
+- `arrivals::Vector{GraphLeg}` — legs arriving at this station
+- `connections::Vector{GraphConnection}` — connections built at this station
 - `stats::StationStats` — always-on per-station instrumentation accumulator
 """
-@kwdef mutable struct GraphStation
+@kwdef mutable struct GraphStation <: AbstractGraphNode
     code::StationCode = NO_STATION
     record::StationRecord = _ZERO_STATION_RECORD
     region::InlineString3 = InlineString3("")
     country::InlineString3 = InlineString3("")
-    departures::Vector{Any} = Any[]
-    arrivals::Vector{Any} = Any[]
-    connections::Vector{Any} = Any[]
+    departures::Vector{GraphLeg} = GraphLeg[]
+    arrivals::Vector{GraphLeg} = GraphLeg[]
+    connections::Vector{GraphConnection} = GraphConnection[]
     stats::StationStats = StationStats()
 end
 
-# Sentinel used as the default for GraphLeg.org / GraphLeg.dst and
-# GraphConnection.station
+# Sentinel used for testing and default construction
 const _ZERO_GRAPH_STATION = GraphStation()
-
-# ── GraphLeg ──────────────────────────────────────────────────────────────────
-
-"""
-    mutable struct GraphLeg
----
-
-# Description
-- Flight leg node in the flight network graph
-- References its origin/destination `GraphStation` nodes and parent `GraphSegment`
-- `connect_to` holds outbound `GraphConnection` elements where this leg is the
-  arriving flight; `connect_from` holds inbound connections where this leg departs
-- Both connection vectors are `Vector{Any}` to break the circular dependency with
-  `GraphConnection`; elements are always `GraphConnection` at runtime
-
-# Fields
-- `record::LegRecord` — full leg identity and schedule data from DuckDB
-- `org::GraphStation` — origin station node
-- `dst::GraphStation` — destination station node
-- `segment::GraphSegment` — parent segment (all legs sharing the same flight identity)
-- `connect_to::Vector{Any}` — `GraphConnection` elements where this leg is `from_leg`
-- `connect_from::Vector{Any}` — `GraphConnection` elements where this leg is `to_leg`
-- `distance::Distance` — flown distance in miles; copied from `record.distance` and
-  gap-filled from geodesic when zero during `build_graph!`
-"""
-@kwdef mutable struct GraphLeg
-    record::LegRecord = _ZERO_LEG_RECORD
-    org::GraphStation = _ZERO_GRAPH_STATION
-    dst::GraphStation = _ZERO_GRAPH_STATION
-    segment::GraphSegment = _ZERO_GRAPH_SEGMENT
-    connect_to::Vector{Any} = Any[]
-    connect_from::Vector{Any} = Any[]
-    distance::Distance = Distance(0)
-end
-
-# Sentinel used as the default for GraphConnection.from_leg / GraphConnection.to_leg
-const _ZERO_GRAPH_LEG = GraphLeg()
-
-# ── GraphConnection ───────────────────────────────────────────────────────────
-
-"""
-    mutable struct GraphConnection
----
-
-# Description
-- Connection edge between two `GraphLeg` nodes at a connect-point `GraphStation`
-- A *nonstop self-connection* has `from_leg === to_leg`; this represents a
-  passthrough or self-connection used in the DFS search as a nonstop leg
-- `mct` is the minimum connecting time (minutes) from the MCT cascade;
-  `mxct` is the maximum connecting time (minutes) enforced by `SearchConfig`
-- `cnx_time` is the actual available connection time (`to_leg.record.ac_dep -
-  from_leg.record.ac_arr`) in minutes
-- `valid_from` / `valid_to` / `valid_days` are the intersection of the two legs'
-  validity windows and frequency bitmasks; `num_valid_dates` is the count of
-  operating dates in the intersection (0 = not yet computed)
-- `status` carries `DOW_*` bits (from `valid_days`) plus `STATUS_*` classification
-  bits set during `build_connections!`
-- `is_through` mirrors `STATUS_THROUGH` in `status` as a fast boolean cache
-
-# Fields
-- `from_leg::GraphLeg` — the arriving leg of this connection
-- `to_leg::GraphLeg` — the departing leg of this connection
-- `station::GraphStation` — the connect-point airport
-- `mct::Minutes` — minimum connecting time (from MCT cascade)
-- `mxct::Minutes` — maximum connecting time (from `SearchConfig`)
-- `cnx_time::Minutes` — actual available connection time
-- `status::StatusBits` — DOW + classification bitmask
-- `mct_result::MCTResult` — full result of the MCT lookup for this connection
-- `is_through::Bool` — true when same flight number, different leg (through-service)
-- `valid_from::UInt32` — packed YYYYMMDD start of combined validity window
-- `valid_to::UInt32` — packed YYYYMMDD end of combined validity window
-- `valid_days::UInt8` — 7-bit DOW bitmask of operating days
-- `num_valid_dates::Int16` — count of dates in the validity intersection (0 = uncached)
-"""
-@kwdef mutable struct GraphConnection
-    from_leg::GraphLeg = _ZERO_GRAPH_LEG
-    to_leg::GraphLeg = _ZERO_GRAPH_LEG
-    station::GraphStation = _ZERO_GRAPH_STATION
-    mct::Minutes = NO_MINUTES
-    mxct::Minutes = NO_MINUTES
-    cnx_time::Minutes = Minutes(0)
-    status::StatusBits = StatusBits(0)
-    mct_result::MCTResult = _ZERO_MCT_RESULT
-    is_through::Bool = false
-    valid_from::UInt32 = UInt32(0)
-    valid_to::UInt32 = UInt32(0)
-    valid_days::UInt8 = UInt8(0)
-    num_valid_dates::Int16 = Int16(0)
-end
 
 # ── OneStopConnection ─────────────────────────────────────────────────────────
 
@@ -286,7 +353,7 @@ end
 - Pre-computed two-connection path sharing a transit leg
 - `first` is a connection at the transit leg's origin station;
   `second` is a connection at the transit leg's destination station
-- Full path: `first.from_leg.org → via_org → transit_leg → via_dst → second.to_leg.dst`
+- Full path: `first.from_leg.org -> via_org -> transit_leg -> via_dst -> second.to_leg.dst`
   (3 legs, 2 stops)
 - `valid_from` / `valid_to` / `valid_days` are the intersection of all three
   legs' validity windows and frequency bitmasks
@@ -441,12 +508,12 @@ function Trip(itineraries::Vector{Itinerary}; trip_id::Int32=Int32(0))
     isempty(itineraries) && return Trip(trip_id=trip_id)
 
     first_itn = itineraries[1]
-    origin = first_itn.connections[1].from_leg.org.code
+    origin = (first_itn.connections[1].from_leg::GraphLeg).org.code
 
     last_itn = itineraries[end]
     last_cp = last_itn.connections[end]
     destination = (last_cp.to_leg === last_cp.from_leg) ?
-        last_cp.from_leg.dst.code : last_cp.to_leg.dst.code
+        (last_cp.from_leg::GraphLeg).dst.code : (last_cp.to_leg::GraphLeg).dst.code
 
     trip_type = if length(itineraries) == 1
         :oneway

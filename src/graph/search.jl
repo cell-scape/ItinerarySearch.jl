@@ -215,7 +215,7 @@ function _compute_elapsed(itn::Itinerary)::Int32
 
     # connections[1] is always the nonstop self-connection of the departure leg;
     # from_leg === to_leg.  Accumulate first leg's UTC block time as the base.
-    first_leg = itn.connections[1].from_leg::GraphLeg
+    first_leg = itn.connections[1].from_leg::GraphLeg  # from_leg is AbstractGraphNode
     fr = first_leg.record
     utc_dep_first = Int32(fr.pax_dep) - Int32(fr.dep_utc_offset)
     utc_arr_first =
@@ -225,9 +225,9 @@ function _compute_elapsed(itn::Itinerary)::Int32
     # For each subsequent connecting cp, add the ground time plus the outbound
     # leg's UTC block time.  cp.to_leg is always the new departing leg.
     for i in 2:length(itn.connections)
-        cp = itn.connections[i]::GraphConnection
+        cp = itn.connections[i]
         total += Int32(cp.cnx_time)
-        to = cp.to_leg::GraphLeg
+        to = cp.to_leg::GraphLeg  # to_leg is AbstractGraphNode
         tr = to.record
         utc_dep = Int32(tr.pax_dep) - Int32(tr.dep_utc_offset)
         utc_arr =
@@ -278,14 +278,14 @@ function _count_geo_diversity(itn::Itinerary)::NTuple{4,Int16}
     regions = Set{InlineString3}()
 
     for cp in itn.connections
-        leg = cp.from_leg::GraphLeg
-        _add_station_geo!(metros, states, countries, regions, leg.org)
-        _add_station_geo!(metros, states, countries, regions, leg.dst)
+        leg = cp.from_leg::GraphLeg  # from_leg is AbstractGraphNode
+        _add_station_geo!(metros, states, countries, regions, leg.org::GraphStation)
+        _add_station_geo!(metros, states, countries, regions, leg.dst::GraphStation)
     end
     # Ensure final destination of last connection is captured
     if !isempty(itn.connections)
-        last_leg = (itn.connections[end]::GraphConnection).to_leg::GraphLeg
-        _add_station_geo!(metros, states, countries, regions, last_leg.dst)
+        last_leg = itn.connections[end].to_leg::GraphLeg  # to_leg is AbstractGraphNode
+        _add_station_geo!(metros, states, countries, regions, last_leg.dst::GraphStation)
     end
 
     return (
@@ -326,10 +326,10 @@ function _validate_and_commit!(itn::Itinerary, ctx::RuntimeContext)
 
     # Round-trip detection: check whether final destination equals origin
     if !isempty(itn.connections)
-        first_org = itn.connections[1].from_leg.org
+        first_org = (itn.connections[1].from_leg::GraphLeg).org::GraphStation
         last_cp = itn.connections[end]
-        last_dst =
-            last_cp.to_leg === last_cp.from_leg ? last_cp.from_leg.dst : last_cp.to_leg.dst
+        last_dst = (last_cp.to_leg === last_cp.from_leg ?
+                (last_cp.from_leg::GraphLeg).dst : (last_cp.to_leg::GraphLeg).dst)::GraphStation
         if first_org.code == last_dst.code
             if ctx.config.allow_roundtrips
                 _split_and_commit_roundtrip!(itn, ctx)
@@ -390,14 +390,14 @@ end
 2. `ctx::RuntimeContext`: search context (`results` and `search_stats` are mutated)
 """
 function _split_and_commit_roundtrip!(itn::Itinerary, ctx::RuntimeContext)
-    origin = itn.connections[1].from_leg.org
+    origin = (itn.connections[1].from_leg::GraphLeg).org::GraphStation
 
     # Find the connection whose destination is farthest from the origin
     max_dist = 0.0
     split_idx = 1
     for (i, cp) in enumerate(itn.connections)
-        leg = cp.to_leg === cp.from_leg ? cp.from_leg : cp.to_leg
-        dst = leg.dst
+        leg = (cp.to_leg === cp.from_leg ? cp.from_leg : cp.to_leg)::GraphLeg
+        dst = leg.dst::GraphStation
         d = _haversine_distance(
             origin.record.lat,
             origin.record.lng,
@@ -452,17 +452,17 @@ function _commit_half!(conns::Vector{GraphConnection}, ctx::RuntimeContext)
     end
 
     half.elapsed_time = _compute_elapsed(half)
-    half.total_distance = sum(cp.to_leg.distance for cp in conns; init=Distance(0))
+    half.total_distance = sum((cp.to_leg::GraphLeg).distance for cp in conns; init=Distance(0))
     half.num_stops = Int16(max(0, length(conns) - 1))
 
     # Use to_leg.org as the true departure station of each half.
     # For nonstop self-connections (to_leg === from_leg) this equals the
     # leg's origin; for real connections to_leg.org is the connect point
     # from which the traveller departs next.
-    first_org = conns[1].to_leg.org
+    first_org = (conns[1].to_leg::GraphLeg).org::GraphStation
     last_cp = conns[end]
-    last_dst =
-        last_cp.to_leg === last_cp.from_leg ? last_cp.from_leg.dst : last_cp.to_leg.dst
+    last_dst = (last_cp.to_leg === last_cp.from_leg ?
+            (last_cp.from_leg::GraphLeg).dst : (last_cp.to_leg::GraphLeg).dst)::GraphStation
     half.market_distance = Distance(
         _haversine_distance(
             first_org.record.lat,
@@ -524,9 +524,9 @@ function _try_layer1_path!(
     push!(itn.connections, osc.first)
     itn.status |= osc.first.status
     itn.num_stops += Int16(1)
-    itn.total_distance += osc.first.to_leg.distance
+    itn.total_distance += (osc.first.to_leg::GraphLeg).distance
     itn.elapsed_time += Int32(osc.first.cnx_time)
-    if !osc.first.is_through && osc.first.from_leg.record.eqp != osc.first.to_leg.record.eqp
+    if !osc.first.is_through && (osc.first.from_leg::GraphLeg).record.eqp != (osc.first.to_leg::GraphLeg).record.eqp
         itn.num_eqp_changes += Int16(1)
     end
 
@@ -534,10 +534,10 @@ function _try_layer1_path!(
     push!(itn.connections, osc.second)
     itn.status |= osc.second.status
     itn.num_stops += Int16(1)
-    itn.total_distance += osc.second.to_leg.distance
+    itn.total_distance += (osc.second.to_leg::GraphLeg).distance
     itn.elapsed_time += Int32(osc.second.cnx_time)
     if !osc.second.is_through &&
-       osc.second.from_leg.record.eqp != osc.second.to_leg.record.eqp
+       (osc.second.from_leg::GraphLeg).record.eqp != (osc.second.to_leg::GraphLeg).record.eqp
         itn.num_eqp_changes += Int16(1)
     end
 
@@ -606,7 +606,7 @@ function _dfs!(
     # traversal at this depth to avoid duplicate 2-stop paths.
     layer1_hit = false
     if ctx.layer1_built && depth + 1 < max_stops
-        key = (current_leg.dst.code, dest.code)
+        key = ((current_leg.dst::GraphStation).code, dest.code)
         oscs = get(ctx.layer1, key, nothing)
         if oscs !== nothing
             layer1_hit = true
@@ -626,7 +626,7 @@ function _dfs!(
 
     connect_to = current_leg.connect_to
     @inbounds for i in 1:length(connect_to)
-        cp = connect_to[i]::GraphConnection
+        cp = connect_to[i]
 
         # Date / DOW filter
         _is_valid_on_date(cp, ctx.target_date, ctx.target_dow) || continue
@@ -634,7 +634,7 @@ function _dfs!(
         # Skip nonstop self-connections in recursive calls
         cp.from_leg === cp.to_leg && continue
 
-        next_leg = cp.to_leg::GraphLeg
+        next_leg = cp.to_leg::GraphLeg  # to_leg is AbstractGraphNode
 
         # Layer 1 dedup: if Layer 1 covered this (station, dest) pair,
         # skip connections that would recurse deeper (they produce duplicates).
@@ -656,8 +656,8 @@ function _dfs!(
             candidate_circ > ctx._circuity_threshold && continue
         end
 
-        # Direction pruning
-        _direction_ok(cp.station, next_leg.dst, dest) || continue
+        # Direction pruning (station and dst are AbstractGraphNode, cast to GraphStation)
+        _direction_ok(cp.station::GraphStation, next_leg.dst::GraphStation, dest) || continue
 
         # ── Push state ────────────────────────────────────────────────────────
         push!(itn.connections, cp)
@@ -672,12 +672,12 @@ function _dfs!(
         itn.num_stops += Int16(1)
 
         # Equipment-change detection (skip through-service legs)
-        if !cp.is_through && cp.from_leg.record.eqp != cp.to_leg.record.eqp
+        if !cp.is_through && (cp.from_leg::GraphLeg).record.eqp != next_leg.record.eqp
             itn.num_eqp_changes += Int16(1)
         end
 
         itn.elapsed_time += Int32(cp.cnx_time)
-        itn.total_distance += cp.to_leg.distance
+        itn.total_distance += next_leg.distance
 
         # ── Recurse ───────────────────────────────────────────────────────────
         _dfs!(dest, itn, next_leg, ctx, depth + 1)
@@ -714,8 +714,7 @@ function _find_nonstop_connection(
     station::GraphStation,
     leg::GraphLeg,
 )::Union{GraphConnection,Nothing}
-    for cp_any in station.connections
-        cp = cp_any::GraphConnection
+    for cp in station.connections
         if cp.from_leg === leg && cp.to_leg === leg
             return cp
         end
@@ -804,7 +803,7 @@ function search_itineraries(
 
     # Iterate every departure at origin
     for i in 1:length(org_stn.departures)
-        dep_leg = org_stn.departures[i]::GraphLeg
+        dep_leg = org_stn.departures[i]
 
         # Validity check on the leg itself
         freq = StatusBits(dep_leg.record.frequency)
@@ -853,7 +852,7 @@ end
 function _utc_arrival(itn::Itinerary)::Int32
     isempty(itn.connections) && return Int32(0)
     last_cp = itn.connections[end]
-    leg = (last_cp.to_leg === last_cp.from_leg) ? last_cp.from_leg : last_cp.to_leg
+    leg = ((last_cp.to_leg === last_cp.from_leg) ? last_cp.from_leg : last_cp.to_leg)::GraphLeg
     r = leg.record
     Int32(r.pax_arr) - Int32(r.arr_utc_offset) + Int32(r.arr_date_var) * Int32(1440)
 end
@@ -861,7 +860,7 @@ end
 # UTC departure of the first leg in an itinerary (minutes from midnight of dep date)
 function _utc_departure(itn::Itinerary)::Int32
     isempty(itn.connections) && return Int32(0)
-    r = itn.connections[1].from_leg.record
+    r = (itn.connections[1].from_leg::GraphLeg).record
     Int32(r.pax_dep) - Int32(r.dep_utc_offset)
 end
 
@@ -895,7 +894,7 @@ function score_trip(trip::Trip, weights::TripScoringWeights)::Float64
 
         for cp in itn.connections
             cp.from_leg === cp.to_leg && continue
-            r = cp.to_leg.record
+            r = (cp.to_leg::GraphLeg).record
 
             # Block time
             bt = Float64(r.pax_arr) - Float64(r.pax_dep) + Float64(r.arr_date_var) * 1440.0
