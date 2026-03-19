@@ -106,8 +106,11 @@ for day_offset in 0:(n_days - 1)
     graph = build_graph!(store, config, target)
     build_ms = round(graph.build_stats.build_time_ns / 1.0e6; digits=0)
 
-    # Build Layer 1 one-via pre-computation
-    build_layer1!(graph)
+    # Layer 1: import cached or build fresh
+    if !import_layer1!(store, graph)
+        build_layer1!(graph)
+        export_layer1!(store, graph)
+    end
 
     println("[$(target)] $(length(graph.stations)) stations, $(length(graph.legs)) legs, built in $(build_ms)ms")
 
