@@ -570,6 +570,79 @@ using Dates
         @test ctx.search_stats.layer1_misses > 0
     end
 
+    # ── Fingerprinting ──────────────────────────────────────────────────────────
+
+    @testset "Fingerprinting" begin
+        using ItinerarySearch: _compute_fingerprint
+
+        # Build the same 4-station JFK→ORD→DEN→LAX graph used in the basic test.
+        stn_a = GraphStation(_make_stn_rec("JFK",  40.64,  -73.78))
+        stn_b = GraphStation(_make_stn_rec("ORD",  41.97,  -87.91))
+        stn_c = GraphStation(_make_stn_rec("DEN",  39.86, -104.67))
+        stn_d = GraphStation(_make_stn_rec("LAX",  33.94, -118.41))
+
+        leg_ab = GraphLeg(
+            _make_leg_rec(org = "JFK", dst = "ORD", flt_no = 701,
+                pax_dep = Int16(480), pax_arr = Int16(570),
+                distance = 740.0f0),
+            stn_a, stn_b,
+        )
+        leg_bc = GraphLeg(
+            _make_leg_rec(org = "ORD", dst = "DEN", flt_no = 702,
+                pax_dep = Int16(660), pax_arr = Int16(780),
+                distance = 920.0f0),
+            stn_b, stn_c,
+        )
+        leg_cd = GraphLeg(
+            _make_leg_rec(org = "DEN", dst = "LAX", flt_no = 703,
+                pax_dep = Int16(840), pax_arr = Int16(960),
+                distance = 860.0f0),
+            stn_c, stn_d,
+        )
+
+        graph = FlightGraph(
+            stations = Dict(
+                StationCode("JFK") => stn_a,
+                StationCode("ORD") => stn_b,
+                StationCode("DEN") => stn_c,
+                StationCode("LAX") => stn_d,
+            ),
+            legs = [leg_ab, leg_bc, leg_cd],
+            config = SearchConfig(circuity_factor = 3.0),
+        )
+
+        fp = _compute_fingerprint(graph)
+
+        # Returns a 3-tuple of UInt64
+        @test fp isa Tuple{UInt64, UInt64, UInt64}
+
+        # All components must be non-zero (3 legs → non-empty row_id list;
+        # empty MCT → hash([]) is still a deterministic non-zero UInt64;
+        # config tuple is non-trivial)
+        schedule_hash, mct_hash, config_hash = fp
+        @test schedule_hash != UInt64(0)
+        @test config_hash   != UInt64(0)
+        # mct_hash: hash of empty Int32[] — just check it's a UInt64 (may be 0)
+        @test mct_hash isa UInt64
+
+        # Same graph → same fingerprint (idempotent within session)
+        fp2 = _compute_fingerprint(graph)
+        @test fp2 === fp
+
+        # Different config → different config_hash, same schedule/mct hashes
+        graph_alt = FlightGraph(
+            stations = graph.stations,
+            legs     = graph.legs,
+            config   = SearchConfig(circuity_factor = 99.0, max_stops = 5),
+        )
+        fp_alt = _compute_fingerprint(graph_alt)
+        sched_alt, mct_alt, cfg_alt = fp_alt
+
+        @test sched_alt == schedule_hash   # schedule unchanged
+        @test mct_alt   == mct_hash        # MCT unchanged
+        @test cfg_alt   != config_hash     # config changed
+    end
+
     # ── _is_valid_on_date helper ────────────────────────────────────────────────
 
     @testset "_is_valid_on_date" begin

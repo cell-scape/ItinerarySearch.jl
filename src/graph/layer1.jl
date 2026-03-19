@@ -198,3 +198,60 @@ end
     osc.valid_from <= target <= osc.valid_to || return false
     (StatusBits(osc.valid_days) & dow) != StatusBits(0)
 end
+
+"""
+    `function _compute_fingerprint(graph::FlightGraph)::Tuple{UInt64, UInt64, UInt64}`
+---
+
+# Description
+- Produces a 3-component content fingerprint for a `FlightGraph`, covering the
+  schedule, MCT data, and search configuration independently
+- Intended for cache-key generation and staleness detection (e.g. deciding
+  whether a persisted Layer 1 index is still valid for the current graph)
+- `hash()` is deterministic within a Julia session; fingerprints should not be
+  persisted across process restarts without a version guard
+
+# Arguments
+1. `graph::FlightGraph`: the fully-built graph to fingerprint
+
+# Returns
+- `::Tuple{UInt64, UInt64, UInt64}`: `(schedule_hash, mct_hash, config_hash)`
+  where each component independently reflects changes to its input domain
+
+# Examples
+```julia
+julia> fp = _compute_fingerprint(graph);
+julia> fp isa Tuple{UInt64, UInt64, UInt64}
+true
+```
+"""
+function _compute_fingerprint(graph::FlightGraph)::Tuple{UInt64,UInt64,UInt64}
+    # Schedule: sorted leg row_numbers
+    row_ids = sort!([leg.record.row_number for leg in graph.legs])
+    schedule_hash = hash(row_ids)
+
+    # MCT: sorted mct_ids — MCTLookup.stations is Dict{StationCode, NTuple{4, Vector{MCTRecord}}}
+    mct_ids = Int32[]
+    for vecs in values(graph.mct_lookup.stations)
+        for vec in vecs
+            for rec in vec
+                push!(mct_ids, rec.mct_id)
+            end
+        end
+    end
+    sort!(mct_ids)
+    mct_hash = hash(mct_ids)
+
+    # Config: hash a tuple of the search-affecting parameters
+    c = graph.config
+    config_hash = hash((
+        c.circuity_factor,
+        c.max_stops,
+        c.max_connection_minutes,
+        c.scope,
+        c.interline,
+        c.distance_formula,
+    ))
+
+    return (schedule_hash, mct_hash, config_hash)
+end
