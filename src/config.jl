@@ -62,6 +62,11 @@ the reference — no locking, no mutation.
 - `SearchConfig()` — all defaults, uses demo data
 - `SearchConfig(max_stops=3)` — override individual fields
 - `load_config("path/to/config.json")` — load from JSON file
+
+# Key Fields
+- `allow_roundtrips::Bool` — when `false` (default), itineraries whose final
+  destination equals their origin are rejected; when `true`, they are split at
+  the farthest point from the origin and the two halves are committed separately
 """
 @kwdef struct SearchConfig
     backend::String = "duckdb"
@@ -92,6 +97,7 @@ the reference — no locking, no mutation.
     event_log_path::String = "data/output"
     output_formats::Vector{Symbol} = [:json, :yaml, :csv]
     distance_formula::Symbol = :haversine  # :haversine or :vincenty
+    allow_roundtrips::Bool = false
 end
 
 # ── JSON3 field extraction helpers ────────────────────────────────────────────
@@ -196,6 +202,10 @@ function load_config(path::String)::SearchConfig
         s !== nothing && (kwargs[:scope] = _parse_scope(s))
         s = _json_str(search, :interline)
         s !== nothing && (kwargs[:interline] = _parse_interline(s))
+        if haskey(search, :allow_roundtrips)
+            val = search[:allow_roundtrips]
+            val isa Bool && (kwargs[:allow_roundtrips] = val)
+        end
     end
 
     data = _json_obj(raw, :data)

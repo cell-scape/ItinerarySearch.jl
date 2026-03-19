@@ -635,6 +635,137 @@ using Dates
         @test isempty(itns)
     end
 
+    # ── Round-trip detection and splitting ────────────────────────────────────
+
+    @testset "Round-trip detection and splitting" begin
+        # Build a 3-station circular graph: A → B → C → A
+        # A is at (0, 0), B is far east at (0, 90) — farthest from A,
+        # C is at (0, 45) — on the way back.
+        #
+        # Leg 1: A → B  dep 08:00 arr 10:00   distance=3000
+        # Leg 2: B → C  dep 12:00 arr 14:00   distance=2000
+        # Leg 3: C → A  dep 16:00 arr 18:00   distance=2000
+        #
+        # Round-trip detected when searching A → A.
+        # B (at lng=90) is farthest from A (at lng=0) → split_idx=1 (A→B outbound)
+        # Outbound: A→B (1 leg, 0 stops)
+        # Return:   B→C→A (2 legs, 1 stop)
+
+        a_stn = GraphStation(_stn_rec("AAA", "US", "NAM"; lat=0.0, lng=0.0))
+        b_stn = GraphStation(_stn_rec("BBB", "US", "NAM"; lat=0.0, lng=90.0))
+        c_stn = GraphStation(_stn_rec("CCC", "US", "NAM"; lat=0.0, lng=45.0))
+
+        rec_ab = _leg_rec(
+            airline="UA", flt_no=1,
+            org="AAA", dst="BBB",
+            pax_dep=Int16(480), pax_arr=Int16(600),
+            distance=3000.0f0,
+        )
+        rec_bc = _leg_rec(
+            airline="UA", flt_no=2,
+            org="BBB", dst="CCC",
+            pax_dep=Int16(720), pax_arr=Int16(840),
+            distance=2000.0f0,
+        )
+        rec_ca = _leg_rec(
+            airline="UA", flt_no=3,
+            org="CCC", dst="AAA",
+            pax_dep=Int16(960), pax_arr=Int16(1080),
+            distance=2000.0f0,
+        )
+
+        leg_ab = GraphLeg(rec_ab, a_stn, b_stn)
+        leg_bc = GraphLeg(rec_bc, b_stn, c_stn)
+        leg_ca = GraphLeg(rec_ca, c_stn, a_stn)
+
+        push!(a_stn.departures, leg_ab)
+        push!(b_stn.arrivals, leg_ab)
+        push!(b_stn.departures, leg_bc)
+        push!(c_stn.arrivals, leg_bc)
+        push!(c_stn.departures, leg_ca)
+        push!(a_stn.arrivals, leg_ca)
+
+        rt_constraints = SearchConstraints(
+            defaults=ParameterSet(
+                max_stops=Int16(3),
+                circuity_factor=50.0,
+                circuity_extra_miles=500_000.0,
+                itinerary_circuity=50.0,
+            ),
+        )
+        cnx_ctx = (
+            config=SearchConfig(interline=INTERLINE_ALL),
+            constraints=rt_constraints,
+            build_stats=BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
+            mct_cache=Dict{UInt64,MCTResult}(),
+            gc_cache=Dict{UInt64,Float64}(),
+        )
+        cnx_rules = build_cnx_rules(
+            SearchConfig(interline=INTERLINE_ALL), rt_constraints, MCTLookup()
+        )
+        rt_stations = Dict{StationCode,GraphStation}(
+            StationCode("AAA") => a_stn,
+            StationCode("BBB") => b_stn,
+            StationCode("CCC") => c_stn,
+        )
+        build_connections!(rt_stations, cnx_rules, cnx_ctx)
+
+        # With allow_roundtrips=false (default): A→A returns empty
+        ctx_no_rt = RuntimeContext(
+            config=SearchConfig(interline=INTERLINE_ALL, allow_roundtrips=false),
+            constraints=rt_constraints,
+            itn_rules=build_itn_rules(SearchConfig(interline=INTERLINE_ALL)),
+            gc_cache=Dict{UInt64,Float64}(),
+        )
+        itns_no_rt = search_itineraries(
+            rt_stations, StationCode("AAA"), StationCode("AAA"),
+            Date(2026, 6, 15), ctx_no_rt,
+        )
+        @test isempty(itns_no_rt)
+
+        # With allow_roundtrips=true: A→A returns split halves
+        ctx_rt = RuntimeContext(
+            config=SearchConfig(interline=INTERLINE_ALL, allow_roundtrips=true),
+            constraints=rt_constraints,
+            itn_rules=build_itn_rules(SearchConfig(interline=INTERLINE_ALL)),
+            gc_cache=Dict{UInt64,Float64}(),
+        )
+        itns_rt = search_itineraries(
+            rt_stations, StationCode("AAA"), StationCode("AAA"),
+            Date(2026, 6, 15), ctx_rt,
+        )
+        @test length(itns_rt) >= 2
+
+        # Each committed half should have a non-circular origin/destination
+        # (the split halves should not themselves be round-trips).
+        # Use to_leg.org as the true departure station (to_leg is always the
+        # departing leg, even for nonstop self-connections).
+        for itn in itns_rt
+            if !isempty(itn.connections)
+                first_org_code = itn.connections[1].to_leg.org.code
+                last_cp = itn.connections[end]
+                last_dst_code = (
+                    last_cp.to_leg === last_cp.from_leg ?
+                        last_cp.from_leg.dst.code :
+                        last_cp.to_leg.dst.code
+                )
+                @test first_org_code != last_dst_code
+            end
+        end
+
+        # Verify that B (farthest from A) appears as the destination of at least
+        # one committed half — the outbound A→B half
+        committed_dsts = [
+            begin
+                last_cp = itn.connections[end]
+                last_cp.to_leg === last_cp.from_leg ?
+                    last_cp.from_leg.dst.code : last_cp.to_leg.dst.code
+            end
+            for itn in itns_rt if !isempty(itn.connections)
+        ]
+        @test StationCode("BBB") in committed_dsts
+    end
+
     # ── RuntimeContext default construction ───────────────────────────────────
 
     @testset "RuntimeContext default construction" begin

@@ -324,6 +324,22 @@ function _validate_and_commit!(itn::Itinerary, ctx::RuntimeContext)
         end
     end
 
+    # Round-trip detection: check whether final destination equals origin
+    if !isempty(itn.connections)
+        first_org = itn.connections[1].from_leg.org
+        last_cp = itn.connections[end]
+        last_dst =
+            last_cp.to_leg === last_cp.from_leg ? last_cp.from_leg.dst : last_cp.to_leg.dst
+        if first_org.code == last_dst.code
+            if ctx.config.allow_roundtrips
+                _split_and_commit_roundtrip!(itn, ctx)
+            else
+                ctx.search_stats.paths_rejected += Int32(1)
+            end
+            return
+        end
+    end
+
     # Compute geographic diversity
     metros, states, countries, regions = _count_geo_diversity(itn)
 
@@ -347,6 +363,125 @@ function _validate_and_commit!(itn::Itinerary, ctx::RuntimeContext)
     # Update search stats
     ctx.search_stats.paths_found += Int32(1)
     bucket = min(Int(itn.num_stops) + 1, 4)
+    if bucket <= length(ctx.search_stats.paths_by_stops)
+        ctx.search_stats.paths_by_stops[bucket] += Int32(1)
+    end
+
+    return nothing
+end
+
+# ── Round-trip splitting ─────────────────────────────────────────────────────
+
+"""
+    `function _split_and_commit_roundtrip!(itn::Itinerary, ctx::RuntimeContext)::Nothing`
+---
+
+# Description
+- Splits a round-trip itinerary (where the final destination equals the origin)
+  into an outbound and a return half, then commits each half via `_commit_half!`
+- The split point is the connection whose `to_leg` destination is farthest from
+  the origin (by haversine distance); this makes the outbound half the "long" leg
+  and the return half the backtrack
+- If `split_idx == length(connections)`, no return half is committed (the entire
+  itinerary is the outbound)
+
+# Arguments
+1. `itn::Itinerary`: working itinerary that forms a round-trip (not deep-copied)
+2. `ctx::RuntimeContext`: search context (`results` and `search_stats` are mutated)
+"""
+function _split_and_commit_roundtrip!(itn::Itinerary, ctx::RuntimeContext)
+    origin = itn.connections[1].from_leg.org
+
+    # Find the connection whose destination is farthest from the origin
+    max_dist = 0.0
+    split_idx = 1
+    for (i, cp) in enumerate(itn.connections)
+        leg = cp.to_leg === cp.from_leg ? cp.from_leg : cp.to_leg
+        dst = leg.dst
+        d = _haversine_distance(
+            origin.record.lat,
+            origin.record.lng,
+            dst.record.lat,
+            dst.record.lng,
+        )
+        if d > max_dist
+            max_dist = d
+            split_idx = i
+        end
+    end
+
+    # Outbound half: connections[1:split_idx]
+    if split_idx >= 1
+        out_conns = itn.connections[1:split_idx]
+        _commit_half!(out_conns, ctx)
+    end
+
+    # Return half: connections[split_idx+1:end]
+    if split_idx < length(itn.connections)
+        ret_conns = itn.connections[(split_idx + 1):end]
+        _commit_half!(ret_conns, ctx)
+    end
+
+    return nothing
+end
+
+"""
+    `function _commit_half!(conns::Vector{GraphConnection}, ctx::RuntimeContext)::Nothing`
+---
+
+# Description
+- Constructs a new `Itinerary` from a pre-sliced connection vector, recomputes
+  all derived fields, and appends it to `ctx.results`
+- Used by `_split_and_commit_roundtrip!` to independently commit the outbound
+  and return halves of a round-trip itinerary
+- `market_distance` is computed as the haversine great-circle distance between
+  the first leg's origin and the last leg's destination
+
+# Arguments
+1. `conns::Vector{GraphConnection}`: pre-sliced connections (already a copy from slicing)
+2. `ctx::RuntimeContext`: search context (`results` and `search_stats` are mutated)
+"""
+function _commit_half!(conns::Vector{GraphConnection}, ctx::RuntimeContext)
+    isempty(conns) && return nothing
+
+    half = Itinerary(connections=conns, status=StatusBits(0))
+
+    # Merge DOW status from all connections
+    for cp in conns
+        half.status |= cp.status
+    end
+
+    half.elapsed_time = _compute_elapsed(half)
+    half.total_distance = sum(cp.to_leg.distance for cp in conns; init=Distance(0))
+    half.num_stops = Int16(max(0, length(conns) - 1))
+
+    # Use to_leg.org as the true departure station of each half.
+    # For nonstop self-connections (to_leg === from_leg) this equals the
+    # leg's origin; for real connections to_leg.org is the connect point
+    # from which the traveller departs next.
+    first_org = conns[1].to_leg.org
+    last_cp = conns[end]
+    last_dst =
+        last_cp.to_leg === last_cp.from_leg ? last_cp.from_leg.dst : last_cp.to_leg.dst
+    half.market_distance = Distance(
+        _haversine_distance(
+            first_org.record.lat,
+            first_org.record.lng,
+            last_dst.record.lat,
+            last_dst.record.lng,
+        ),
+    )
+    half.circuity = half.total_distance / max(half.market_distance, Distance(1))
+
+    m, s, c, r = _count_geo_diversity(half)
+    half.num_metros = m
+    half.num_states = s
+    half.num_countries = c
+    half.num_regions = r
+
+    push!(ctx.results, half)
+    ctx.search_stats.paths_found += Int32(1)
+    bucket = min(Int(half.num_stops) + 1, 4)
     if bucket <= length(ctx.search_stats.paths_by_stops)
         ctx.search_stats.paths_by_stops[bucket] += Int32(1)
     end
