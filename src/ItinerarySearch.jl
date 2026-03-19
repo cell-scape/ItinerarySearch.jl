@@ -67,6 +67,7 @@ export resolve_params
 
 # Exports — graph types (Subsystem 2)
 export GraphStation, GraphLeg, GraphSegment, GraphConnection, Itinerary, Trip
+export TripLeg, TripScoringWeights
 export OneStopConnection, OneStopIndex
 export nonstop_connection
 
@@ -118,7 +119,7 @@ export build_connections_at_station!, build_connections!
 export build_layer1!, export_layer1!, import_layer1!, export_layer1_parquet!
 
 # Exports — graph: DFS search
-export RuntimeContext, search_itineraries
+export RuntimeContext, search_itineraries, search_trip, score_trip
 
 # Exports — graph: builder and FlightGraph
 export FlightGraph, build_graph!, search

@@ -830,3 +830,188 @@ function search_itineraries(
 
     return ctx.results
 end
+
+# ── UTC time helpers for pairing ─────────────────────────────────────────────
+
+# UTC arrival of the last leg in an itinerary (minutes from midnight of dep date)
+function _utc_arrival(itn::Itinerary)::Int32
+    isempty(itn.connections) && return Int32(0)
+    last_cp = itn.connections[end]
+    leg = (last_cp.to_leg === last_cp.from_leg) ? last_cp.from_leg : last_cp.to_leg
+    r = leg.record
+    Int32(r.pax_arr) - Int32(r.arr_utc_offset) + Int32(r.arr_date_var) * Int32(1440)
+end
+
+# UTC departure of the first leg in an itinerary (minutes from midnight of dep date)
+function _utc_departure(itn::Itinerary)::Int32
+    isempty(itn.connections) && return Int32(0)
+    r = itn.connections[1].from_leg.record
+    Int32(r.pax_dep) - Int32(r.dep_utc_offset)
+end
+
+# ── Trip scoring ─────────────────────────────────────────────────────────────
+
+"""
+    `score_trip(trip::Trip, weights::TripScoringWeights)::Float64`
+
+Compute a weighted score for a trip. Lower is better. All criteria are minimized.
+"""
+function score_trip(trip::Trip, weights::TripScoringWeights)::Float64
+    total_stops = sum(Int(itn.num_stops) for itn in trip.itineraries; init=0)
+    total_eqp = sum(Int(itn.num_eqp_changes) for itn in trip.itineraries; init=0)
+    total_elapsed = Float64(trip.total_elapsed) / 60.0
+    total_dist = Float64(trip.total_distance) / 1000.0
+
+    # Block time: sum of individual leg block times (UTC-corrected)
+    total_block = 0.0
+    for itn in trip.itineraries
+        for cp in itn.connections
+            cp.from_leg === cp.to_leg && continue
+            leg = cp.to_leg
+            r = leg.record
+            bt = Float64(r.pax_arr) - Float64(r.pax_dep) + Float64(r.arr_date_var) * 1440.0
+            if bt < 0.0; bt += 1440.0; end
+            total_block += bt
+        end
+    end
+    total_block /= 60.0
+    total_layover = max(0.0, total_elapsed - total_block)
+
+    # Carrier and flight number changes across all connections
+    carrier_changes = 0
+    flt_no_changes = 0
+    prev_carrier = NO_AIRLINE
+    prev_flt = FlightNumber(0)
+    for itn in trip.itineraries
+        for cp in itn.connections
+            cp.from_leg === cp.to_leg && continue
+            leg = cp.to_leg
+            curr_carrier = leg.record.airline
+            curr_flt = leg.record.flt_no
+            if prev_carrier != NO_AIRLINE
+                curr_carrier != prev_carrier && (carrier_changes += 1)
+                curr_flt != prev_flt && (flt_no_changes += 1)
+            end
+            prev_carrier = curr_carrier
+            prev_flt = curr_flt
+        end
+    end
+
+    # Average circuity
+    circs = [Float64(itn.circuity) for itn in trip.itineraries if itn.market_distance > Distance(0)]
+    avg_circ = isempty(circs) ? 1.0 : sum(circs) / length(circs)
+
+    return weights.stops * total_stops +
+           weights.eqp_changes * total_eqp +
+           weights.carrier_changes * carrier_changes +
+           weights.flt_no_changes * flt_no_changes +
+           weights.elapsed * total_elapsed +
+           weights.block_time * total_block +
+           weights.layover * total_layover +
+           weights.distance * total_dist +
+           weights.circuity * max(0.0, avg_circ - 1.0)
+end
+
+# ── Paired trip search ───────────────────────────────────────────────────────
+
+"""
+    `function search_trip(store::DuckDBStore, graph, legs::Vector{TripLeg}, ctx::RuntimeContext; ...)::Vector{Trip}`
+---
+
+# Description
+- Search multiple O-D legs, pair with temporal constraints, score, and rank
+- Each leg is searched independently via `search_itineraries`
+- Consecutive legs are paired: return departs after outbound arrives (UTC) + min/max stay
+- Results are scored with configurable weights and capped at `max_trips`
+
+# Arguments
+1. `store::DuckDBStore`: data store
+2. `graph::FlightGraph`: built flight graph
+3. `legs::Vector{TripLeg}`: ordered leg specifications
+4. `ctx::RuntimeContext`: search context
+
+# Keyword Arguments
+- `weights::TripScoringWeights`: scoring weights (default: `TripScoringWeights()`)
+- `max_per_leg::Int`: max itineraries to keep per leg before pairing (default: 100)
+- `max_trips::Int`: max trips to return (default: 1000)
+
+# Returns
+- `::Vector{Trip}`: scored and ranked trips (ascending score = best first)
+"""
+function search_trip(
+    store::DuckDBStore,
+    graph,
+    legs::Vector{TripLeg},
+    ctx::RuntimeContext;
+    weights::TripScoringWeights = TripScoringWeights(),
+    max_per_leg::Int = 100,
+    max_trips::Int = 1000,
+)::Vector{Trip}
+    isempty(legs) && return Trip[]
+
+    # 1. Search each leg independently
+    per_leg_results = Vector{Vector{Itinerary}}(undef, length(legs))
+    for (i, leg) in enumerate(legs)
+        itns = copy(search_itineraries(graph.stations, leg.origin, leg.destination, leg.date, ctx))
+        # Sort by elapsed time, keep top max_per_leg
+        sort!(itns; by=itn -> itn.elapsed_time)
+        if length(itns) > max_per_leg
+            resize!(itns, max_per_leg)
+        end
+        per_leg_results[i] = itns
+    end
+
+    # 2. Pair sequentially: build valid itinerary combinations
+    # Start with each first-leg itinerary as a partial trip
+    combos = Vector{Vector{Itinerary}}()
+    for itn in per_leg_results[1]
+        push!(combos, [itn])
+    end
+
+    for leg_idx in 2:length(legs)
+        leg = legs[leg_idx]
+        prev_leg = legs[leg_idx - 1]
+        next_itns = per_leg_results[leg_idx]
+        new_combos = Vector{Vector{Itinerary}}()
+
+        for combo in combos
+            prev_itn = combo[end]
+            utc_arr = _utc_arrival(prev_itn)
+            # Day offset between previous and current leg dates
+            day_offset = Int32(Dates.value(leg.date - prev_leg.date)) * Int32(1440)
+
+            for next_itn in next_itns
+                utc_dep = _utc_departure(next_itn) + day_offset
+                gap = utc_dep - utc_arr
+
+                # Must depart after arrival
+                gap < 0 && continue
+                # Min stay constraint
+                leg.min_stay > 0 && gap < leg.min_stay && continue
+                # Max stay constraint
+                leg.max_stay > 0 && gap > leg.max_stay && continue
+
+                push!(new_combos, vcat(combo, [next_itn]))
+            end
+        end
+
+        combos = new_combos
+        isempty(combos) && return Trip[]
+    end
+
+    # 3. Build and score trips
+    trips = Trip[]
+    for (i, combo) in enumerate(combos)
+        trip = Trip(combo; trip_id=Int32(i))
+        trip.score = score_trip(trip, weights)
+        push!(trips, trip)
+    end
+
+    # 4. Rank and cap
+    sort!(trips; by=t -> t.score)
+    if length(trips) > max_trips
+        resize!(trips, max_trips)
+    end
+
+    return trips
+end

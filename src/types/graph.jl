@@ -364,6 +364,45 @@ const OneStopIndex = Dict{Tuple{StationCode,StationCode},Vector{OneStopConnectio
     num_regions::Int16 = Int16(0)
 end
 
+# ── Trip Search Input Types ──────────────────────────────────────────────────
+
+"""
+    struct TripLeg
+
+One segment of a multi-leg trip search request.
+
+# Fields
+- `origin::StationCode` — departure station
+- `destination::StationCode` — arrival station
+- `date::Date` — travel date for this leg
+- `min_stay::Int` — minimum minutes after previous leg arrives (0 = no constraint)
+- `max_stay::Int` — maximum minutes after previous leg arrives (0 = no constraint)
+"""
+@kwdef struct TripLeg
+    origin::StationCode = NO_STATION
+    destination::StationCode = NO_STATION
+    date::Date = Date(2000, 1, 1)
+    min_stay::Int = 0
+    max_stay::Int = 0
+end
+
+"""
+    struct TripScoringWeights
+
+Configurable weights for trip scoring. All criteria are minimized — lower score is better.
+"""
+@kwdef struct TripScoringWeights
+    stops::Float64 = 10.0
+    eqp_changes::Float64 = 5.0
+    carrier_changes::Float64 = 5.0
+    flt_no_changes::Float64 = 2.0
+    elapsed::Float64 = 1.0
+    block_time::Float64 = 0.5
+    layover::Float64 = 0.5
+    distance::Float64 = 0.1
+    circuity::Float64 = 3.0
+end
+
 # ── Trip ─────────────────────────────────────────────────────────────────────
 
 """
@@ -389,6 +428,7 @@ A one-way trip has 1 itinerary, a round-trip has 2, multi-city has N.
     trip_type::Symbol = :oneway
     total_elapsed::Int32 = Int32(0)
     total_distance::Distance = Distance(0)
+    score::Float64 = 0.0
 end
 
 """
