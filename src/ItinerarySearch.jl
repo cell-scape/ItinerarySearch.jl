@@ -31,6 +31,7 @@ include("graph/search.jl")
 include("graph/builder.jl")
 include("graph/layer1.jl")
 include("output/formats.jl")
+include("output/viz.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
@@ -128,5 +129,8 @@ export FlightGraph, build_graph!, search
 # Exports — output formats
 export itinerary_long_format, itinerary_wide_format
 export write_legs, write_itineraries, write_trips
+
+# Exports — visualizations
+export viz_network_map, viz_timeline, viz_trip_comparison
 
 end # module

@@ -1,0 +1,960 @@
+# src/output/viz.jl — Interactive HTML visualizations for graph and search results
+#
+# Provides three self-contained HTML generators:
+#   - viz_network_map     — Leaflet map of stations, legs, and highlighted itineraries
+#   - viz_timeline        — D3 Gantt-style timeline of itinerary legs
+#   - viz_trip_comparison — D3 stacked bar chart of trip scoring criteria
+
+using JSON3
+
+# ── Shared helpers ─────────────────────────────────────────────────────────────
+
+"""
+    `function _viz_escape_title(s::AbstractString)::String`
+
+Escapes double-quotes in a string for safe embedding in an HTML title attribute.
+"""
+function _viz_escape_title(s::AbstractString)::String
+    replace(s, "\"" => "&quot;")
+end
+
+"""
+    `function _viz_airline_color(airline::String)::String`
+
+Returns a deterministic dark-theme hex color for a given airline code.
+Uses a small fixed palette cycled by hash so the same carrier always gets
+the same color within a single page.
+"""
+function _viz_airline_color(airline::String)::String
+    palette = [
+        "#4e9af1", "#f1a14e", "#4ef17a", "#f14e7a", "#c34ef1",
+        "#f1e14e", "#4ef1e1", "#f14e4e", "#7af14e", "#f14ec3",
+    ]
+    idx = mod1(abs(hash(airline)), length(palette))
+    return palette[idx]
+end
+
+"""
+    `function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}`
+
+Flattens an `Itinerary` into a list of leg dicts suitable for JSON serialisation.
+Each dict contains `airline`, `flt_no`, `org`, `dst`, `dep_utc`, `arr_utc`,
+`eqp`, `distance`, `cnx_time`, and `mct`.
+"""
+function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}
+    result = Dict{String,Any}[]
+    n_cnx = length(itn.connections)
+    for (i, cp) in enumerate(itn.connections)
+        from_l = cp.from_leg::GraphLeg
+        to_l = cp.to_leg::GraphLeg
+        is_nonstop_cp = cp.from_leg === cp.to_leg
+
+        # Emit from_leg
+        r = from_l.record
+        dep_utc = Int(r.pax_dep) - Int(r.dep_utc_offset)
+        arr_utc = Int(r.pax_arr) - Int(r.arr_utc_offset) + Int(r.arr_date_var) * 1440
+        push!(result, Dict{String,Any}(
+            "airline"   => strip(String(r.airline)),
+            "flt_no"    => Int(r.flt_no),
+            "flt_id"    => flight_id(r),
+            "org"       => strip(String(r.org)),
+            "dst"       => strip(String(r.dst)),
+            "dep_utc"   => dep_utc,
+            "arr_utc"   => arr_utc,
+            "eqp"       => strip(String(r.eqp)),
+            "distance"  => round(Float64(from_l.distance); digits=0),
+            "cnx_time"  => i > 1 ? Int(cp.cnx_time) : 0,
+            "mct"       => i > 1 ? Int(cp.mct) : 0,
+            "is_cnx"    => false,
+        ))
+
+        # For the final connecting leg, emit to_leg as well
+        if i == n_cnx && !is_nonstop_cp
+            tr = to_l.record
+            t_dep_utc = Int(tr.pax_dep) - Int(tr.dep_utc_offset)
+            t_arr_utc = Int(tr.pax_arr) - Int(tr.arr_utc_offset) + Int(tr.arr_date_var) * 1440
+            push!(result, Dict{String,Any}(
+                "airline"   => strip(String(tr.airline)),
+                "flt_no"    => Int(tr.flt_no),
+                "flt_id"    => flight_id(tr),
+                "org"       => strip(String(tr.org)),
+                "dst"       => strip(String(tr.dst)),
+                "dep_utc"   => t_dep_utc,
+                "arr_utc"   => t_arr_utc,
+                "eqp"       => strip(String(tr.eqp)),
+                "distance"  => round(Float64(to_l.distance); digits=0),
+                "cnx_time"  => Int(cp.cnx_time),
+                "mct"       => Int(cp.mct),
+                "is_cnx"    => false,
+            ))
+        end
+    end
+    return result
+end
+
+# ── viz_network_map ────────────────────────────────────────────────────────────
+
+"""
+    `function viz_network_map(path::AbstractString, graph::FlightGraph, date::Date; itineraries=Itinerary[], map_mode=:leaflet, title="")`
+---
+
+# Description
+- Generates a self-contained interactive HTML map of the flight network for a
+  specific operating date
+- Stations are rendered as circle markers sized by departure count
+- Legs are drawn as thin arcs; highlighted itinerary legs appear as thicker
+  orange/red polylines
+- Uses Leaflet 1.9 with OpenStreetMap tiles (`:leaflet` mode) or a plain dark
+  background (`:offline` mode)
+- Output directory is created on demand
+
+# Arguments
+1. `path::AbstractString`: output file path (e.g., `"data/viz/network_2026-03-18.html"`)
+2. `graph::FlightGraph`: built flight graph
+3. `date::Date`: operating date — only legs valid on this date are shown
+
+# Keyword Arguments
+- `itineraries=Itinerary[]`: itineraries to highlight as thick orange/red arcs
+- `map_mode=:leaflet`: `:leaflet` (OSM tiles) or `:offline` (plain background)
+- `title=""`: HTML page title; defaults to "Network Map — <date>"
+
+# Returns
+- `::Nothing`
+
+# Examples
+```julia
+julia> viz_network_map("data/viz/network.html", graph, Date(2026, 3, 18));
+```
+"""
+function viz_network_map(
+    path::AbstractString,
+    graph::FlightGraph,
+    date::Date;
+    itineraries::Vector{Itinerary} = Itinerary[],
+    map_mode::Symbol = :leaflet,
+    title::String = "",
+)::Nothing
+    page_title = isempty(title) ? "Network Map — $(date)" : title
+
+    # ── Collect station data ──────────────────────────────────────────────────
+    stations_data = Dict{String,Any}[]
+    for (code, stn) in graph.stations
+        lat = stn.record.lat
+        lng = stn.record.lng
+        (lat == 0.0 && lng == 0.0) && continue
+        push!(stations_data, Dict{String,Any}(
+            "code"       => String(code),
+            "lat"        => lat,
+            "lng"        => lng,
+            "departures" => length(stn.departures),
+            "arrivals"   => length(stn.arrivals),
+            "country"    => strip(String(stn.country)),
+        ))
+    end
+
+    # ── Collect leg arcs for the operating date ───────────────────────────────
+    legs_data = Dict{String,Any}[]
+    for leg in graph.legs
+        _operates_on(leg.record, date) || continue
+        org_stn = leg.org
+        dst_stn = leg.dst
+        (org_stn isa GraphStation && dst_stn isa GraphStation) || continue
+        org_lat = org_stn.record.lat
+        org_lng = org_stn.record.lng
+        dst_lat = dst_stn.record.lat
+        dst_lng = dst_stn.record.lng
+        (org_lat == 0.0 && org_lng == 0.0) && continue
+        (dst_lat == 0.0 && dst_lng == 0.0) && continue
+        push!(legs_data, Dict{String,Any}(
+            "org"     => strip(String(leg.record.org)),
+            "dst"     => strip(String(leg.record.dst)),
+            "org_lat" => org_lat,
+            "org_lng" => org_lng,
+            "dst_lat" => dst_lat,
+            "dst_lng" => dst_lng,
+            "airline" => strip(String(leg.record.airline)),
+            "flt_no"  => Int(leg.record.flt_no),
+            "flt_id"  => flight_id(leg.record),
+            "dist"    => round(Float64(leg.distance); digits=0),
+            "intl"    => is_international(leg.record.mct_status_dep == 'I' ||
+                         leg.record.mct_status_arr == 'I' ?
+                         STATUS_INTERNATIONAL : StatusBits(0)),
+        ))
+    end
+
+    # ── Collect highlighted itinerary arcs ────────────────────────────────────
+    hilight_data = Dict{String,Any}[]
+    for (itn_idx, itn) in enumerate(itineraries)
+        itn_legs = _viz_legs_from_itinerary(itn)
+        # Walk connections to get org/dst station coords
+        n_cnx = length(itn.connections)
+        for (i, cp) in enumerate(itn.connections)
+            from_l = cp.from_leg::GraphLeg
+            to_l = cp.to_leg::GraphLeg
+            is_nonstop_cp = cp.from_leg === cp.to_leg
+
+            function _arc(leg::GraphLeg)
+                org_stn = leg.org
+                dst_stn = leg.dst
+                (org_stn isa GraphStation && dst_stn isa GraphStation) || return nothing
+                Dict{String,Any}(
+                    "itn_idx"  => itn_idx,
+                    "flt_id"   => flight_id(leg.record),
+                    "org"      => strip(String(leg.record.org)),
+                    "dst"      => strip(String(leg.record.dst)),
+                    "org_lat"  => org_stn.record.lat,
+                    "org_lng"  => org_stn.record.lng,
+                    "dst_lat"  => dst_stn.record.lat,
+                    "dst_lng"  => dst_stn.record.lng,
+                    "airline"  => strip(String(leg.record.airline)),
+                )
+            end
+
+            a = _arc(from_l)
+            a !== nothing && push!(hilight_data, a)
+            if i == n_cnx && !is_nonstop_cp
+                b = _arc(to_l)
+                b !== nothing && push!(hilight_data, b)
+            end
+        end
+    end
+
+    stations_json = JSON3.write(stations_data)
+    legs_json     = JSON3.write(legs_data)
+    hilight_json  = JSON3.write(hilight_data)
+
+    tile_block = if map_mode == :offline
+        """
+        // Offline mode: plain dark background
+        L.tileLayer('', {
+            attribution: 'Offline mode'
+        });
+        map.getContainer().style.background = '#1a1a2e';
+        """
+    else
+        """
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+            attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors',
+            maxZoom: 18
+        }).addTo(map);
+        """
+    end
+
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>$(page_title)</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+        integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin=""/>
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+          integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV/XN2GqNk=" crossorigin=""></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; height: 100vh; display: flex; flex-direction: column; }
+    #header { padding: 10px 16px; background: #161b22; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 16px; }
+    #header h1 { font-size: 16px; font-weight: 600; color: #f0f6fc; }
+    #stats { font-size: 12px; color: #8b949e; }
+    #map { flex: 1; }
+    .leaflet-container { background: #0d1117; }
+    .tooltip-box { background: #161b22; border: 1px solid #30363d; border-radius: 4px; padding: 6px 10px; font-size: 12px; color: #c9d1d9; line-height: 1.6; }
+    .tooltip-box strong { color: #f0f6fc; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>$(page_title)</h1>
+    <span id="stats"></span>
+  </div>
+  <div id="map"></div>
+  <script>
+    const STATIONS = $(stations_json);
+    const LEGS = $(legs_json);
+    const HILIGHTS = $(hilight_json);
+
+    const map = L.map('map', { preferCanvas: true });
+    $(tile_block)
+
+    // ── Station lookup ────────────────────────────────────────────────────────
+    const stnMap = {};
+    STATIONS.forEach(s => { stnMap[s.code] = s; });
+
+    // ── Leg arcs (thin gray polylines with midpoint offset for curvature) ─────
+    const legGroup = L.layerGroup().addTo(map);
+    LEGS.forEach(leg => {
+      const midLat = (leg.org_lat + leg.dst_lat) / 2;
+      const midLng = (leg.org_lng + leg.dst_lng) / 2;
+      // Offset midpoint perpendicular to the arc for slight curvature
+      const dLat = leg.dst_lat - leg.org_lat;
+      const dLng = leg.dst_lng - leg.org_lng;
+      const curveOffset = 0.15;
+      const cLat = midLat - dLng * curveOffset;
+      const cLng = midLng + dLat * curveOffset;
+
+      const line = L.polyline(
+        [[leg.org_lat, leg.org_lng], [cLat, cLng], [leg.dst_lat, leg.dst_lng]],
+        { color: '#30363d', weight: 1, opacity: 0.6 }
+      ).addTo(legGroup);
+
+      line.bindTooltip(`<div class="tooltip-box"><strong>\${leg.flt_id}</strong><br>\${leg.org} &rarr; \${leg.dst}<br>\${leg.dist.toLocaleString()} mi</div>`,
+        { sticky: true });
+    });
+
+    // ── Highlighted itinerary arcs ────────────────────────────────────────────
+    const itnColors = ['#ff7043', '#ffa726', '#ef5350', '#ab47bc', '#26c6da'];
+    const hilightGroup = L.layerGroup().addTo(map);
+    HILIGHTS.forEach(arc => {
+      const color = itnColors[(arc.itn_idx - 1) % itnColors.length];
+      const midLat = (arc.org_lat + arc.dst_lat) / 2;
+      const midLng = (arc.org_lng + arc.dst_lng) / 2;
+      const dLat = arc.dst_lat - arc.org_lat;
+      const dLng = arc.dst_lng - arc.org_lng;
+      const curveOffset = 0.2;
+      const cLat = midLat - dLng * curveOffset;
+      const cLng = midLng + dLat * curveOffset;
+
+      L.polyline(
+        [[arc.org_lat, arc.org_lng], [cLat, cLng], [arc.dst_lat, arc.dst_lng]],
+        { color: color, weight: 3, opacity: 0.9 }
+      ).addTo(hilightGroup).bindTooltip(
+        `<div class="tooltip-box"><strong>\${arc.flt_id}</strong><br>\${arc.org} &rarr; \${arc.dst}<br>Itinerary #\${arc.itn_idx}</div>`,
+        { sticky: true }
+      );
+    });
+
+    // ── Station markers ───────────────────────────────────────────────────────
+    const stnGroup = L.layerGroup().addTo(map);
+    const bounds = [];
+    STATIONS.forEach(s => {
+      const r = Math.max(3, Math.log(s.departures + 1) * 3);
+      const marker = L.circleMarker([s.lat, s.lng], {
+        radius: r,
+        color: '#388bfd',
+        fillColor: '#1f6feb',
+        fillOpacity: 0.85,
+        weight: 1
+      }).addTo(stnGroup);
+
+      marker.bindTooltip(
+        `<div class="tooltip-box"><strong>\${s.code}</strong> (\${s.country})<br>\${s.departures} dep &bull; \${s.arrivals} arr</div>`,
+        { sticky: true }
+      );
+      bounds.push([s.lat, s.lng]);
+    });
+
+    // ── Fit map to station bounds ─────────────────────────────────────────────
+    if (bounds.length > 0) {
+      map.fitBounds(bounds, { padding: [20, 20] });
+    } else {
+      map.setView([20, 0], 2);
+    }
+
+    // ── Stats bar ─────────────────────────────────────────────────────────────
+    document.getElementById('stats').textContent =
+      `\${STATIONS.length.toLocaleString()} stations · \${LEGS.length.toLocaleString()} legs · \${HILIGHTS.length > 0 ? HILIGHTS.length + ' highlighted arcs' : 'no highlights'}`;
+  </script>
+</body>
+</html>
+"""
+
+    mkpath(dirname(abspath(path)))
+    write(path, html)
+    return nothing
+end
+
+# ── viz_timeline ───────────────────────────────────────────────────────────────
+
+"""
+    `function viz_timeline(path::AbstractString, itineraries::Vector{Itinerary}; title="", max_display=50)`
+---
+
+# Description
+- Generates a self-contained interactive HTML Gantt-style timeline of itinerary
+  legs plotted in UTC minutes
+- Each itinerary is one horizontal row; legs are colored rectangles sized
+  proportionally to block time; connection gaps are lighter dashed rectangles
+- Uses D3 v7 for rendering
+- Output directory is created on demand
+
+# Arguments
+1. `path::AbstractString`: output file path
+2. `itineraries::Vector{Itinerary}`: search results to display
+
+# Keyword Arguments
+- `title=""`: page title; defaults to "Itinerary Timeline"
+- `max_display=50`: maximum number of itineraries to render
+
+# Returns
+- `::Nothing`
+
+# Examples
+```julia
+julia> viz_timeline("data/viz/timeline.html", itineraries);
+```
+"""
+function viz_timeline(
+    path::AbstractString,
+    itineraries::Vector{Itinerary};
+    title::String = "",
+    max_display::Int = 50,
+)::Nothing
+    page_title = isempty(title) ? "Itinerary Timeline" : title
+    display_itns = itineraries[1:min(max_display, length(itineraries))]
+
+    # ── Build chart data ──────────────────────────────────────────────────────
+    rows_data = Dict{String,Any}[]
+    for (itn_idx, itn) in enumerate(display_itns)
+        stops = Int(itn.num_stops)
+        elapsed = Int(itn.elapsed_time)
+        legs = _viz_legs_from_itinerary(itn)
+        isempty(legs) && continue
+
+        push!(rows_data, Dict{String,Any}(
+            "id"      => itn_idx,
+            "stops"   => stops,
+            "elapsed" => elapsed,
+            "dist"    => round(Float64(itn.total_distance); digits=0),
+            "circ"    => round(Float64(itn.circuity); digits=2),
+            "intl"    => is_international(itn.status),
+            "legs"    => legs,
+        ))
+    end
+
+    rows_json = JSON3.write(rows_data)
+
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>$(page_title)</title>
+  <script src="https://unpkg.com/d3@7.9.0/dist/d3.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', monospace; }
+    #header { padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d; }
+    #header h1 { font-size: 15px; font-weight: 600; color: #f0f6fc; }
+    #header p  { font-size: 12px; color: #8b949e; margin-top: 2px; }
+    #chart-container { padding: 16px 20px; overflow-x: auto; }
+    .row-label { font-size: 11px; fill: #8b949e; }
+    .leg-rect  { cursor: pointer; }
+    .leg-rect:hover { opacity: 0.85; }
+    .cnx-rect  { fill: #21262d; stroke: #388bfd; stroke-dasharray: 3,2; stroke-width: 1; opacity: 0.7; }
+    .axis path, .axis line { stroke: #30363d; }
+    .axis text { fill: #8b949e; font-size: 10px; }
+    .grid line { stroke: #21262d; stroke-opacity: 0.8; }
+    #tooltip {
+      position: fixed; pointer-events: none; display: none;
+      background: #161b22; border: 1px solid #30363d; border-radius: 4px;
+      padding: 8px 12px; font-size: 12px; color: #c9d1d9; line-height: 1.7;
+      max-width: 260px; z-index: 100;
+    }
+    #tooltip strong { color: #f0f6fc; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>$(page_title)</h1>
+    <p id="subtitle"></p>
+  </div>
+  <div id="chart-container"><svg id="chart"></svg></div>
+  <div id="tooltip"></div>
+  <script>
+    const ROWS = $(rows_json);
+
+    const ROW_H   = 36;
+    const ROW_PAD = 6;
+    const LABEL_W = 90;
+    const MARGIN  = { top: 30, right: 20, bottom: 40, left: LABEL_W };
+    const MIN_LEG_W = 4;
+
+    const container = document.getElementById('chart-container');
+    const tooltip   = document.getElementById('tooltip');
+    document.getElementById('subtitle').textContent =
+      `\${ROWS.length} itineraries`;
+
+    if (ROWS.length === 0) {
+      document.getElementById('subtitle').textContent = 'No itineraries to display';
+    } else {
+      // ── Compute global UTC time range ──────────────────────────────────────
+      let globalMin = Infinity, globalMax = -Infinity;
+      ROWS.forEach(row => {
+        row.legs.forEach(leg => {
+          if (leg.dep_utc < globalMin) globalMin = leg.dep_utc;
+          if (leg.arr_utc > globalMax) globalMax = leg.arr_utc;
+        });
+      });
+      const span = globalMax - globalMin;
+
+      const svgW = Math.max(800, container.clientWidth - 40);
+      const innerW = svgW - MARGIN.left - MARGIN.right;
+      const innerH = ROWS.length * (ROW_H + ROW_PAD);
+      const svgH = innerH + MARGIN.top + MARGIN.bottom;
+
+      const svg = d3.select('#chart')
+        .attr('width', svgW)
+        .attr('height', svgH);
+
+      const g = svg.append('g')
+        .attr('transform', `translate(\${MARGIN.left},\${MARGIN.top})`);
+
+      const xScale = d3.scaleLinear()
+        .domain([globalMin, globalMax])
+        .range([0, innerW]);
+
+      // ── X axis with HH:MM labels ───────────────────────────────────────────
+      const formatMin = m => {
+        const h = Math.floor(Math.abs(m) / 60) % 24;
+        const mn = Math.abs(m) % 60;
+        return String(h).padStart(2,'0') + ':' + String(mn).padStart(2,'0');
+      };
+      const xAxis = d3.axisBottom(xScale)
+        .ticks(10)
+        .tickFormat(formatMin);
+
+      g.append('g')
+        .attr('class', 'axis')
+        .attr('transform', `translate(0,\${innerH})`)
+        .call(xAxis);
+
+      // ── Grid lines ────────────────────────────────────────────────────────
+      g.append('g')
+        .attr('class', 'grid')
+        .attr('transform', `translate(0,\${innerH})`)
+        .call(d3.axisBottom(xScale).ticks(10).tickSize(-innerH).tickFormat(''))
+        .call(gg => gg.select('.domain').remove());
+
+      // ── Airline color scale ───────────────────────────────────────────────
+      const airlines = [...new Set(ROWS.flatMap(r => r.legs.map(l => l.airline)))];
+      const palette = ['#4e9af1','#f1a14e','#4ef17a','#f14e7a','#c34ef1',
+                       '#f1e14e','#4ef1e1','#f14e4e','#7af14e','#f14ec3'];
+      const colorMap = {};
+      airlines.forEach((al, i) => { colorMap[al] = palette[i % palette.length]; });
+
+      // ── Rows ──────────────────────────────────────────────────────────────
+      ROWS.forEach((row, ri) => {
+        const y = ri * (ROW_H + ROW_PAD);
+        const rowG = g.append('g').attr('transform', `translate(0,\${y})`);
+
+        // Row label
+        rowG.append('text')
+          .attr('class', 'row-label')
+          .attr('x', -6)
+          .attr('y', ROW_H / 2 + 4)
+          .attr('text-anchor', 'end')
+          .text(`#\${row.id} (\${row.stops}s)`);
+
+        // ── Legs ────────────────────────────────────────────────────────────
+        // Connection gap rectangles (drawn behind legs)
+        for (let i = 1; i < row.legs.length; i++) {
+          const prev = row.legs[i - 1];
+          const curr = row.legs[i];
+          const gx  = xScale(prev.arr_utc);
+          const gx2 = xScale(curr.dep_utc);
+          const gw  = Math.max(2, gx2 - gx);
+          rowG.append('rect')
+            .attr('class', 'cnx-rect')
+            .attr('x', gx)
+            .attr('y', 4)
+            .attr('width', gw)
+            .attr('height', ROW_H - 8)
+            .on('mousemove', ev => showTooltip(ev,
+              `<strong>Connection at \${curr.org}</strong><br>` +
+              `Gap: \${curr.cnx_time} min · MCT: \${curr.mct} min`))
+            .on('mouseleave', hideTooltip);
+        }
+
+        // Leg rectangles
+        row.legs.forEach(leg => {
+          const lx = xScale(leg.dep_utc);
+          const lw = Math.max(MIN_LEG_W, xScale(leg.arr_utc) - lx);
+          const color = colorMap[leg.airline] || '#4e9af1';
+
+          rowG.append('rect')
+            .attr('class', 'leg-rect')
+            .attr('x', lx)
+            .attr('y', 2)
+            .attr('width', lw)
+            .attr('height', ROW_H - 4)
+            .attr('fill', color)
+            .attr('rx', 3)
+            .on('mousemove', ev => showTooltip(ev,
+              `<strong>\${leg.flt_id}</strong><br>` +
+              `\${leg.org} &rarr; \${leg.dst}<br>` +
+              `Dep: \${formatMin(leg.dep_utc)} UTC · Arr: \${formatMin(leg.arr_utc)} UTC<br>` +
+              `\${leg.eqp} · \${leg.distance.toLocaleString()} mi`))
+            .on('mouseleave', hideTooltip);
+
+          // Flight label inside rect if wide enough
+          if (lw > 40) {
+            rowG.append('text')
+              .attr('x', lx + lw / 2)
+              .attr('y', ROW_H / 2 + 4)
+              .attr('text-anchor', 'middle')
+              .attr('font-size', 10)
+              .attr('fill', '#0d1117')
+              .attr('pointer-events', 'none')
+              .text(leg.flt_id);
+          }
+        });
+      });
+
+      function showTooltip(ev, html) {
+        tooltip.innerHTML = html;
+        tooltip.style.display = 'block';
+        tooltip.style.left = (ev.clientX + 12) + 'px';
+        tooltip.style.top  = (ev.clientY + 12) + 'px';
+      }
+      function hideTooltip() {
+        tooltip.style.display = 'none';
+      }
+      // Move tooltip with mouse
+      document.addEventListener('mousemove', ev => {
+        if (tooltip.style.display !== 'none') {
+          tooltip.style.left = (ev.clientX + 12) + 'px';
+          tooltip.style.top  = (ev.clientY + 12) + 'px';
+        }
+      });
+    }
+  </script>
+</body>
+</html>
+"""
+
+    mkpath(dirname(abspath(path)))
+    write(path, html)
+    return nothing
+end
+
+# ── viz_trip_comparison ────────────────────────────────────────────────────────
+
+"""
+    `function viz_trip_comparison(path::AbstractString, trips::Vector{Trip}; weights=TripScoringWeights(), title="", top_n=10)`
+---
+
+# Description
+- Generates a self-contained interactive HTML stacked horizontal bar chart
+  comparing trip scoring criterion contributions
+- Each bar represents one trip; segments are colored by criterion and sized by
+  weighted contribution to the total score
+- Sorted best (lowest score) first; only `top_n` trips are shown
+- Uses D3 v7 for rendering
+- Output directory is created on demand
+
+# Arguments
+1. `path::AbstractString`: output file path
+2. `trips::Vector{Trip}`: scored trip results (e.g., from `search_trip`)
+
+# Keyword Arguments
+- `weights::TripScoringWeights`: scoring weights used to compute contributions
+- `title=""`: page title; defaults to "Trip Comparison"
+- `top_n=10`: maximum number of trips to display
+
+# Returns
+- `::Nothing`
+
+# Examples
+```julia
+julia> viz_trip_comparison("data/viz/trips.html", trips; top_n=20);
+```
+"""
+function viz_trip_comparison(
+    path::AbstractString,
+    trips::Vector{Trip};
+    weights::TripScoringWeights = TripScoringWeights(),
+    title::String = "",
+    top_n::Int = 10,
+)::Nothing
+    page_title = isempty(title) ? "Trip Comparison" : title
+    display_trips = trips[1:min(top_n, length(trips))]
+
+    # ── Criterion definitions ─────────────────────────────────────────────────
+    criteria = [
+        ("stops",           "Stops",          "#f14e4e"),
+        ("eqp_changes",     "Eqp Changes",    "#f1a14e"),
+        ("carrier_changes", "Carrier Changes", "#f1e14e"),
+        ("flt_no_changes",  "Flt# Changes",   "#4ef17a"),
+        ("elapsed",         "Elapsed Time",   "#4e9af1"),
+        ("block_time",      "Block Time",     "#4ef1e1"),
+        ("layover",         "Layover",        "#c34ef1"),
+        ("distance",        "Distance",       "#7af14e"),
+        ("circuity",        "Circuity",       "#f14ec3"),
+    ]
+
+    # ── Decompose score into per-criterion weighted contributions ─────────────
+    trips_data = Dict{String,Any}[]
+    for (rank, trip) in enumerate(display_trips)
+        # Recompute raw criterion values (mirrors score_trip logic)
+        total_stops = 0
+        total_eqp   = 0
+        total_block = 0.0
+        carrier_changes = 0
+        flt_no_changes  = 0
+        prev_carrier = NO_AIRLINE
+        prev_flt     = FlightNumber(0)
+        circ_sum     = 0.0
+        circ_count   = 0
+
+        for itn in trip.itineraries
+            total_stops += Int(itn.num_stops)
+            total_eqp   += Int(itn.num_eqp_changes)
+            if itn.market_distance > Distance(0)
+                circ_sum   += Float64(itn.circuity)
+                circ_count += 1
+            end
+            for cp in itn.connections
+                cp.from_leg === cp.to_leg && continue
+                r = (cp.to_leg::GraphLeg).record
+                bt = Float64(r.pax_arr) - Float64(r.pax_dep) + Float64(r.arr_date_var) * 1440.0
+                if bt < 0.0; bt += 1440.0; end
+                total_block += bt
+                curr_carrier = r.airline
+                curr_flt     = r.flt_no
+                if prev_carrier != NO_AIRLINE
+                    curr_carrier != prev_carrier && (carrier_changes += 1)
+                    curr_flt != prev_flt         && (flt_no_changes  += 1)
+                end
+                prev_carrier = curr_carrier
+                prev_flt     = curr_flt
+            end
+        end
+
+        total_block   /= 60.0
+        total_elapsed  = Float64(trip.total_elapsed) / 60.0
+        total_layover  = max(0.0, total_elapsed - total_block)
+        total_dist     = Float64(trip.total_distance) / 1000.0
+        avg_circ       = circ_count > 0 ? circ_sum / circ_count : 1.0
+
+        raw = Dict(
+            "stops"           => Float64(total_stops),
+            "eqp_changes"     => Float64(total_eqp),
+            "carrier_changes" => Float64(carrier_changes),
+            "flt_no_changes"  => Float64(flt_no_changes),
+            "elapsed"         => total_elapsed,
+            "block_time"      => total_block,
+            "layover"         => total_layover,
+            "distance"        => total_dist,
+            "circuity"        => max(0.0, avg_circ - 1.0),
+        )
+        w_dict = Dict(
+            "stops"           => weights.stops,
+            "eqp_changes"     => weights.eqp_changes,
+            "carrier_changes" => weights.carrier_changes,
+            "flt_no_changes"  => weights.flt_no_changes,
+            "elapsed"         => weights.elapsed,
+            "block_time"      => weights.block_time,
+            "layover"         => weights.layover,
+            "distance"        => weights.distance,
+            "circuity"        => weights.circuity,
+        )
+
+        contributions = Dict{String,Any}[]
+        for (key, label, color) in criteria
+            rv = raw[key]
+            wv = w_dict[key]
+            push!(contributions, Dict{String,Any}(
+                "key"       => key,
+                "label"     => label,
+                "color"     => color,
+                "raw"       => round(rv; digits=2),
+                "weight"    => wv,
+                "weighted"  => round(rv * wv; digits=3),
+            ))
+        end
+
+        # Route string
+        route = String(trip.origin) * " → " * String(trip.destination)
+
+        push!(trips_data, Dict{String,Any}(
+            "rank"          => rank,
+            "trip_id"       => Int(trip.trip_id),
+            "route"         => route,
+            "trip_type"     => String(trip.trip_type),
+            "score"         => round(trip.score; digits=3),
+            "total_elapsed" => Int(trip.total_elapsed),
+            "total_dist"    => round(Float64(trip.total_distance); digits=0),
+            "n_itineraries" => length(trip.itineraries),
+            "contributions" => contributions,
+        ))
+    end
+
+    criteria_json = JSON3.write([(k, l, c) for (k, l, c) in criteria])
+    trips_json    = JSON3.write(trips_data)
+
+    html = """<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>$(page_title)</title>
+  <script src="https://unpkg.com/d3@7.9.0/dist/d3.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; }
+    #header { padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d; }
+    #header h1 { font-size: 15px; font-weight: 600; color: #f0f6fc; }
+    #header p  { font-size: 12px; color: #8b949e; margin-top: 2px; }
+    #legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #8b949e; }
+    .legend-swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+    #chart-container { padding: 16px 20px; overflow-x: auto; }
+    .bar-label { font-size: 11px; fill: #8b949e; cursor: default; }
+    .bar-label:hover { fill: #f0f6fc; }
+    .axis path, .axis line { stroke: #30363d; }
+    .axis text { fill: #8b949e; font-size: 10px; }
+    .grid line { stroke: #21262d; stroke-opacity: 0.8; }
+    .score-text { font-size: 10px; fill: #8b949e; }
+    #tooltip {
+      position: fixed; pointer-events: none; display: none;
+      background: #161b22; border: 1px solid #30363d; border-radius: 4px;
+      padding: 8px 12px; font-size: 12px; color: #c9d1d9; line-height: 1.7;
+      max-width: 280px; z-index: 100;
+    }
+    #tooltip strong { color: #f0f6fc; }
+    #tooltip .dim  { color: #8b949e; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>$(page_title)</h1>
+    <p id="subtitle"></p>
+  </div>
+  <div id="legend"></div>
+  <div id="chart-container"><svg id="chart"></svg></div>
+  <div id="tooltip"></div>
+  <script>
+    const CRITERIA = $(criteria_json);
+    const TRIPS    = $(trips_json);
+
+    const tooltip = document.getElementById('tooltip');
+    document.getElementById('subtitle').textContent =
+      `\${TRIPS.length} trip\${TRIPS.length !== 1 ? 's' : ''} · lower score = better`;
+
+    // ── Legend ────────────────────────────────────────────────────────────────
+    const legendEl = document.getElementById('legend');
+    CRITERIA.forEach(([key, label, color]) => {
+      const item = document.createElement('div');
+      item.className = 'legend-item';
+      item.innerHTML = `<div class="legend-swatch" style="background:\${color}"></div>\${label}`;
+      legendEl.appendChild(item);
+    });
+
+    if (TRIPS.length === 0) {
+      document.getElementById('subtitle').textContent = 'No trips to display';
+    } else {
+      const BAR_H   = 28;
+      const BAR_PAD = 10;
+      const LABEL_W = 140;
+      const SCORE_W = 60;
+      const MARGIN  = { top: 20, right: SCORE_W + 20, bottom: 40, left: LABEL_W };
+
+      const container = document.getElementById('chart-container');
+      const svgW    = Math.max(800, container.clientWidth - 40);
+      const innerW  = svgW - MARGIN.left - MARGIN.right;
+      const innerH  = TRIPS.length * (BAR_H + BAR_PAD);
+      const svgH    = innerH + MARGIN.top + MARGIN.bottom;
+
+      const svg = d3.select('#chart')
+        .attr('width', svgW)
+        .attr('height', svgH);
+
+      const g = svg.append('g')
+        .attr('transform', `translate(\${MARGIN.left},\${MARGIN.top})`);
+
+      // ── X scale based on max total score ────────────────────────────────
+      const maxScore = d3.max(TRIPS, t => t.score);
+      const xScale = d3.scaleLinear().domain([0, maxScore * 1.05]).range([0, innerW]);
+
+      const xAxis = d3.axisBottom(xScale).ticks(8);
+      g.append('g')
+        .attr('class', 'axis')
+        .attr('transform', `translate(0,\${innerH})`)
+        .call(xAxis);
+
+      g.append('g')
+        .attr('class', 'grid')
+        .attr('transform', `translate(0,\${innerH})`)
+        .call(d3.axisBottom(xScale).ticks(8).tickSize(-innerH).tickFormat(''))
+        .call(gg => gg.select('.domain').remove());
+
+      g.append('text')
+        .attr('x', innerW / 2)
+        .attr('y', innerH + 36)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', 11)
+        .attr('fill', '#8b949e')
+        .text('Weighted Score (lower = better)');
+
+      // ── Trip bars ─────────────────────────────────────────────────────────
+      TRIPS.forEach((trip, ti) => {
+        const y = ti * (BAR_H + BAR_PAD);
+        const rowG = g.append('g').attr('transform', `translate(0,\${y})`);
+
+        // Label
+        const labelText = `#\${trip.rank} \${trip.route}`;
+        rowG.append('text')
+          .attr('class', 'bar-label')
+          .attr('x', -8)
+          .attr('y', BAR_H / 2 + 4)
+          .attr('text-anchor', 'end')
+          .text(labelText)
+          .on('mousemove', ev => showTooltip(ev,
+            `<strong>\${trip.route}</strong><br>` +
+            `<span class="dim">Type: \${trip.trip_type} · ID: \${trip.trip_id}</span><br>` +
+            `Score: \${trip.score}<br>` +
+            `Elapsed: \${trip.total_elapsed} min · Dist: \${trip.total_dist.toLocaleString()} mi`))
+          .on('mouseleave', hideTooltip);
+
+        // Stacked segments
+        let cursor = 0;
+        trip.contributions.forEach(c => {
+          if (c.weighted <= 0) return;
+          const segW = xScale(c.weighted);
+          rowG.append('rect')
+            .attr('x', cursor)
+            .attr('y', 2)
+            .attr('width', segW)
+            .attr('height', BAR_H - 4)
+            .attr('fill', c.color)
+            .attr('rx', 2)
+            .on('mousemove', ev => showTooltip(ev,
+              `<strong>\${c.label}</strong><br>` +
+              `Raw: \${c.raw}<br>` +
+              `Weight: \${c.weight}<br>` +
+              `Contribution: \${c.weighted}`))
+            .on('mouseleave', hideTooltip);
+          cursor += segW;
+        });
+
+        // Score label at end of bar
+        rowG.append('text')
+          .attr('class', 'score-text')
+          .attr('x', xScale(trip.score) + 4)
+          .attr('y', BAR_H / 2 + 4)
+          .text(trip.score.toFixed(1));
+      });
+
+      function showTooltip(ev, html) {
+        tooltip.innerHTML = html;
+        tooltip.style.display = 'block';
+        tooltip.style.left = (ev.clientX + 12) + 'px';
+        tooltip.style.top  = (ev.clientY + 12) + 'px';
+      }
+      function hideTooltip() { tooltip.style.display = 'none'; }
+      document.addEventListener('mousemove', ev => {
+        if (tooltip.style.display !== 'none') {
+          tooltip.style.left = (ev.clientX + 12) + 'px';
+          tooltip.style.top  = (ev.clientY + 12) + 'px';
+        }
+      });
+    }
+  </script>
+</body>
+</html>
+"""
+
+    mkpath(dirname(abspath(path)))
+    write(path, html)
+    return nothing
+end

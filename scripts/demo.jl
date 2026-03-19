@@ -156,5 +156,60 @@ for day_offset in 0:(n_days - 1)
     println("[$(target)] Total: $(total_itns) itineraries, $(total_rows) rows → $(itns_file) ($(day_elapsed)s)")
 end
 
+# ── Generate visualizations for first day ─────────────────────────────────────
+viz_dir = joinpath("data", "viz")
+println("\n" * "="^50)
+println("Generating visualizations → $(viz_dir)/")
+
+target = start_date
+graph  = build_graph!(store, config, target)
+
+ctx_viz = RuntimeContext(
+    config      = config,
+    constraints = SearchConstraints(),
+    itn_rules   = build_itn_rules(config),
+    layer1_built = graph.layer1_built,
+    layer1      = graph.layer1,
+)
+
+# Collect sample itineraries from all OD pairs on first day
+sample_itns = Itinerary[]
+for (origin, dest) in od_pairs
+    itns = search_itineraries(graph.stations, origin, dest, target, ctx_viz)
+    append!(sample_itns, copy(itns)[1:min(5, length(itns))])
+    length(sample_itns) >= 20 && break
+end
+
+# Network map with highlighted sample itineraries
+net_map_file = joinpath(viz_dir, "network_$(target).html")
+viz_network_map(net_map_file, graph, target;
+    itineraries = sample_itns,
+    title       = "Flight Network — $(target)",
+)
+println("  Network map  → $(net_map_file)")
+
+# Timeline for sample itineraries
+timeline_file = joinpath(viz_dir, "timeline_$(target).html")
+viz_timeline(timeline_file, sample_itns;
+    title = "Itinerary Timeline — $(target)",
+)
+println("  Timeline     → $(timeline_file)")
+
+# Trip comparison — search a round-trip and compare results
+if !isempty(od_pairs)
+    o, d = od_pairs[1]
+    trip_legs = [
+        TripLeg(origin=o, destination=d, date=target),
+        TripLeg(origin=d, destination=o, date=target + Day(3), min_stay=60*12),
+    ]
+    trips = search_trip(store, graph, trip_legs, ctx_viz; max_trips=20)
+    trips_file = joinpath(viz_dir, "trips_$(target).html")
+    viz_trip_comparison(trips_file, trips;
+        title  = "Trip Comparison: $(o)↔$(d) — $(target)",
+        top_n  = 10,
+    )
+    println("  Trip chart   → $(trips_file)")
+end
+
 close(store)
 println("\nDone!")
