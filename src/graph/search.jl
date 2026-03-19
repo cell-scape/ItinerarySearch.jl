@@ -857,37 +857,38 @@ end
 Compute a weighted score for a trip. Lower is better. All criteria are minimized.
 """
 function score_trip(trip::Trip, weights::TripScoringWeights)::Float64
-    total_stops = sum(Int(itn.num_stops) for itn in trip.itineraries; init=0)
-    total_eqp = sum(Int(itn.num_eqp_changes) for itn in trip.itineraries; init=0)
-    total_elapsed = Float64(trip.total_elapsed) / 60.0
-    total_dist = Float64(trip.total_distance) / 1000.0
-
-    # Block time: sum of individual leg block times (UTC-corrected)
+    total_stops = 0
+    total_eqp = 0
     total_block = 0.0
-    for itn in trip.itineraries
-        for cp in itn.connections
-            cp.from_leg === cp.to_leg && continue
-            leg = cp.to_leg
-            r = leg.record
-            bt = Float64(r.pax_arr) - Float64(r.pax_dep) + Float64(r.arr_date_var) * 1440.0
-            if bt < 0.0; bt += 1440.0; end
-            total_block += bt
-        end
-    end
-    total_block /= 60.0
-    total_layover = max(0.0, total_elapsed - total_block)
-
-    # Carrier and flight number changes across all connections
     carrier_changes = 0
     flt_no_changes = 0
     prev_carrier = NO_AIRLINE
     prev_flt = FlightNumber(0)
+    circ_sum = 0.0
+    circ_count = 0
+
+    # Single pass over all itineraries and connections
     for itn in trip.itineraries
+        total_stops += Int(itn.num_stops)
+        total_eqp += Int(itn.num_eqp_changes)
+
+        if itn.market_distance > Distance(0)
+            circ_sum += Float64(itn.circuity)
+            circ_count += 1
+        end
+
         for cp in itn.connections
             cp.from_leg === cp.to_leg && continue
-            leg = cp.to_leg
-            curr_carrier = leg.record.airline
-            curr_flt = leg.record.flt_no
+            r = cp.to_leg.record
+
+            # Block time
+            bt = Float64(r.pax_arr) - Float64(r.pax_dep) + Float64(r.arr_date_var) * 1440.0
+            if bt < 0.0; bt += 1440.0; end
+            total_block += bt
+
+            # Carrier and flight number changes
+            curr_carrier = r.airline
+            curr_flt = r.flt_no
             if prev_carrier != NO_AIRLINE
                 curr_carrier != prev_carrier && (carrier_changes += 1)
                 curr_flt != prev_flt && (flt_no_changes += 1)
@@ -897,9 +898,11 @@ function score_trip(trip::Trip, weights::TripScoringWeights)::Float64
         end
     end
 
-    # Average circuity
-    circs = [Float64(itn.circuity) for itn in trip.itineraries if itn.market_distance > Distance(0)]
-    avg_circ = isempty(circs) ? 1.0 : sum(circs) / length(circs)
+    total_block /= 60.0  # hours
+    total_elapsed = Float64(trip.total_elapsed) / 60.0
+    total_layover = max(0.0, total_elapsed - total_block)
+    total_dist = Float64(trip.total_distance) / 1000.0
+    avg_circ = circ_count > 0 ? circ_sum / circ_count : 1.0
 
     return weights.stops * total_stops +
            weights.eqp_changes * total_eqp +
@@ -991,7 +994,7 @@ function search_trip(
                 # Max stay constraint
                 leg.max_stay > 0 && gap > leg.max_stay && continue
 
-                push!(new_combos, vcat(combo, [next_itn]))
+                push!(new_combos, push!(copy(combo), next_itn))
             end
         end
 

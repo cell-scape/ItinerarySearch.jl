@@ -429,7 +429,7 @@ using Dates
         @testset "default constructor" begin
             rule = MAFTRule()
             @test rule.speed == 400.0
-            @test rule.rest_time == 240.0
+            @test rule.rest_time == 480.0
         end
 
         @testset "round-trip always passes" begin

@@ -352,9 +352,9 @@ end
 """
     `MAFTRule()`
 
-Construct a `MAFTRule` with default speed (400 knots) and rest time (240 min).
+Construct a `MAFTRule` with default speed (400 knots) and rest time (480 min).
 """
-MAFTRule() = MAFTRule(400.0, 240.0)
+MAFTRule() = MAFTRule(400.0, 480.0)
 
 """
     `function (r::MAFTRule)(cp::GraphConnection, ctx)::Int`
@@ -375,13 +375,18 @@ MAFTRule() = MAFTRule(400.0, 240.0)
 function (r::MAFTRule)(cp::GraphConnection, ctx)::Int
     is_roundtrip(cp.status) && return PASS
 
-    from_dist = Float64(cp.from_leg.distance)
-    to_dist = Float64(cp.to_leg.distance)
-    total_dist = from_dist + to_dist
+    # Actual block time from schedule: arrival - departure (with overnight wrap)
+    from_rec = cp.from_leg.record
+    to_rec = cp.to_leg.record
+    from_block = Int32(from_rec.pax_arr) - Int32(from_rec.pax_dep) + Int32(from_rec.arr_date_var) * Int32(1440)
+    to_block = Int32(to_rec.pax_arr) - Int32(to_rec.pax_dep) + Int32(to_rec.arr_date_var) * Int32(1440)
+    actual_block = Float64(from_block + to_block)
+
+    # MAFT = max feasible travel time from combined distance
+    total_dist = Float64(cp.from_leg.distance) + Float64(cp.to_leg.distance)
     maft = max((total_dist / r.speed) * 60.0, 30.0) + r.rest_time
 
-    block_time = (total_dist / r.speed) * 60.0
-    return block_time <= maft ? PASS : FAIL_MAFT
+    return actual_block <= maft ? PASS : FAIL_MAFT
 end
 
 # ── Rule 8: CircuityRule (callable struct) ─────────────────────────────────────
@@ -589,13 +594,13 @@ end
 - `::Int`: `PASS` or `FAIL_TRFREST`
 """
 function check_cnx_trfrest(cp::GraphConnection, ctx)::Int
-    from_trc = String(cp.from_leg.record.trc)
+    from_trc = cp.from_leg.record.trc
     from_seq = Int(cp.from_leg.record.leg_seq)
     if from_seq > 0 && from_seq <= length(from_trc)
         _is_trc_blocked(from_trc[from_seq]) && return FAIL_TRFREST
     end
 
-    to_trc = String(cp.to_leg.record.trc)
+    to_trc = cp.to_leg.record.trc
     to_seq = Int(cp.to_leg.record.leg_seq)
     if to_seq > 0 && to_seq <= length(to_trc)
         _is_trc_blocked(to_trc[to_seq]) && return FAIL_TRFREST
