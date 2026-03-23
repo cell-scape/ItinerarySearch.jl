@@ -311,6 +311,9 @@ function build_graph!(
 
     total_connections =
         sum(stn.stats.num_connections for (_, stn) in stations; init = Int32(0))
+    total_pairs = sum(Int64(stn.stats.num_pairs_evaluated)
+                      for (_, stn) in stations; init = Int64(0))
+    ctx.build_stats.total_pairs_evaluated = total_pairs
     @info "Built connections" total = total_connections
 
     # 9. Assemble FlightGraph

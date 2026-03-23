@@ -202,6 +202,16 @@ julia> a.mct_lookups
 function merge_build_stats!(target::BuildStats, source::BuildStats)
     target.total_connections += source.total_connections
     target.total_pairs_evaluated += source.total_pairs_evaluated
+    # Weighted average for mct_avg_time (must compute before adding counters)
+    target_nonsup = target.mct_lookups - target.mct_suppressions
+    source_nonsup = source.mct_lookups - source.mct_suppressions
+    total_nonsup = target_nonsup + source_nonsup
+    if total_nonsup > 0
+        target.mct_avg_time = (
+            target.mct_avg_time * target_nonsup +
+            source.mct_avg_time * source_nonsup
+        ) / total_nonsup
+    end
     target.mct_lookups += source.mct_lookups
     target.mct_cache_hits += source.mct_cache_hits
     target.mct_exceptions += source.mct_exceptions

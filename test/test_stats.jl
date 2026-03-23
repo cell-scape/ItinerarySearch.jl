@@ -74,4 +74,18 @@ using InlineStrings
         @test a.mct_lookups == 150
         @test a.mct_cache_hits == 120
     end
+
+    @testset "mct_avg_time weighted merge" begin
+        a = BuildStats(
+            mct_lookups = 100, mct_suppressions = 10, mct_avg_time = 60.0,
+            rule_pass = Int64[0], rule_fail = Int64[0], mct_time_hist = zeros(Int64, 48),
+        )
+        b = BuildStats(
+            mct_lookups = 50, mct_suppressions = 5, mct_avg_time = 90.0,
+            rule_pass = Int64[0], rule_fail = Int64[0], mct_time_hist = zeros(Int64, 48),
+        )
+        merge_build_stats!(a, b)
+        # Weighted: (60.0 * 90 + 90.0 * 45) / 135 = (5400 + 4050) / 135 = 70.0
+        @test a.mct_avg_time ≈ 70.0
+    end
 end
