@@ -124,6 +124,7 @@ using Dates
             mct_cache = Dict{UInt64, MCTResult}(),
             gc_cache = gc_cache,
             target_date = target_date,
+            mct_selections = MCTSelectionRow[],
         )
     end
 
@@ -703,7 +704,7 @@ using Dates
         @test rules[8] isa CircuityRule
         @test rules[9] === check_cnx_trfrest
         # All elements are callable
-        @test all(r -> applicable(r, GraphConnection(), (config=config, constraints=constraints, gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(), mct_cache=Dict{UInt64,MCTResult}(), build_stats=BuildStats())), rules)
+        @test all(r -> applicable(r, GraphConnection(), (config=config, constraints=constraints, gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(), mct_cache=Dict{UInt64,MCTResult}(), build_stats=BuildStats(), mct_selections=MCTSelectionRow[])), rules)
 
         # Verify CircuityRule picks up defaults from constraints
         rule8 = rules[8]::CircuityRule

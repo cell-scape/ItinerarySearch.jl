@@ -290,6 +290,34 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
         end
     end
 
+    # ── Tier 1: MCT audit logging (gated by metrics_level) ───────────────────
+    if ctx.config.metrics_level == :full
+        cascade_level = if result.suppressed
+            UInt8(3)
+        elseif result.source == SOURCE_EXCEPTION
+            UInt8(1)
+        elseif result.source == SOURCE_STATION_STANDARD
+            UInt8(2)
+        else
+            UInt8(4)
+        end
+        row = MCTSelectionRow(
+            (cp.station::GraphStation).code,
+            from_rec.airline,
+            to_rec.airline,
+            mct_status,
+            cascade_level,
+            result.specificity,
+            result.time,
+            Minutes(cnx_time),
+            Int16(cnx_time - Int32(result.time)),
+            result.suppressed,
+            false,
+            result.matched_fields,
+        )
+        push!(ctx.mct_selections, row)
+    end
+
     # Apply min MCT override from constraints
     if ctx.constraints.defaults.min_mct_override != NO_MINUTES
         cp.mct = max(cp.mct, ctx.constraints.defaults.min_mct_override)

@@ -107,6 +107,7 @@ using Dates
             mct_cache = Dict{UInt64, MCTResult}(),
             gc_cache = Dict{Tuple{StationCode,StationCode}, Float64}(),
             target_date = target_date,
+            mct_selections = MCTSelectionRow[],
         )
     end
 
