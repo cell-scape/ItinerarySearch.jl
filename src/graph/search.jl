@@ -50,6 +50,12 @@
     # Caches
     gc_cache::Dict{Tuple{StationCode,StationCode},Float64} = Dict{Tuple{StationCode,StationCode},Float64}()
 
+    # Pre-allocated buffers for geo diversity (avoids Set allocation per committed itinerary)
+    _geo_metros::Set{InlineString3} = Set{InlineString3}()
+    _geo_states::Set{InlineString3} = Set{InlineString3}()
+    _geo_countries::Set{InlineString3} = Set{InlineString3}()
+    _geo_regions::Set{InlineString3} = Set{InlineString3}()
+
     # Search state
     target_date::UInt32 = UInt32(0)         # packed YYYYMMDD
     target_dow::StatusBits = StatusBits(0)  # DOW bit for target date
@@ -257,7 +263,7 @@ function _add_station_geo!(metros, states, countries, regions, stn::GraphStation
 end
 
 """
-    `function _count_geo_diversity(itn::Itinerary)::NTuple{4, Int16}`
+    `function _count_geo_diversity(itn::Itinerary, ctx::RuntimeContext)::NTuple{4, Int16}`
 ---
 
 # Description
@@ -271,20 +277,19 @@ end
 # Returns
 - `::NTuple{4, Int16}`: `(num_metros, num_states, num_countries, num_regions)`
 """
-function _count_geo_diversity(itn::Itinerary)::NTuple{4,Int16}
-    metros = Set{InlineString3}()
-    states = Set{InlineString3}()
-    countries = Set{InlineString3}()
-    regions = Set{InlineString3}()
+function _count_geo_diversity(itn::Itinerary, ctx::RuntimeContext)::NTuple{4,Int16}
+    metros = ctx._geo_metros; empty!(metros)
+    states = ctx._geo_states; empty!(states)
+    countries = ctx._geo_countries; empty!(countries)
+    regions = ctx._geo_regions; empty!(regions)
 
     for cp in itn.connections
-        leg = cp.from_leg::GraphLeg  # from_leg is AbstractGraphNode
+        leg = cp.from_leg::GraphLeg
         _add_station_geo!(metros, states, countries, regions, leg.org::GraphStation)
         _add_station_geo!(metros, states, countries, regions, leg.dst::GraphStation)
     end
-    # Ensure final destination of last connection is captured
     if !isempty(itn.connections)
-        last_leg = itn.connections[end].to_leg::GraphLeg  # to_leg is AbstractGraphNode
+        last_leg = itn.connections[end].to_leg::GraphLeg
         _add_station_geo!(metros, states, countries, regions, last_leg.dst::GraphStation)
     end
 
@@ -341,7 +346,7 @@ function _validate_and_commit!(itn::Itinerary, ctx::RuntimeContext)
     end
 
     # Compute geographic diversity
-    metros, states, countries, regions = _count_geo_diversity(itn)
+    metros, states, countries, regions = _count_geo_diversity(itn, ctx)
 
     # Deep copy and commit
     committed = Itinerary(
@@ -473,7 +478,7 @@ function _commit_half!(conns::Vector{GraphConnection}, ctx::RuntimeContext)
     )
     half.circuity = half.total_distance / max(half.market_distance, Distance(1))
 
-    m, s, c, r = _count_geo_diversity(half)
+    m, s, c, r = _count_geo_diversity(half, ctx)
     half.num_metros = m
     half.num_states = s
     half.num_countries = c
