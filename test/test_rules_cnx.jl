@@ -115,6 +115,7 @@ using Dates
         interline=INTERLINE_CODESHARE,
         constraints=SearchConstraints(),
         gc_cache=Dict{Tuple{StationCode,StationCode}, Float64}(),
+        target_date=UInt32(0),
     )
         (
             config = SearchConfig(scope=scope, interline=interline),
@@ -122,6 +123,7 @@ using Dates
             build_stats = BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
             mct_cache = Dict{UInt64, MCTResult}(),
             gc_cache = gc_cache,
+            target_date = target_date,
         )
     end
 

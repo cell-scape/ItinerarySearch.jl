@@ -179,12 +179,18 @@ end
 - Callable entry-point for `MCTRule`; invoked as `rule(cp, ctx)` in the rule chain
 - Computes connection time from `to_leg.pax_dep - from_leg.pax_arr` with
   overnight wrap-around
+- Resolves codeshare status for both legs: a leg is a codeshare when
+  `codeshare_airline` is non-empty and differs from the marketing `airline`
+- Passes full SSIM8 context to `lookup_mct`: operating carriers, codeshare
+  indicators, equipment types, flight numbers, origin/destination station
+  geography (country, state, region), and the connection date
 - Applies `ctx.constraints.defaults.min_mct_override` if set
 - Sets `cp.mct`, `cp.mxct`, `cp.cnx_time`, and `cp.mct_result`
 
 # Arguments
 1. `cp::GraphConnection`: connection to evaluate (mutated)
-2. `ctx`: runtime context; accesses `ctx.constraints::SearchConstraints`
+2. `ctx`: runtime context; accesses `ctx.constraints::SearchConstraints` and
+   `ctx.target_date::UInt32`
 
 # Returns
 - `::Int`: `PASS`, `FAIL_TIME_MIN`, or `FAIL_TIME_MAX`
@@ -208,17 +214,52 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
     mct_status = _chars_to_mct_status(from_leg.record.mct_status_arr,
                                        to_leg.record.mct_status_dep)
 
+    # ── Codeshare: resolve operating carrier and codeshare indicator ──────────
+    from_rec = from_leg.record
+    to_rec = to_leg.record
+
+    arr_cs_al = strip(String(from_rec.codeshare_airline))
+    arr_airline = strip(String(from_rec.airline))
+    arr_is_codeshare = arr_cs_al != "" && arr_cs_al != arr_airline
+    arr_op_carrier = arr_is_codeshare ? from_rec.codeshare_airline : from_rec.airline
+
+    dep_cs_al = strip(String(to_rec.codeshare_airline))
+    dep_airline = strip(String(to_rec.airline))
+    dep_is_codeshare = dep_cs_al != "" && dep_cs_al != dep_airline
+    dep_op_carrier = dep_is_codeshare ? to_rec.codeshare_airline : to_rec.airline
+
+    # ── Geographic context from origin/destination station records ────────────
+    prv_stn_rec = (from_leg.org::GraphStation).record
+    nxt_stn_rec = (to_leg.dst::GraphStation).record
+
     # Cascade lookup
     result = lookup_mct(
         r.lookup,
-        from_leg.record.airline,
-        to_leg.record.airline,
+        from_rec.airline,
+        to_rec.airline,
         (cp.station::GraphStation).code,
         mct_status;
-        arr_body = from_leg.record.body_type,
-        dep_body = to_leg.record.body_type,
-        arr_term = from_leg.record.arr_term,
-        dep_term = to_leg.record.dep_term,
+        arr_body = from_rec.body_type,
+        dep_body = to_rec.body_type,
+        arr_term = from_rec.arr_term,
+        dep_term = to_rec.dep_term,
+        prv_stn = from_rec.org,
+        nxt_stn = to_rec.dst,
+        arr_op_carrier = arr_op_carrier,
+        dep_op_carrier = dep_op_carrier,
+        arr_is_codeshare = arr_is_codeshare,
+        dep_is_codeshare = dep_is_codeshare,
+        arr_acft_type = from_rec.eqp,
+        dep_acft_type = to_rec.eqp,
+        arr_flt_no = from_rec.flt_no,
+        dep_flt_no = to_rec.flt_no,
+        prv_country = prv_stn_rec.country,
+        nxt_country = nxt_stn_rec.country,
+        prv_state = prv_stn_rec.state,
+        nxt_state = nxt_stn_rec.state,
+        prv_region = prv_stn_rec.region,
+        nxt_region = nxt_stn_rec.region,
+        target_date = ctx.target_date,
     )
 
     cp.mct_result = result

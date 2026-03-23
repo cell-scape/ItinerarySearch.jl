@@ -205,6 +205,7 @@ using Dates
             build_stats=BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
             mct_cache=Dict{UInt64,MCTResult}(),
             gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
+            target_date=UInt32(0),
         )
         cnx_rules = build_cnx_rules(SearchConfig(interline=INTERLINE_ALL), constraints, MCTLookup())
 
@@ -536,6 +537,7 @@ using Dates
             build_stats=BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
             mct_cache=Dict{UInt64,MCTResult}(),
             gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
+            target_date=UInt32(0),
         )
         cnx_rules = build_cnx_rules(SearchConfig(interline=INTERLINE_ALL), constraints, MCTLookup())
         stations = Dict{StationCode,GraphStation}(
@@ -699,6 +701,7 @@ using Dates
             build_stats=BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
             mct_cache=Dict{UInt64,MCTResult}(),
             gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
+            target_date=UInt32(0),
         )
         cnx_rules = build_cnx_rules(
             SearchConfig(interline=INTERLINE_ALL), rt_constraints, MCTLookup()
@@ -924,6 +927,7 @@ using Dates
             build_stats=BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
             mct_cache=Dict{UInt64,MCTResult}(),
             gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
+            target_date=UInt32(0),
         )
         cnx_rules = build_cnx_rules(SearchConfig(interline=INTERLINE_ALL), constraints, MCTLookup())
 
