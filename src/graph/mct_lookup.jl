@@ -22,6 +22,16 @@ const MCT_BIT_PRV_REGION  = UInt32(1 << 8)
 const MCT_BIT_NXT_REGION  = UInt32(1 << 9)
 const MCT_BIT_DEP_BODY    = UInt32(1 << 10)
 const MCT_BIT_ARR_BODY    = UInt32(1 << 11)
+const MCT_BIT_ARR_CS_IND    = UInt32(1 << 12)
+const MCT_BIT_ARR_CS_OP     = UInt32(1 << 13)
+const MCT_BIT_DEP_CS_IND    = UInt32(1 << 14)
+const MCT_BIT_DEP_CS_OP     = UInt32(1 << 15)
+const MCT_BIT_ARR_ACFT_TYPE = UInt32(1 << 16)
+const MCT_BIT_DEP_ACFT_TYPE = UInt32(1 << 17)
+const MCT_BIT_ARR_FLT_RNG   = UInt32(1 << 18)
+const MCT_BIT_DEP_FLT_RNG   = UInt32(1 << 19)
+const MCT_BIT_PRV_STATE     = UInt32(1 << 20)
+const MCT_BIT_NXT_STATE     = UInt32(1 << 21)
 
 # ── MCTRecord ─────────────────────────────────────────────────────────────────
 
@@ -48,6 +58,23 @@ match.  Fields not present in `specified` are wildcards and always match.
 - `nxt_region::InlineString3` — IATA region of destination
 - `dep_body::Char` — departing aircraft body type ('W'ide / 'N'arrow)
 - `arr_body::Char` — arriving aircraft body type
+- `arr_cs_ind::Char` — 'Y' if arriving flight is a codeshare (SSIM8 byte 16)
+- `arr_cs_op_carrier::AirlineCode` — codeshare operating carrier for arriving flight (bytes 17-19)
+- `dep_cs_ind::Char` — 'Y' if departing flight is a codeshare (SSIM8 byte 20)
+- `dep_cs_op_carrier::AirlineCode` — codeshare operating carrier for departing flight (bytes 21-23)
+- `arr_acft_type::InlineString7` — arriving aircraft IATA type code (bytes 24-26, mutually exclusive with arr_body)
+- `dep_acft_type::InlineString7` — departing aircraft IATA type code (bytes 28-30, mutually exclusive with dep_body)
+- `arr_flt_rng_start::FlightNumber` — start of arriving flight number range (bytes 46-49)
+- `arr_flt_rng_end::FlightNumber` — end of arriving flight number range (bytes 50-53)
+- `dep_flt_rng_start::FlightNumber` — start of departing flight number range (bytes 54-57)
+- `dep_flt_rng_end::FlightNumber` — end of departing flight number range (bytes 58-61)
+- `prv_state::InlineString3` — state/province of origin of arriving flight (bytes 62-63)
+- `nxt_state::InlineString3` — state/province of destination of departing flight (bytes 64-65)
+- `eff_date::UInt32` — effective date packed as YYYYMMDD; 0 = no restriction (bytes 72-78)
+- `dis_date::UInt32` — discontinue date packed as YYYYMMDD; 0 = no restriction (bytes 79-85)
+- `supp_region::InlineString3` — suppression geography: IATA region code (bytes 88-89)
+- `supp_country::InlineString3` — suppression geography: country code (bytes 90-91)
+- `supp_state::InlineString3` — suppression geography: state/province code (bytes 92-93)
 - `specified::UInt32` — bitmask of fields that must match (see `MCT_BIT_*` constants)
 - `time::Minutes` — MCT in minutes (0 if suppressed)
 - `suppressed::Bool` — if true this record suppresses MCT (connection not permitted)
@@ -69,6 +96,35 @@ match.  Fields not present in `specified` are wildcards and always match.
     nxt_region::InlineString3  = InlineString3("")
     dep_body::Char             = ' '
     arr_body::Char             = ' '
+
+    # ── Codeshare (SSIM8 bytes 16-23) ──
+    arr_cs_ind::Char = ' '                          # 'Y' = codeshare MCT
+    arr_cs_op_carrier::AirlineCode = NO_AIRLINE
+    dep_cs_ind::Char = ' '
+    dep_cs_op_carrier::AirlineCode = NO_AIRLINE
+
+    # ── Aircraft Type (SSIM8 bytes 24-30, mutually exclusive with Body) ──
+    arr_acft_type::InlineString7 = InlineString7("")
+    dep_acft_type::InlineString7 = InlineString7("")
+
+    # ── Flight Number Ranges (SSIM8 bytes 46-61) ──
+    arr_flt_rng_start::FlightNumber = FlightNumber(0)
+    arr_flt_rng_end::FlightNumber = FlightNumber(0)
+    dep_flt_rng_start::FlightNumber = FlightNumber(0)
+    dep_flt_rng_end::FlightNumber = FlightNumber(0)
+
+    # ── State Geography (SSIM8 bytes 62-65) ──
+    prv_state::InlineString3 = InlineString3("")
+    nxt_state::InlineString3 = InlineString3("")
+
+    # ── Date Validity (SSIM8 bytes 72-85) ──
+    eff_date::UInt32 = UInt32(0)    # packed YYYYMMDD, 0 = no restriction
+    dis_date::UInt32 = UInt32(0)
+
+    # ── Suppression Geography (SSIM8 bytes 88-94) ──
+    supp_region::InlineString3 = InlineString3("")
+    supp_country::InlineString3 = InlineString3("")
+    supp_state::InlineString3 = InlineString3("")
 
     # Presence bitmask (bit positions defined by MCT_BIT_* constants)
     specified::UInt32 = UInt32(0)

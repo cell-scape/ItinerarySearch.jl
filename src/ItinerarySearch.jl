@@ -98,6 +98,11 @@ export MCT_BIT_PRV_STN, MCT_BIT_NXT_STN
 export MCT_BIT_PRV_COUNTRY, MCT_BIT_NXT_COUNTRY
 export MCT_BIT_PRV_REGION, MCT_BIT_NXT_REGION
 export MCT_BIT_DEP_BODY, MCT_BIT_ARR_BODY
+export MCT_BIT_ARR_CS_IND, MCT_BIT_ARR_CS_OP
+export MCT_BIT_DEP_CS_IND, MCT_BIT_DEP_CS_OP
+export MCT_BIT_ARR_ACFT_TYPE, MCT_BIT_DEP_ACFT_TYPE
+export MCT_BIT_ARR_FLT_RNG, MCT_BIT_DEP_FLT_RNG
+export MCT_BIT_PRV_STATE, MCT_BIT_NXT_STATE
 
 # Exports — graph: connection rules
 export check_cnx_roundtrip, check_cnx_scope, check_cnx_interline
