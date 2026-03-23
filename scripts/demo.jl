@@ -165,24 +165,30 @@ for day_offset in 0:(n_days - 1)
     mkpath(legs_dir)
     psv_header = join(["itinerary", "leg_pos", "row_number", "record_serial",
                         "airline", "flt_no", "operational_suffix", "itin_var",
-                        "leg_seq", "svc_type",
+                        "itin_var_overflow", "leg_seq", "svc_type",
                         "codeshare_airline", "codeshare_flt_no",
                         "org", "dst"], "|")
     for (dt, org_dict) in result
         for (org_s, dst_dict) in org_dict
-            for (dst_s, legs) in dst_dict
+            for (dst_s, itineraries) in dst_dict
                 fname = joinpath(legs_dir, "$(org_s)_$(dst_s)_$(dt).psv")
+                n_rows = 0
                 open(fname, "w") do io
                     println(io, psv_header)
-                    for r in legs
-                        println(io, join([r.itinerary, r.leg_pos, r.row_number, r.record_serial,
-                                          r.airline, r.flt_no, r.operational_suffix, r.itin_var,
-                                          r.leg_seq, r.svc_type,
-                                          r.codeshare_airline, r.codeshare_flt_no,
-                                          r.org, r.dst], "|"))
+                    for (itn_idx, itn) in enumerate(itineraries)
+                        for (leg_pos, k) in enumerate(itn)
+                            println(io, join([itn_idx, leg_pos,
+                                              Int(k.row_number), Int(k.record_serial),
+                                              strip(String(k.airline)), Int(k.flt_no),
+                                              k.operational_suffix, Int(k.itin_var),
+                                              k.itin_var_overflow, Int(k.leg_seq), k.svc_type,
+                                              strip(String(k.codeshare_airline)), Int(k.codeshare_flt_no),
+                                              strip(String(k.org)), strip(String(k.dst))], "|"))
+                            n_rows += 1
+                        end
                     end
                 end
-                println("[$(target)]   Leg index: $(org_s)→$(dst_s) $(length(legs)) rows → $(fname)")
+                println("[$(target)]   Leg index: $(org_s)→$(dst_s) $(length(itineraries)) itins, $(n_rows) rows → $(fname)")
             end
         end
     end

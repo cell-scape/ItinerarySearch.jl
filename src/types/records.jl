@@ -22,7 +22,7 @@ end
 """
     struct LegRecord
 
-Immutable, isbits flight leg record. Captures everything needed to identify,
+Immutable flight leg record. Captures everything needed to identify,
 display, and cross-reference a flight leg from SSIM data.
 
 The **Flight Identifier** `(airline, flt_no, operational_suffix, itin_var,
@@ -96,6 +96,64 @@ end
 Human-readable flight identifier (e.g., "UA 354").
 """
 flight_id(r::LegRecord) = "$(r.airline)$(lpad(r.flt_no, 4))"
+
+# ── LegKey ───────────────────────────────────────────────────────────────────
+
+"""
+    struct LegKey
+
+Compact reference to a leg in the schedule. Contains the SSIM Type 3 flight
+identifier fields plus the database row ID and record serial for cross-referencing.
+Codeshare fields default to self when the leg is operating.
+"""
+@kwdef struct LegKey
+    # ── Cross-reference IDs ──
+    row_number::UInt64 = UInt64(0)
+    record_serial::UInt32 = UInt32(0)
+
+    # ── Flight Identifier (SSIM Type 3 bytes 2-14) ──
+    airline::AirlineCode = AirlineCode("")
+    flt_no::FlightNumber = FlightNumber(0)
+    operational_suffix::Char = ' '
+    itin_var::UInt8 = UInt8(1)
+    itin_var_overflow::Char = ' '
+    leg_seq::UInt8 = UInt8(1)
+    svc_type::Char = 'J'
+
+    # ── Codeshare / Operating Carrier (from DEI 50) ──
+    codeshare_airline::AirlineCode = AirlineCode("")
+    codeshare_flt_no::FlightNumber = FlightNumber(0)
+
+    # ── Station Pair ──
+    org::StationCode = StationCode("")
+    dst::StationCode = StationCode("")
+end
+
+"""
+    `LegKey(r::LegRecord)::LegKey`
+
+Construct a `LegKey` from a full `LegRecord`, copying identity fields.
+Codeshare fields default to self when the leg is operating.
+"""
+function LegKey(r::LegRecord)
+    cs_al = strip(String(r.codeshare_airline))
+    airline_s = strip(String(r.airline))
+    LegKey(
+        row_number          = r.row_number,
+        record_serial       = r.record_serial,
+        airline             = r.airline,
+        flt_no              = r.flt_no,
+        operational_suffix  = r.operational_suffix,
+        itin_var            = r.itin_var,
+        itin_var_overflow   = r.itin_var_overflow,
+        leg_seq             = r.leg_seq,
+        svc_type            = r.svc_type,
+        codeshare_airline   = (cs_al == "" || cs_al == airline_s) ? r.airline : r.codeshare_airline,
+        codeshare_flt_no    = (cs_al == "" || cs_al == airline_s) ? r.flt_no : r.codeshare_flt_no,
+        org                 = r.org,
+        dst                 = r.dst,
+    )
+end
 
 """
     `segment_id(r::LegRecord)::String`

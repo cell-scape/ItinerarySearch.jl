@@ -613,7 +613,7 @@ end
 # ── Compact itinerary leg index ──────────────────────────────────────────────
 
 """
-    `function itinerary_legs(stations, origin, dest, date, ctx)::Vector{NamedTuple}`
+    `function itinerary_legs(stations, origin, dest, date, ctx)::Vector{Vector{LegKey}}`
 ---
 
 # Description
@@ -629,10 +629,9 @@ end
 5. `ctx::RuntimeContext`: search context
 
 # Returns
-- `::Vector{NamedTuple}`: one entry per leg per itinerary with fields:
-  `itinerary`, `leg_pos`, `row_number`, `record_serial`,
-  `airline`, `flt_no`, `operational_suffix`, `itin_var`, `leg_seq`, `svc_type`,
-  `org`, `dst`
+- `::Vector{Vector{LegKey}}`: one inner vector per itinerary, each containing the
+  `LegKey` references for its legs in route order. Itinerary index = position in
+  the outer vector. Leg position = position in the inner vector.
 """
 function itinerary_legs(
     stations::Dict{StationCode,GraphStation},
@@ -640,7 +639,7 @@ function itinerary_legs(
     dest::StationCode,
     date::Date,
     ctx::RuntimeContext,
-)::Vector{NamedTuple}
+)::Vector{Vector{LegKey}}
     itineraries = copy(search_itineraries(stations, origin, dest, date, ctx))
 
     # Filter to itineraries whose first leg operates on the requested date
@@ -654,7 +653,6 @@ function itinerary_legs(
     sort!(itineraries; by=itn -> (itn.num_stops, itn.elapsed_time, itn.total_distance))
 
     # Deduplicate: two itineraries are identical if they use the same legs in the same order.
-    # Fingerprint = tuple of row_numbers for the unique legs in route order.
     seen = Set{UInt64}()
     unique_itns = Itinerary[]
     for itn in itineraries
@@ -663,63 +661,27 @@ function itinerary_legs(
         push!(seen, fp)
         push!(unique_itns, itn)
     end
-    itineraries = unique_itns
 
-    rows = NamedTuple[]
-    for (itn_idx, itn) in enumerate(itineraries)
-        # Extract unique legs in route order.
-        # connections[1] is the nonstop self-connection (from_leg === to_leg = departure leg).
-        # connections[2+] are real connections where from_leg arrives and to_leg departs.
-        # Each real connection's from_leg is the same object as the previous to_leg,
-        # so we emit: first from_leg, then to_leg of each subsequent connection.
-        pos = 0
+    # Extract LegKey sequences
+    result = Vector{LegKey}[]
+    for itn in unique_itns
+        keys = LegKey[]
         last_leg = nothing
-        for (i, cp) in enumerate(itn.connections)
+        for cp in itn.connections
             from_l = cp.from_leg::GraphLeg
             to_l = cp.to_leg::GraphLeg
-            is_nonstop = from_l === to_l
-
             if from_l !== last_leg
-                pos += 1
-                _push_leg_index!(rows, itn_idx, pos, from_l)
+                push!(keys, LegKey(from_l.record))
                 last_leg = from_l
             end
-
-            if !is_nonstop && to_l !== last_leg
-                pos += 1
-                _push_leg_index!(rows, itn_idx, pos, to_l)
+            if !(from_l === to_l) && to_l !== last_leg
+                push!(keys, LegKey(to_l.record))
                 last_leg = to_l
             end
         end
+        push!(result, keys)
     end
-    return rows
-end
-
-function _push_leg_index!(rows, itn_idx, pos, leg::GraphLeg)
-    r = leg.record
-    cs_al = strip(String(r.codeshare_airline))
-    cs_flt = Int(r.codeshare_flt_no)
-    # Default codeshare to self when operating
-    if cs_al == "" || cs_al == strip(String(r.airline))
-        cs_al = strip(String(r.airline))
-        cs_flt = Int(r.flt_no)
-    end
-    push!(rows, (
-        itinerary           = itn_idx,
-        leg_pos             = pos,
-        row_number          = Int(r.row_number),
-        record_serial       = Int(r.record_serial),
-        airline             = strip(String(r.airline)),
-        flt_no              = Int(r.flt_no),
-        operational_suffix  = r.operational_suffix,
-        itin_var            = Int(r.itin_var),
-        leg_seq             = Int(r.leg_seq),
-        svc_type            = r.svc_type,
-        codeshare_airline   = cs_al,
-        codeshare_flt_no    = cs_flt,
-        org                 = strip(String(r.org)),
-        dst                 = strip(String(r.dst)),
-    ))
+    return result
 end
 
 # Fingerprint an itinerary by its unique leg sequence (row_numbers).
@@ -781,7 +743,7 @@ _to_dates(v::AbstractVector) = Date[d for d in v]
 - `cross::Bool=false`: when true, search all origins × all destinations; when false, pair them
 
 # Returns
-- Nested `Dict{Date, Dict{String, Dict{String, Vector{NamedTuple}}}}` keyed by date → origin → destination
+- Nested `Dict{Date, Dict{String, Dict{String, Vector{Vector{LegKey}}}}}` keyed by date → origin → destination
 
 # Examples
 ```julia
@@ -842,7 +804,7 @@ function itinerary_legs_multi(
         end
     end
 
-    result = Dict{Date, Dict{String, Dict{String, Vector{NamedTuple}}}}()
+    result = Dict{Date, Dict{String, Dict{String, Vector{Vector{LegKey}}}}}()
     for date in ds
         for (org, dst) in od_pairs
             haskey(stations, org) || continue
@@ -852,10 +814,10 @@ function itinerary_legs_multi(
             org_s = strip(String(org))
             dst_s = strip(String(dst))
             date_dict = get!(result, date) do
-                Dict{String, Dict{String, Vector{NamedTuple}}}()
+                Dict{String, Dict{String, Vector{Vector{LegKey}}}}()
             end
             org_dict = get!(date_dict, org_s) do
-                Dict{String, Vector{NamedTuple}}()
+                Dict{String, Vector{Vector{LegKey}}}()
             end
             org_dict[dst_s] = legs
         end
@@ -869,17 +831,17 @@ function itinerary_legs_multi(
     od_pairs::Vector{Tuple{StationCode,StationCode,Date}},
     ctx::RuntimeContext,
 )
-    result = Dict{Date, Dict{String, Dict{String, Vector{NamedTuple}}}}()
+    result = Dict{Date, Dict{String, Dict{String, Vector{Vector{LegKey}}}}}()
     for (org, dst, date) in od_pairs
         legs = itinerary_legs(stations, org, dst, date, ctx)
         isempty(legs) && continue
         org_s = strip(String(org))
         dst_s = strip(String(dst))
         date_dict = get!(result, date) do
-            Dict{String, Dict{String, Vector{NamedTuple}}}()
+            Dict{String, Dict{String, Vector{Vector{LegKey}}}}()
         end
         org_dict = get!(date_dict, org_s) do
-            Dict{String, Vector{NamedTuple}}()
+            Dict{String, Vector{Vector{LegKey}}}()
         end
         org_dict[dst_s] = legs
     end
@@ -888,33 +850,35 @@ end
 
 # ── JSON export ──────────────────────────────────────────────────────────────
 
-function _leg_to_dict(r)::Dict{String,Any}
+function _legkey_to_dict(k::LegKey)::Dict{String,Any}
     Dict{String,Any}(
-        "itinerary"          => r.itinerary,
-        "leg_pos"            => r.leg_pos,
-        "row_number"         => r.row_number,
-        "record_serial"      => r.record_serial,
-        "airline"            => r.airline,
-        "flt_no"             => r.flt_no,
-        "operational_suffix" => string(r.operational_suffix),
-        "itin_var"           => r.itin_var,
-        "leg_seq"            => r.leg_seq,
-        "svc_type"           => string(r.svc_type),
-        "codeshare_airline"  => r.codeshare_airline,
-        "codeshare_flt_no"   => r.codeshare_flt_no,
-        "org"                => r.org,
-        "dst"                => r.dst,
+        "row_number"         => Int(k.row_number),
+        "record_serial"      => Int(k.record_serial),
+        "airline"            => strip(String(k.airline)),
+        "flt_no"             => Int(k.flt_no),
+        "operational_suffix" => string(k.operational_suffix),
+        "itin_var"           => Int(k.itin_var),
+        "itin_var_overflow"  => string(k.itin_var_overflow),
+        "leg_seq"            => Int(k.leg_seq),
+        "svc_type"           => string(k.svc_type),
+        "codeshare_airline"  => strip(String(k.codeshare_airline)),
+        "codeshare_flt_no"   => Int(k.codeshare_flt_no),
+        "org"                => strip(String(k.org)),
+        "dst"                => strip(String(k.dst)),
     )
 end
 
-function _nested_to_json(nested::Dict{Date, Dict{String, Dict{String, Vector{NamedTuple}}}})::String
+function _nested_to_json(nested::Dict{Date, Dict{String, Dict{String, Vector{Vector{LegKey}}}}})::String
     json_root = Dict{String,Any}()
     for (date, org_dict) in nested
         json_date = Dict{String,Any}()
         for (org, dst_dict) in org_dict
             json_org = Dict{String,Any}()
-            for (dst, legs) in dst_dict
-                json_org[dst] = [_leg_to_dict(r) for r in legs]
+            for (dst, itineraries) in dst_dict
+                json_org[dst] = [
+                    [_legkey_to_dict(k) for k in itn]
+                    for itn in itineraries
+                ]
             end
             json_date[org] = json_org
         end
