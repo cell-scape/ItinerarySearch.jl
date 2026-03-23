@@ -643,8 +643,27 @@ function itinerary_legs(
 )::Vector{NamedTuple}
     itineraries = copy(search_itineraries(stations, origin, dest, date, ctx))
 
+    # Filter to itineraries whose first leg operates on the requested date
+    filter!(itineraries) do itn
+        isempty(itn.connections) && return false
+        first_leg = (itn.connections[1].from_leg::GraphLeg).record
+        _operates_on(first_leg, date)
+    end
+
     # Sort by stops (ascending), then elapsed time, then total distance
     sort!(itineraries; by=itn -> (itn.num_stops, itn.elapsed_time, itn.total_distance))
+
+    # Deduplicate: two itineraries are identical if they use the same legs in the same order.
+    # Fingerprint = tuple of row_numbers for the unique legs in route order.
+    seen = Set{UInt64}()
+    unique_itns = Itinerary[]
+    for itn in itineraries
+        fp = _itinerary_fingerprint(itn)
+        fp in seen && continue
+        push!(seen, fp)
+        push!(unique_itns, itn)
+    end
+    itineraries = unique_itns
 
     rows = NamedTuple[]
     for (itn_idx, itn) in enumerate(itineraries)
@@ -701,6 +720,29 @@ function _push_leg_index!(rows, itn_idx, pos, leg::GraphLeg)
         org                 = strip(String(r.org)),
         dst                 = strip(String(r.dst)),
     ))
+end
+
+# Fingerprint an itinerary by its unique leg sequence (row_numbers).
+function _itinerary_fingerprint(itn::Itinerary)::UInt64
+    h = UInt64(0)
+    last_rn = UInt64(0)
+    for cp in itn.connections
+        from_l = cp.from_leg::GraphLeg
+        to_l = cp.to_leg::GraphLeg
+        rn = from_l.record.row_number
+        if rn != last_rn
+            h = hash(rn, h)
+            last_rn = rn
+        end
+        if !(from_l === to_l)
+            rn2 = to_l.record.row_number
+            if rn2 != last_rn
+                h = hash(rn2, h)
+                last_rn = rn2
+            end
+        end
+    end
+    return h
 end
 
 """
