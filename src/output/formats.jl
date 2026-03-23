@@ -966,9 +966,38 @@ end
     `resolve_legs(itn::ItineraryRef, store::DuckDBStore)::Vector{Union{LegRecord, Nothing}}`
 
 Resolve all legs in an `ItineraryRef` to full `LegRecord`s from the DuckDB store.
+Uses a single batched SQL query instead of one query per leg.
 """
 function resolve_legs(itn::ItineraryRef, store::DuckDBStore)::Vector{Union{LegRecord, Nothing}}
-    [resolve_leg(k, store) for k in itn.legs]
+    isempty(itn.legs) && return Union{LegRecord, Nothing}[]
+
+    # Collect unique row_numbers
+    row_ids = unique([Int64(k.row_number) for k in itn.legs])
+
+    # Batch query — try expanded view first, then base table for any missing
+    id_list = join(row_ids, ",")
+    records = Dict{UInt64, LegRecord}()
+
+    result = DBInterface.execute(store.db,
+        "SELECT * FROM legs_with_operating WHERE row_id IN ($(id_list))")
+    for r in result
+        rec = _row_to_leg(r)
+        records[rec.row_number] = rec
+    end
+
+    # Fill gaps from base legs table
+    missing_ids = filter(id -> !haskey(records, UInt64(id)), row_ids)
+    if !isempty(missing_ids)
+        miss_list = join(missing_ids, ",")
+        result2 = DBInterface.execute(store.db,
+            "SELECT * FROM legs WHERE row_id IN ($(miss_list))")
+        for r in result2
+            rec = _row_to_schedule_leg(r)
+            records[rec.row_number] = rec
+        end
+    end
+
+    return [get(records, k.row_number, nothing) for k in itn.legs]
 end
 
 # ── JSON helpers ─────────────────────────────────────────────────────────────
@@ -1007,42 +1036,113 @@ function _itnref_summary_dict(itn::ItineraryRef)::Dict{String,Any}
     )
 end
 
-function _nested_to_json(nested::Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}})::String
-    json_root = Dict{String,Any}()
-    for (date, org_dict) in nested
-        json_date = Dict{String,Any}()
-        for (org, dst_dict) in org_dict
-            json_org = Dict{String,Any}()
-            for (dst, itineraries) in dst_dict
-                json_org[dst] = [
-                    let d = _itnref_summary_dict(itn)
-                        d["legs"] = [_legkey_to_dict(k) for k in itn.legs]
-                        d
-                    end
-                    for itn in itineraries
-                ]
-            end
-            json_date[org] = json_org
-        end
-        json_root[string(date)] = json_date
+# ── Streaming JSON writers (avoid intermediate Dict allocations) ──────────────
+
+function _write_legkey_json(io::IOBuffer, k::LegKey)
+    print(io, "{\"row_number\":", Int(k.row_number),
+              ",\"record_serial\":", Int(k.record_serial),
+              ",\"airline\":\"", strip(String(k.airline)), "\"",
+              ",\"flt_no\":", Int(k.flt_no),
+              ",\"operational_suffix\":\"", k.operational_suffix, "\"",
+              ",\"itin_var\":", Int(k.itin_var),
+              ",\"itin_var_overflow\":\"", k.itin_var_overflow, "\"",
+              ",\"leg_seq\":", Int(k.leg_seq),
+              ",\"svc_type\":\"", k.svc_type, "\"",
+              ",\"codeshare_airline\":\"", strip(String(k.codeshare_airline)), "\"",
+              ",\"codeshare_flt_no\":", Int(k.codeshare_flt_no),
+              ",\"org\":\"", strip(String(k.org)), "\"",
+              ",\"dst\":\"", strip(String(k.dst)), "\"}")
+end
+
+function _write_itnref_summary_json(io::IOBuffer, itn::ItineraryRef)
+    print(io, "\"flights\":\"", itn.flights, "\"",
+              ",\"route\":\"", itn.route, "\"",
+              ",\"stops\":[")
+    for (i, s) in enumerate(itn.stops)
+        i > 1 && print(io, ",")
+        print(io, "\"", s, "\"")
     end
-    return JSON3.write(json_root)
+    print(io, "],\"num_stops\":", itn.num_stops,
+              ",\"origin\":\"", itn.origin, "\"",
+              ",\"destination\":\"", itn.destination, "\"",
+              ",\"elapsed_minutes\":", Int(itn.elapsed_minutes),
+              ",\"flight_minutes\":", Int(itn.flight_minutes),
+              ",\"layover_minutes\":", Int(itn.layover_minutes),
+              ",\"distance_miles\":", round(Float64(itn.distance_miles); digits=0),
+              ",\"circuity\":", round(Float64(itn.circuity); digits=2))
+end
+
+function _nested_to_json(nested::Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}})::String
+    io = IOBuffer()
+    print(io, "{")
+    d_first = true
+    for (date, org_dict) in nested
+        d_first || print(io, ",")
+        d_first = false
+        print(io, "\"", date, "\":{")
+        o_first = true
+        for (org, dst_dict) in org_dict
+            o_first || print(io, ",")
+            o_first = false
+            print(io, "\"", org, "\":{")
+            dst_first = true
+            for (dst, itineraries) in dst_dict
+                dst_first || print(io, ",")
+                dst_first = false
+                print(io, "\"", dst, "\":[")
+                for (i, itn) in enumerate(itineraries)
+                    i > 1 && print(io, ",")
+                    print(io, "{")
+                    _write_itnref_summary_json(io, itn)
+                    print(io, ",\"legs\":[")
+                    for (j, k) in enumerate(itn.legs)
+                        j > 1 && print(io, ",")
+                        _write_legkey_json(io, k)
+                    end
+                    print(io, "]}")
+                end
+                print(io, "]")
+            end
+            print(io, "}")
+        end
+        print(io, "}")
+    end
+    print(io, "}")
+    return String(take!(io))
 end
 
 function _nested_to_json_compact(nested::Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}})::String
-    json_root = Dict{String,Any}()
+    io = IOBuffer()
+    print(io, "{")
+    d_first = true
     for (date, org_dict) in nested
-        json_date = Dict{String,Any}()
+        d_first || print(io, ",")
+        d_first = false
+        print(io, "\"", date, "\":{")
+        o_first = true
         for (org, dst_dict) in org_dict
-            json_org = Dict{String,Any}()
+            o_first || print(io, ",")
+            o_first = false
+            print(io, "\"", org, "\":{")
+            dst_first = true
             for (dst, itineraries) in dst_dict
-                json_org[dst] = [_itnref_summary_dict(itn) for itn in itineraries]
+                dst_first || print(io, ",")
+                dst_first = false
+                print(io, "\"", dst, "\":[")
+                for (i, itn) in enumerate(itineraries)
+                    i > 1 && print(io, ",")
+                    print(io, "{")
+                    _write_itnref_summary_json(io, itn)
+                    print(io, "}")
+                end
+                print(io, "]")
             end
-            json_date[org] = json_org
+            print(io, "}")
         end
-        json_root[string(date)] = json_date
+        print(io, "}")
     end
-    return JSON3.write(json_root)
+    print(io, "}")
+    return String(take!(io))
 end
 
 """

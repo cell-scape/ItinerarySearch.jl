@@ -1000,26 +1000,25 @@ function search_trip(
         leg = legs[leg_idx]
         prev_leg = legs[leg_idx - 1]
         next_itns = per_leg_results[leg_idx]
+        day_offset = Int32(Dates.value(leg.date - prev_leg.date)) * Int32(1440)
         new_combos = Vector{Vector{Itinerary}}()
+        sizehint!(new_combos, min(length(combos) * length(next_itns), max_trips * 2))
 
         for combo in combos
+            length(new_combos) >= max_trips * 2 && break  # early cap
             prev_itn = combo[end]
             utc_arr = _utc_arrival(prev_itn)
-            # Day offset between previous and current leg dates
-            day_offset = Int32(Dates.value(leg.date - prev_leg.date)) * Int32(1440)
 
             for next_itn in next_itns
                 utc_dep = _utc_departure(next_itn) + day_offset
                 gap = utc_dep - utc_arr
 
-                # Must depart after arrival
                 gap < 0 && continue
-                # Min stay constraint
                 leg.min_stay > 0 && gap < leg.min_stay && continue
-                # Max stay constraint
                 leg.max_stay > 0 && gap > leg.max_stay && continue
 
                 push!(new_combos, push!(copy(combo), next_itn))
+                length(new_combos) >= max_trips * 2 && break
             end
         end
 
