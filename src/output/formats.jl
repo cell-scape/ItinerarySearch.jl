@@ -746,12 +746,13 @@ function _itinerary_fingerprint(itn::Itinerary)::UInt64
 end
 
 """
-    `function itinerary_legs_multi(stations, od_pairs, ctx)::Dict{Tuple{String,String,Date}, Vector{NamedTuple}}`
+    `function itinerary_legs_multi(stations, od_pairs, ctx)`
 ---
 
 # Description
-- Search itineraries for multiple O-D pairs and return a dictionary keyed by (origin, dest, date)
-- Each value is the same compact leg index as `itinerary_legs`
+- Search itineraries for multiple O-D pairs and return a nested dictionary:
+  `origin → destination → date → Vector{NamedTuple}`
+- Each leaf value is the same compact leg index as `itinerary_legs`
 
 # Arguments
 1. `stations::Dict{StationCode,GraphStation}`: the station graph
@@ -759,18 +760,81 @@ end
 3. `ctx::RuntimeContext`: search context
 
 # Returns
-- `::Dict{Tuple{String,String,Date}, Vector{NamedTuple}}`
+- Nested `Dict{String, Dict{String, Dict{Date, Vector{NamedTuple}}}}`
+  keyed by origin → destination → date
 """
 function itinerary_legs_multi(
     stations::Dict{StationCode,GraphStation},
     od_pairs::Vector{Tuple{StationCode,StationCode,Date}},
     ctx::RuntimeContext,
-)::Dict{Tuple{String,String,Date}, Vector{NamedTuple}}
-    result = Dict{Tuple{String,String,Date}, Vector{NamedTuple}}()
+)
+    result = Dict{String, Dict{String, Dict{Date, Vector{NamedTuple}}}}()
     for (org, dst, date) in od_pairs
         legs = itinerary_legs(stations, org, dst, date, ctx)
-        key = (strip(String(org)), strip(String(dst)), date)
-        result[key] = legs
+        org_s = strip(String(org))
+        dst_s = strip(String(dst))
+        org_dict = get!(result, org_s) do
+            Dict{String, Dict{Date, Vector{NamedTuple}}}()
+        end
+        dst_dict = get!(org_dict, dst_s) do
+            Dict{Date, Vector{NamedTuple}}()
+        end
+        dst_dict[date] = legs
     end
     return result
+end
+
+"""
+    `function itinerary_legs_json(stations, od_pairs, ctx)::String`
+---
+
+# Description
+- Same as `itinerary_legs_multi` but returns a JSON string reflecting the
+  nested structure: `{ "ORD": { "LHR": { "2026-03-20": [ { leg... }, ... ] } } }`
+
+# Arguments
+1. `stations::Dict{StationCode,GraphStation}`: the station graph
+2. `od_pairs::Vector{Tuple{StationCode,StationCode,Date}}`: list of (origin, dest, date) tuples
+3. `ctx::RuntimeContext`: search context
+
+# Returns
+- `::String`: JSON string
+"""
+function itinerary_legs_json(
+    stations::Dict{StationCode,GraphStation},
+    od_pairs::Vector{Tuple{StationCode,StationCode,Date}},
+    ctx::RuntimeContext,
+)::String
+    nested = itinerary_legs_multi(stations, od_pairs, ctx)
+    # Convert to JSON-serializable structure (Dates → strings, NamedTuples → Dicts)
+    json_root = Dict{String,Any}()
+    for (org, dst_dict) in nested
+        json_org = Dict{String,Any}()
+        for (dst, date_dict) in dst_dict
+            json_dst = Dict{String,Any}()
+            for (date, legs) in date_dict
+                json_dst[string(date)] = [
+                    Dict{String,Any}(
+                        "itinerary"          => r.itinerary,
+                        "leg_pos"            => r.leg_pos,
+                        "row_number"         => r.row_number,
+                        "record_serial"      => r.record_serial,
+                        "airline"            => r.airline,
+                        "flt_no"             => r.flt_no,
+                        "operational_suffix" => string(r.operational_suffix),
+                        "itin_var"           => r.itin_var,
+                        "leg_seq"            => r.leg_seq,
+                        "svc_type"           => string(r.svc_type),
+                        "codeshare_airline"  => r.codeshare_airline,
+                        "codeshare_flt_no"   => r.codeshare_flt_no,
+                        "org"                => r.org,
+                        "dst"                => r.dst,
+                    ) for r in legs
+                ]
+            end
+            json_org[dst] = json_dst
+        end
+        json_root[org] = json_org
+    end
+    return JSON3.write(json_root)
 end
