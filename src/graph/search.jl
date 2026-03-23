@@ -896,10 +896,10 @@ function score_trip(trip::Trip, weights::TripScoringWeights)::Float64
             cp.from_leg === cp.to_leg && continue
             r = (cp.to_leg::GraphLeg).record
 
-            # Block time
-            bt = Float64(r.pax_arr) - Float64(r.pax_dep) + Float64(r.arr_date_var) * 1440.0
-            if bt < 0.0; bt += 1440.0; end
-            total_block += bt
+            # Block time (UTC)
+            utc_dep = Float64(r.pax_dep) - Float64(r.dep_utc_offset)
+            utc_arr = Float64(r.pax_arr) - Float64(r.arr_utc_offset) + Float64(r.arr_date_var) * 1440.0
+            total_block += max(0.0, utc_arr - utc_dep)
 
             # Carrier and flight number changes
             curr_carrier = r.airline

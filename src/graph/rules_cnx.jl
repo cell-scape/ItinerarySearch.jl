@@ -381,11 +381,15 @@ function (r::MAFTRule)(cp::GraphConnection, ctx)::Int
     from_l = cp.from_leg::GraphLeg
     to_l = cp.to_leg::GraphLeg
 
-    # Actual block time from schedule: arrival - departure (with overnight wrap)
+    # Actual block time in UTC
     from_rec = from_l.record
     to_rec = to_l.record
-    from_block = Int32(from_rec.pax_arr) - Int32(from_rec.pax_dep) + Int32(from_rec.arr_date_var) * Int32(1440)
-    to_block = Int32(to_rec.pax_arr) - Int32(to_rec.pax_dep) + Int32(to_rec.arr_date_var) * Int32(1440)
+    from_block = max(Int32(0),
+        (Int32(from_rec.pax_arr) - Int32(from_rec.arr_utc_offset) + Int32(from_rec.arr_date_var) * Int32(1440)) -
+        (Int32(from_rec.pax_dep) - Int32(from_rec.dep_utc_offset)))
+    to_block = max(Int32(0),
+        (Int32(to_rec.pax_arr) - Int32(to_rec.arr_utc_offset) + Int32(to_rec.arr_date_var) * Int32(1440)) -
+        (Int32(to_rec.pax_dep) - Int32(to_rec.dep_utc_offset)))
     actual_block = Float64(from_block + to_block)
 
     # MAFT from combined distance (pass when distance is unknown)

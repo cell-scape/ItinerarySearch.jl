@@ -352,6 +352,13 @@ _market(org, dst) = org < dst ? org * dst : dst * org
 _miles(d::Real) = round(Int, d)
 
 # Does this leg operate on `date`?  Checks eff/disc range + frequency DOW bit.
+# UTC block time for a single leg: (arr - arr_utc_offset) - (dep - dep_utc_offset) + date_var * 1440
+@inline function _utc_block_time(r)::Int32
+    utc_dep = Int32(r.pax_dep) - Int32(r.dep_utc_offset)
+    utc_arr = Int32(r.pax_arr) - Int32(r.arr_utc_offset) + Int32(r.arr_date_var) * Int32(1440)
+    return max(Int32(0), utc_arr - utc_dep)
+end
+
 function _operates_on(r, date::Date)::Bool
     eff = unpack_date(r.eff_date)
     disc = unpack_date(r.disc_date)
@@ -673,19 +680,12 @@ function itinerary_legs(
             to_l = cp.to_leg::GraphLeg
             if from_l !== last_leg
                 push!(keys, LegKey(from_l.record))
-                # Accumulate block time for this leg
-                r = from_l.record
-                bt = Int32(r.pax_arr) - Int32(r.pax_dep) + Int32(r.arr_date_var) * Int32(1440)
-                if bt < 0; bt += Int32(1440); end
-                flight_mins += bt
+                flight_mins += _utc_block_time(from_l.record)
                 last_leg = from_l
             end
             if !(from_l === to_l) && to_l !== last_leg
                 push!(keys, LegKey(to_l.record))
-                r = to_l.record
-                bt = Int32(r.pax_arr) - Int32(r.pax_dep) + Int32(r.arr_date_var) * Int32(1440)
-                if bt < 0; bt += Int32(1440); end
-                flight_mins += bt
+                flight_mins += _utc_block_time(to_l.record)
                 last_leg = to_l
             end
         end
