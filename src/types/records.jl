@@ -276,6 +276,7 @@ flag, match source, SSIM8 specificity score, and the primary key of the matched
     source::MCTSource               # SOURCE_EXCEPTION, SOURCE_STATION_STANDARD, SOURCE_GLOBAL_DEFAULT
     specificity::UInt32             # higher = more specific match
     mct_id::Int32 = Int32(0)        # PK from mct table (0 = global default)
+    matched_fields::UInt32 = UInt32(0)  # MCTRecord.specified bitmask of the matched record
 end
 
 

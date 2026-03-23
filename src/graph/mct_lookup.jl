@@ -478,6 +478,7 @@ function lookup_mct(
             source         = SOURCE_GLOBAL_DEFAULT,
             specificity    = UInt32(0),
             mct_id         = Int32(0),
+            matched_fields = UInt32(0),
         )
     end
 
@@ -512,6 +513,7 @@ function lookup_mct(
             source         = SOURCE_EXCEPTION,
             specificity    = rec.specificity,
             mct_id         = rec.mct_id,
+            matched_fields = rec.specified,
         )
     end
 
@@ -554,6 +556,7 @@ function lookup_mct(
             source         = SOURCE_EXCEPTION,
             specificity    = rec.specificity,
             mct_id         = rec.mct_id,
+            matched_fields = rec.specified,
         )
     end
 
@@ -573,6 +576,7 @@ function lookup_mct(
             source         = SOURCE_STATION_STANDARD,
             specificity    = rec.specificity,
             mct_id         = rec.mct_id,
+            matched_fields = rec.specified,
         )
     end
 
@@ -588,6 +592,7 @@ function lookup_mct(
         source         = SOURCE_GLOBAL_DEFAULT,
         specificity    = UInt32(0),
         mct_id         = Int32(0),
+        matched_fields = UInt32(0),
     )
 end
 

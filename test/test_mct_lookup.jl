@@ -1151,4 +1151,64 @@
             close(store)
         end
     end
+
+    @testset "matched_fields propagation" begin
+        # Exception match propagates specified bitmask
+        exc_rec = MCTRecord(
+            time = Minutes(30),
+            arr_carrier = AirlineCode("UA"),
+            specified = MCT_BIT_ARR_CARRIER,
+            specificity = UInt32(1 << 25),
+        )
+        lookup = MCTLookup(
+            stations = Dict(
+                (StationCode("ORD"), StationCode("ORD")) => (
+                    [exc_rec], MCTRecord[], MCTRecord[], MCTRecord[],
+                ),
+            ),
+        )
+        result = lookup_mct(lookup, AirlineCode("UA"), AirlineCode("AA"),
+                            StationCode("ORD"), StationCode("ORD"), MCT_DD)
+        @test result.matched_fields == MCT_BIT_ARR_CARRIER
+        @test result.source == SOURCE_EXCEPTION
+
+        # Station standard propagates specified (usually 0 for standards)
+        std_rec = MCTRecord(time = Minutes(45), station_standard = true)
+        lookup2 = MCTLookup(
+            stations = Dict(
+                (StationCode("ORD"), StationCode("ORD")) => (
+                    [std_rec], MCTRecord[], MCTRecord[], MCTRecord[],
+                ),
+            ),
+        )
+        result2 = lookup_mct(lookup2, AirlineCode("DL"), AirlineCode("AA"),
+                             StationCode("ORD"), StationCode("ORD"), MCT_DD)
+        @test result2.matched_fields == UInt32(0)
+        @test result2.source == SOURCE_STATION_STANDARD
+
+        # Global default has matched_fields = 0
+        result3 = lookup_mct(MCTLookup(), AirlineCode("UA"), AirlineCode("AA"),
+                             StationCode("ZZZ"), StationCode("ZZZ"), MCT_DD)
+        @test result3.matched_fields == UInt32(0)
+        @test result3.source == SOURCE_GLOBAL_DEFAULT
+
+        # Suppression propagates specified
+        supp_rec = MCTRecord(
+            time = Minutes(0),
+            suppressed = true,
+            arr_carrier = AirlineCode("UA"),
+            specified = MCT_BIT_ARR_CARRIER,
+        )
+        lookup3 = MCTLookup(
+            stations = Dict(
+                (StationCode("ORD"), StationCode("ORD")) => (
+                    [supp_rec], MCTRecord[], MCTRecord[], MCTRecord[],
+                ),
+            ),
+        )
+        result4 = lookup_mct(lookup3, AirlineCode("UA"), AirlineCode("AA"),
+                             StationCode("ORD"), StationCode("ORD"), MCT_DD)
+        @test result4.matched_fields == MCT_BIT_ARR_CARRIER
+        @test result4.suppressed
+    end
 end
