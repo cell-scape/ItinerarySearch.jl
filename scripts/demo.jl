@@ -150,30 +150,52 @@ for day_offset in 0:(n_days - 1)
         end
     end
 
-    # Write compact leg index files per OD pair
+    # Write compact leg index — use flexible multi-search interface
+    origins = [o for (o, _) in od_pairs]
+    dests   = [d for (_, d) in od_pairs]
+
+    result = itinerary_legs_multi(graph.stations, ctx;
+        origins      = origins,
+        destinations = dests,
+        dates        = target,
+    )
+
+    # Write per-OD PSV files
     legs_dir = joinpath(outdir, "legs_index")
     mkpath(legs_dir)
-    for (origin, dest) in od_pairs
-        legs = itinerary_legs(graph.stations, origin, dest, target, ctx)
-        isempty(legs) && continue
-        fname = joinpath(legs_dir, "$(origin)_$(dest)_$(target).psv")
-        open(fname, "w") do io
-            # Header
-            println(io, join(["itinerary", "leg_pos", "row_number", "record_serial",
-                              "airline", "flt_no", "operational_suffix", "itin_var",
-                              "leg_seq", "svc_type",
-                              "codeshare_airline", "codeshare_flt_no",
-                              "org", "dst"], "|"))
-            for r in legs
-                println(io, join([r.itinerary, r.leg_pos, r.row_number, r.record_serial,
-                                  r.airline, r.flt_no, r.operational_suffix, r.itin_var,
-                                  r.leg_seq, r.svc_type,
-                                  r.codeshare_airline, r.codeshare_flt_no,
-                                  r.org, r.dst], "|"))
+    psv_header = join(["itinerary", "leg_pos", "row_number", "record_serial",
+                        "airline", "flt_no", "operational_suffix", "itin_var",
+                        "leg_seq", "svc_type",
+                        "codeshare_airline", "codeshare_flt_no",
+                        "org", "dst"], "|")
+    for (org_s, dst_dict) in result
+        for (dst_s, date_dict) in dst_dict
+            for (dt, legs) in date_dict
+                fname = joinpath(legs_dir, "$(org_s)_$(dst_s)_$(dt).psv")
+                open(fname, "w") do io
+                    println(io, psv_header)
+                    for r in legs
+                        println(io, join([r.itinerary, r.leg_pos, r.row_number, r.record_serial,
+                                          r.airline, r.flt_no, r.operational_suffix, r.itin_var,
+                                          r.leg_seq, r.svc_type,
+                                          r.codeshare_airline, r.codeshare_flt_no,
+                                          r.org, r.dst], "|"))
+                    end
+                end
+                println("[$(target)]   Leg index: $(org_s)→$(dst_s) $(length(legs)) rows → $(fname)")
             end
         end
-        println("[$(target)]   Leg index: $(origin)→$(dest) $(length(legs)) rows → $(fname)")
     end
+
+    # Write JSON for the same search
+    json_file = joinpath(outdir, "legs_index_$(target).json")
+    json = itinerary_legs_json(graph.stations, ctx;
+        origins      = origins,
+        destinations = dests,
+        dates        = target,
+    )
+    write(json_file, json)
+    println("[$(target)]   JSON: $(round(filesize(json_file) / 1024; digits=0))KB → $(json_file)")
 
     day_elapsed = round(time() - t_day; digits=1)
     println("[$(target)] Total: $(total_itns) itineraries, $(total_rows) rows → $(itns_file) ($(day_elapsed)s)")
