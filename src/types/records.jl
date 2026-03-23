@@ -162,32 +162,25 @@ flight_id(k::LegKey) = "$(k.airline)$(lpad(k.flt_no, 4))"
 """
     struct ItineraryRef
 
-Lightweight itinerary reference containing summary information and a sequence
-of `LegKey` references. Decoupled from the graph — suitable for serialization,
+Lightweight itinerary reference containing a sequence of `LegKey` references
+and numeric summary fields. Decoupled from the graph — suitable for serialization,
 cross-system handoff, and reaccommodation candidate lists.
+
+Display strings (flights, route) are computed on demand via `Base.show` and
+helper accessors, not stored — keeps allocations minimal.
 
 # Fields
 - `legs::Vector{LegKey}` — ordered leg references
-- `flights::String` — flight chain with arrow separator (e.g., "UA 774" or "UA4247 -> UA 284 -> UA3612")
-- `route::String` — station chain with arrow separator (e.g., "DEN -> LAX" or "LFT -> IAH -> ORD -> YYZ")
-- `stops::Vector{String}` — station codes visited in order
 - `num_stops::Int` — number of intermediate stops (0 = nonstop)
-- `origin::String` — first departure station
-- `destination::String` — final arrival station
-- `elapsed_minutes::Int32` — total elapsed time (minutes)
-- `flight_minutes::Int32` — total in-flight block time (minutes)
+- `elapsed_minutes::Int32` — total elapsed time (minutes, UTC)
+- `flight_minutes::Int32` — total in-flight block time (minutes, UTC)
 - `layover_minutes::Int32` — total ground/connection time (minutes)
-- `distance_miles::Float32` — total flown distance (miles)
+- `distance_miles::Float32` — total flown distance (statute miles)
 - `circuity::Float32` — ratio of flown distance to great-circle distance
 """
 @kwdef struct ItineraryRef
     legs::Vector{LegKey} = LegKey[]
-    flights::String = ""
-    route::String = ""
-    stops::Vector{String} = String[]
     num_stops::Int = 0
-    origin::String = ""
-    destination::String = ""
     elapsed_minutes::Int32 = Int32(0)
     flight_minutes::Int32 = Int32(0)
     layover_minutes::Int32 = Int32(0)
@@ -195,50 +188,45 @@ cross-system handoff, and reaccommodation candidate lists.
     circuity::Float32 = Float32(0)
 end
 
-"""
-    `ItineraryRef(legs::Vector{LegKey})::ItineraryRef`
+# ── Derived accessors (computed on demand, not stored) ───────────────────────
 
-Construct an `ItineraryRef` from a sequence of `LegKey`s.
-Only computes fields derivable from the keys (flights, stops, origin, destination).
-Time/distance fields remain zero — use the full constructor for those.
-"""
-function ItineraryRef(legs::Vector{LegKey})
-    isempty(legs) && return ItineraryRef()
-    flights, route, stops, origin, destination, num_stops = _compute_ref_summary(legs)
-    ItineraryRef(
-        legs=legs, flights=flights, route=route, stops=stops,
-        num_stops=num_stops, origin=origin, destination=destination,
-    )
+"""Origin station code of the itinerary (first leg's org)."""
+origin(ref::ItineraryRef) = isempty(ref.legs) ? StationCode("") : ref.legs[1].org
+
+"""Destination station code (last leg's dst)."""
+destination(ref::ItineraryRef) = isempty(ref.legs) ? StationCode("") : ref.legs[end].dst
+
+"""Station codes visited in order (origin + intermediates + destination)."""
+function stops(ref::ItineraryRef)::Vector{StationCode}
+    isempty(ref.legs) && return StationCode[]
+    result = StationCode[]
+    for k in ref.legs
+        (isempty(result) || result[end] != k.org) && push!(result, k.org)
+    end
+    push!(result, ref.legs[end].dst)
+    return result
 end
 
-function _compute_ref_summary(legs::Vector{LegKey})
-    # Flight chain: unique consecutive flight IDs joined with " -> "
-    flt_ids = String[]
-    prev_flt = ""
-    for k in legs
+"""Unique consecutive flight IDs as a vector."""
+function flights(ref::ItineraryRef)::Vector{String}
+    isempty(ref.legs) && return String[]
+    result = String[]
+    prev = ""
+    for k in ref.legs
         fid = flight_id(k)
-        if fid != prev_flt
-            push!(flt_ids, fid)
-            prev_flt = fid
+        if fid != prev
+            push!(result, fid)
+            prev = fid
         end
     end
-    flights = join(flt_ids, " -> ")
-
-    # Stops: origin of each leg + destination of last leg, deduplicated consecutively
-    stops = String[]
-    for k in legs
-        s = strip(String(k.org))
-        (isempty(stops) || stops[end] != s) && push!(stops, s)
-    end
-    push!(stops, strip(String(legs[end].dst)))
-    route = join(stops, " -> ")
-
-    origin = stops[1]
-    destination = stops[end]
-    num_stops = max(0, length(stops) - 2)
-
-    return (flights, route, stops, origin, destination, num_stops)
+    return result
 end
+
+"""Flight chain as display string: `"UA4247 -> UA 284 -> UA3612"`"""
+flights_str(ref::ItineraryRef) = join(flights(ref), " -> ")
+
+"""Route as display string: `"LFT -> IAH -> ORD -> YYZ"`"""
+route_str(ref::ItineraryRef) = join(String.(stops(ref)), " -> ")
 
 """
     `segment_id(r::LegRecord)::String`

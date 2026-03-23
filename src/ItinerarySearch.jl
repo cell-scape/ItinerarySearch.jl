@@ -55,6 +55,7 @@ export parse_mct_status, MCT_DEFAULTS
 
 # Exports — record types
 export LegKey, ItineraryRef, LegRecord, StationRecord, MCTResult, SegmentRecord
+export origin, destination, stops, flights, flights_str, route_str
 export flight_id, segment_id, full_id
 export pack_date, unpack_date
 

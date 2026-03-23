@@ -98,6 +98,26 @@ function Base.show(io::IO, itn::Itinerary)
 end
 
 """
+    `Base.show(io::IO, ref::ItineraryRef)`
+
+Human-friendly display: route, flights, stops, elapsed, distance, circuity.
+"""
+function Base.show(io::IO, ref::ItineraryRef)
+    r = route_str(ref)
+    f = flights_str(ref)
+    print(io, "ItineraryRef($(r), $(f), $(ref.num_stops) stops, $(ref.elapsed_minutes)min, $(round(Int, ref.distance_miles))mi, circ=$(round(ref.circuity; digits=2)))")
+end
+
+"""
+    `Base.show(io::IO, key::LegKey)`
+
+Compact display: airline/flt_no org->dst.
+"""
+function Base.show(io::IO, key::LegKey)
+    print(io, "LegKey($(flight_id(key)) $(key.org)->$(key.dst))")
+end
+
+"""
     `Base.show(io::IO, trip::Trip)`
 
 Human-friendly summary: route chain, type, itinerary count, elapsed, distance.
@@ -698,23 +718,18 @@ function itinerary_legs(
             end
         end
 
-        flights, route, stops, origin, destination, num_stops = _compute_ref_summary(keys)
         elapsed = itn.elapsed_time
         layover = max(Int32(0), elapsed - flight_mins)
+        ns = max(0, length(keys) - 1)  # num_stops = legs - 1
 
         push!(result, ItineraryRef(
             legs            = keys,
-            flights         = flights,
-            route           = route,
-            stops           = stops,
-            num_stops       = num_stops,
-            origin          = origin,
-            destination     = destination,
+            num_stops       = ns,
             elapsed_minutes = elapsed,
             flight_minutes  = flight_mins,
             layover_minutes = layover,
             distance_miles  = Float32(itn.total_distance),
-            circuity        = num_stops == 0 ? Float32(1.0) : Float32(itn.circuity),
+            circuity        = ns == 0 ? Float32(1.0) : Float32(itn.circuity),
         ))
     end
     return result
@@ -1022,12 +1037,12 @@ end
 
 function _itnref_summary_dict(itn::ItineraryRef)::Dict{String,Any}
     Dict{String,Any}(
-        "flights"         => itn.flights,
-        "route"           => itn.route,
-        "stops"           => itn.stops,
+        "flights"         => flights_str(itn),
+        "route"           => route_str(itn),
+        "stops"           => String.(stops(itn)),
         "num_stops"       => itn.num_stops,
-        "origin"          => itn.origin,
-        "destination"     => itn.destination,
+        "origin"          => String(origin(itn)),
+        "destination"     => String(destination(itn)),
         "elapsed_minutes" => Int(itn.elapsed_minutes),
         "flight_minutes"  => Int(itn.flight_minutes),
         "layover_minutes" => Int(itn.layover_minutes),
@@ -1055,16 +1070,17 @@ function _write_legkey_json(io::IOBuffer, k::LegKey)
 end
 
 function _write_itnref_summary_json(io::IOBuffer, itn::ItineraryRef)
-    print(io, "\"flights\":\"", itn.flights, "\"",
-              ",\"route\":\"", itn.route, "\"",
+    print(io, "\"flights\":\"", flights_str(itn), "\"",
+              ",\"route\":\"", route_str(itn), "\"",
               ",\"stops\":[")
-    for (i, s) in enumerate(itn.stops)
+    stn_stops = stops(itn)
+    for (i, s) in enumerate(stn_stops)
         i > 1 && print(io, ",")
         print(io, "\"", s, "\"")
     end
     print(io, "],\"num_stops\":", itn.num_stops,
-              ",\"origin\":\"", itn.origin, "\"",
-              ",\"destination\":\"", itn.destination, "\"",
+              ",\"origin\":\"", origin(itn), "\"",
+              ",\"destination\":\"", destination(itn), "\"",
               ",\"elapsed_minutes\":", Int(itn.elapsed_minutes),
               ",\"flight_minutes\":", Int(itn.flight_minutes),
               ",\"layover_minutes\":", Int(itn.layover_minutes),
