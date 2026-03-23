@@ -878,6 +878,93 @@ end
 
 # ── JSON export ──────────────────────────────────────────────────────────────
 
+# ── LegKey / ItineraryRef resolution ──────────────────────────────────────────
+
+"""
+    `resolve_leg(key::LegKey, graph::FlightGraph)::Union{GraphLeg, Nothing}`
+
+Resolve a `LegKey` to a `GraphLeg` in the graph by matching `row_number`.
+Returns `nothing` if the leg is not in the current graph.
+"""
+function resolve_leg(key::LegKey, graph)::Union{GraphLeg, Nothing}
+    for leg in graph.legs
+        leg.record.row_number == key.row_number && return leg
+    end
+    return nothing
+end
+
+"""
+    `resolve_leg(key::LegKey, store::DuckDBStore)::Union{LegRecord, Nothing}`
+
+Resolve a `LegKey` to a full `LegRecord` from the DuckDB store by `row_number`.
+Works without a graph — queries the `legs_with_operating` view directly.
+"""
+function resolve_leg(key::LegKey, store::DuckDBStore)::Union{LegRecord, Nothing}
+    # Try the expanded view first (has DEI joins)
+    result = DBInterface.execute(store.db,
+        "SELECT * FROM legs_with_operating WHERE row_id = ? LIMIT 1",
+        [Int64(key.row_number)])
+    rows = collect(result)
+    if !isempty(rows)
+        return _row_to_leg(rows[1])
+    end
+    # Fall back to base legs table (schedule-level, no DEI)
+    result = DBInterface.execute(store.db,
+        "SELECT * FROM legs WHERE row_id = ? LIMIT 1",
+        [Int64(key.row_number)])
+    rows = collect(result)
+    isempty(rows) && return nothing
+    _row_to_schedule_leg(rows[1])
+end
+
+"""
+    `resolve_segment(key::LegKey, graph::FlightGraph)::Union{GraphSegment, Nothing}`
+
+Resolve a `LegKey` to its parent `GraphSegment` in the graph.
+"""
+function resolve_segment(key::LegKey, graph)::Union{GraphSegment, Nothing}
+    leg = resolve_leg(key, graph)
+    leg === nothing && return nothing
+    return leg.segment
+end
+
+"""
+    `resolve_segment(key::LegKey, store::DuckDBStore)::Union{SegmentRecord, Nothing}`
+
+Resolve a `LegKey` to its `SegmentRecord` from the DuckDB store.
+"""
+function resolve_segment(key::LegKey, store::DuckDBStore)::Union{SegmentRecord, Nothing}
+    leg = resolve_leg(key, store)
+    leg === nothing && return nothing
+    leg.segment_hash == UInt64(0) && return nothing
+    query_segment(store, leg.segment_hash)
+end
+
+"""
+    `resolve_legs(itn::ItineraryRef, graph::FlightGraph)::Vector{Union{GraphLeg, Nothing}}`
+
+Resolve all legs in an `ItineraryRef` to `GraphLeg` objects from the graph.
+"""
+function resolve_legs(itn::ItineraryRef, graph)::Vector{Union{GraphLeg, Nothing}}
+    # Build row_number lookup once
+    idx = Dict{UInt64, GraphLeg}()
+    for leg in graph.legs
+        idx[leg.record.row_number] = leg
+    end
+    return [get(idx, k.row_number, nothing) for k in itn.legs]
+end
+
+"""
+    `resolve_legs(itn::ItineraryRef, store::DuckDBStore)::Vector{Union{LegRecord, Nothing}}`
+
+Resolve all legs in an `ItineraryRef` to full `LegRecord`s from the DuckDB store.
+"""
+function resolve_legs(itn::ItineraryRef, store::DuckDBStore)::Vector{Union{LegRecord, Nothing}}
+    [resolve_leg(k, store) for k in itn.legs]
+end
+
+# ── JSON helpers ─────────────────────────────────────────────────────────────
+
 function _legkey_to_dict(k::LegKey)::Dict{String,Any}
     Dict{String,Any}(
         "row_number"         => Int(k.row_number),
