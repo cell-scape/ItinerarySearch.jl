@@ -781,7 +781,7 @@ _to_dates(v::AbstractVector) = Date[d for d in v]
 - `cross::Bool=false`: when true, search all origins × all destinations; when false, pair them
 
 # Returns
-- Nested `Dict{String, Dict{String, Dict{Date, Vector{NamedTuple}}}}`
+- Nested `Dict{Date, Dict{String, Dict{String, Vector{NamedTuple}}}}` keyed by date → origin → destination
 
 # Examples
 ```julia
@@ -842,22 +842,22 @@ function itinerary_legs_multi(
         end
     end
 
-    result = Dict{String, Dict{String, Dict{Date, Vector{NamedTuple}}}}()
-    for (org, dst) in od_pairs
-        haskey(stations, org) || continue
-        haskey(stations, dst) || continue
-        for date in ds
+    result = Dict{Date, Dict{String, Dict{String, Vector{NamedTuple}}}}()
+    for date in ds
+        for (org, dst) in od_pairs
+            haskey(stations, org) || continue
+            haskey(stations, dst) || continue
             legs = itinerary_legs(stations, org, dst, date, ctx)
             isempty(legs) && continue
             org_s = strip(String(org))
             dst_s = strip(String(dst))
-            org_dict = get!(result, org_s) do
-                Dict{String, Dict{Date, Vector{NamedTuple}}}()
+            date_dict = get!(result, date) do
+                Dict{String, Dict{String, Vector{NamedTuple}}}()
             end
-            dst_dict = get!(org_dict, dst_s) do
-                Dict{Date, Vector{NamedTuple}}()
+            org_dict = get!(date_dict, org_s) do
+                Dict{String, Vector{NamedTuple}}()
             end
-            dst_dict[date] = legs
+            org_dict[dst_s] = legs
         end
     end
     return result
@@ -869,54 +869,56 @@ function itinerary_legs_multi(
     od_pairs::Vector{Tuple{StationCode,StationCode,Date}},
     ctx::RuntimeContext,
 )
-    result = Dict{String, Dict{String, Dict{Date, Vector{NamedTuple}}}}()
+    result = Dict{Date, Dict{String, Dict{String, Vector{NamedTuple}}}}()
     for (org, dst, date) in od_pairs
         legs = itinerary_legs(stations, org, dst, date, ctx)
         isempty(legs) && continue
         org_s = strip(String(org))
         dst_s = strip(String(dst))
-        org_dict = get!(result, org_s) do
-            Dict{String, Dict{Date, Vector{NamedTuple}}}()
+        date_dict = get!(result, date) do
+            Dict{String, Dict{String, Vector{NamedTuple}}}()
         end
-        dst_dict = get!(org_dict, dst_s) do
-            Dict{Date, Vector{NamedTuple}}()
+        org_dict = get!(date_dict, org_s) do
+            Dict{String, Vector{NamedTuple}}()
         end
-        dst_dict[date] = legs
+        org_dict[dst_s] = legs
     end
     return result
 end
 
 # ── JSON export ──────────────────────────────────────────────────────────────
 
-function _nested_to_json(nested::Dict{String, Dict{String, Dict{Date, Vector{NamedTuple}}}})::String
+function _leg_to_dict(r)::Dict{String,Any}
+    Dict{String,Any}(
+        "itinerary"          => r.itinerary,
+        "leg_pos"            => r.leg_pos,
+        "row_number"         => r.row_number,
+        "record_serial"      => r.record_serial,
+        "airline"            => r.airline,
+        "flt_no"             => r.flt_no,
+        "operational_suffix" => string(r.operational_suffix),
+        "itin_var"           => r.itin_var,
+        "leg_seq"            => r.leg_seq,
+        "svc_type"           => string(r.svc_type),
+        "codeshare_airline"  => r.codeshare_airline,
+        "codeshare_flt_no"   => r.codeshare_flt_no,
+        "org"                => r.org,
+        "dst"                => r.dst,
+    )
+end
+
+function _nested_to_json(nested::Dict{Date, Dict{String, Dict{String, Vector{NamedTuple}}}})::String
     json_root = Dict{String,Any}()
-    for (org, dst_dict) in nested
-        json_org = Dict{String,Any}()
-        for (dst, date_dict) in dst_dict
-            json_dst = Dict{String,Any}()
-            for (date, legs) in date_dict
-                json_dst[string(date)] = [
-                    Dict{String,Any}(
-                        "itinerary"          => r.itinerary,
-                        "leg_pos"            => r.leg_pos,
-                        "row_number"         => r.row_number,
-                        "record_serial"      => r.record_serial,
-                        "airline"            => r.airline,
-                        "flt_no"             => r.flt_no,
-                        "operational_suffix" => string(r.operational_suffix),
-                        "itin_var"           => r.itin_var,
-                        "leg_seq"            => r.leg_seq,
-                        "svc_type"           => string(r.svc_type),
-                        "codeshare_airline"  => r.codeshare_airline,
-                        "codeshare_flt_no"   => r.codeshare_flt_no,
-                        "org"                => r.org,
-                        "dst"                => r.dst,
-                    ) for r in legs
-                ]
+    for (date, org_dict) in nested
+        json_date = Dict{String,Any}()
+        for (org, dst_dict) in org_dict
+            json_org = Dict{String,Any}()
+            for (dst, legs) in dst_dict
+                json_org[dst] = [_leg_to_dict(r) for r in legs]
             end
-            json_org[dst] = json_dst
+            json_date[org] = json_org
         end
-        json_root[org] = json_org
+        json_root[string(date)] = json_date
     end
     return JSON3.write(json_root)
 end

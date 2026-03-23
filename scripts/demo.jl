@@ -168,9 +168,9 @@ for day_offset in 0:(n_days - 1)
                         "leg_seq", "svc_type",
                         "codeshare_airline", "codeshare_flt_no",
                         "org", "dst"], "|")
-    for (org_s, dst_dict) in result
-        for (dst_s, date_dict) in dst_dict
-            for (dt, legs) in date_dict
+    for (dt, org_dict) in result
+        for (org_s, dst_dict) in org_dict
+            for (dst_s, legs) in dst_dict
                 fname = joinpath(legs_dir, "$(org_s)_$(dst_s)_$(dt).psv")
                 open(fname, "w") do io
                     println(io, psv_header)
