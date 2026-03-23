@@ -11,7 +11,7 @@
         lookup = MCTLookup()
         result = lookup_mct(
             lookup, AirlineCode("UA"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_DD,
+            StationCode("ORD"), StationCode("ORD"), MCT_DD,
         )
         @test result.time == Minutes(60)       # DD default
         @test result.source == SOURCE_GLOBAL_DEFAULT
@@ -22,14 +22,14 @@
         std_rec = MCTRecord(time = Minutes(45), station_standard = true)
         lookup = MCTLookup(
             stations = Dict(
-                StationCode("ORD") => (
+                (StationCode("ORD"), StationCode("ORD")) => (
                     [std_rec], MCTRecord[], MCTRecord[], MCTRecord[],
                 ),
             ),
         )
         result = lookup_mct(
             lookup, AirlineCode("UA"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_DD,
+            StationCode("ORD"), StationCode("ORD"), MCT_DD,
         )
         @test result.time == Minutes(45)
         @test result.source == SOURCE_STATION_STANDARD
@@ -45,7 +45,7 @@
         )
         lookup = MCTLookup(
             stations = Dict(
-                StationCode("ORD") => (
+                (StationCode("ORD"), StationCode("ORD")) => (
                     [exc_rec, std_rec], MCTRecord[], MCTRecord[], MCTRecord[],
                 ),
             ),
@@ -53,7 +53,7 @@
         # UA arriving → exception match
         result = lookup_mct(
             lookup, AirlineCode("UA"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_DD,
+            StationCode("ORD"), StationCode("ORD"), MCT_DD,
         )
         @test result.time == Minutes(30)
         @test result.source == SOURCE_EXCEPTION
@@ -61,7 +61,7 @@
         # DL arriving → no exception match, falls through to standard
         result2 = lookup_mct(
             lookup, AirlineCode("DL"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_DD,
+            StationCode("ORD"), StationCode("ORD"), MCT_DD,
         )
         @test result2.time == Minutes(45)
         @test result2.source == SOURCE_STATION_STANDARD
@@ -76,14 +76,14 @@
         )
         lookup = MCTLookup(
             stations = Dict(
-                StationCode("ORD") => (
+                (StationCode("ORD"), StationCode("ORD")) => (
                     [supp_rec], MCTRecord[], MCTRecord[], MCTRecord[],
                 ),
             ),
         )
         result = lookup_mct(
             lookup, AirlineCode("UA"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_DD,
+            StationCode("ORD"), StationCode("ORD"), MCT_DD,
         )
         @test result.time == Minutes(0)
         @test result.suppressed
@@ -94,23 +94,23 @@
         di_rec = MCTRecord(time = Minutes(70), station_standard = true)
         lookup = MCTLookup(
             stations = Dict(
-                StationCode("ORD") => (
+                (StationCode("ORD"), StationCode("ORD")) => (
                     [dd_rec], [di_rec], MCTRecord[], MCTRecord[],
                 ),
             ),
         )
         @test lookup_mct(
             lookup, AirlineCode("UA"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_DD,
+            StationCode("ORD"), StationCode("ORD"), MCT_DD,
         ).time == Minutes(40)
         @test lookup_mct(
             lookup, AirlineCode("UA"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_DI,
+            StationCode("ORD"), StationCode("ORD"), MCT_DI,
         ).time == Minutes(70)
         # II has no records → global default
         @test lookup_mct(
             lookup, AirlineCode("UA"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_II,
+            StationCode("ORD"), StationCode("ORD"), MCT_II,
         ).time == Minutes(120)
     end
 
@@ -199,14 +199,14 @@
         )
         lookup = MCTLookup(
             stations = Dict(
-                StationCode("ORD") => (
+                (StationCode("ORD"), StationCode("ORD")) => (
                     [supp_rec], MCTRecord[], MCTRecord[], MCTRecord[],
                 ),
             ),
         )
         result = lookup_mct(
             lookup, AirlineCode("AA"), AirlineCode("DL"),
-            StationCode("ORD"), MCT_DD,
+            StationCode("ORD"), StationCode("ORD"), MCT_DD,
         )
         @test !result.suppressed
         @test result.source == SOURCE_GLOBAL_DEFAULT
@@ -216,13 +216,13 @@
     @testset "Global defaults per status" begin
         lookup = MCTLookup()
         @test lookup_mct(lookup, AirlineCode("UA"), AirlineCode("AA"),
-                         StationCode("ORD"), MCT_DD).time == Minutes(60)
+                         StationCode("ORD"), StationCode("ORD"), MCT_DD).time == Minutes(60)
         @test lookup_mct(lookup, AirlineCode("UA"), AirlineCode("AA"),
-                         StationCode("ORD"), MCT_DI).time == Minutes(90)
+                         StationCode("ORD"), StationCode("ORD"), MCT_DI).time == Minutes(90)
         @test lookup_mct(lookup, AirlineCode("UA"), AirlineCode("AA"),
-                         StationCode("ORD"), MCT_ID).time == Minutes(90)
+                         StationCode("ORD"), StationCode("ORD"), MCT_ID).time == Minutes(90)
         @test lookup_mct(lookup, AirlineCode("UA"), AirlineCode("AA"),
-                         StationCode("ORD"), MCT_II).time == Minutes(120)
+                         StationCode("ORD"), StationCode("ORD"), MCT_II).time == Minutes(120)
     end
 
     @testset "mct_id propagation" begin
@@ -230,7 +230,7 @@
         lookup_empty = MCTLookup()
         result_global = lookup_mct(
             lookup_empty, AirlineCode("UA"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_DD,
+            StationCode("ORD"), StationCode("ORD"), MCT_DD,
         )
         @test result_global.mct_id == Int32(0)
         @test result_global.source == SOURCE_GLOBAL_DEFAULT
@@ -245,14 +245,14 @@
         )
         lookup_no_match = MCTLookup(
             stations = Dict(
-                StationCode("ORD") => (
+                (StationCode("ORD"), StationCode("ORD")) => (
                     [exc_rec_dl], MCTRecord[], MCTRecord[], MCTRecord[],
                 ),
             ),
         )
         result_fallback = lookup_mct(
             lookup_no_match, AirlineCode("UA"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_DD,
+            StationCode("ORD"), StationCode("ORD"), MCT_DD,
         )
         @test result_fallback.mct_id == Int32(0)
         @test result_fallback.source == SOURCE_GLOBAL_DEFAULT
@@ -267,14 +267,14 @@
         )
         lookup_hit = MCTLookup(
             stations = Dict(
-                StationCode("ORD") => (
+                (StationCode("ORD"), StationCode("ORD")) => (
                     [exc_rec_ua], MCTRecord[], MCTRecord[], MCTRecord[],
                 ),
             ),
         )
         result_exc = lookup_mct(
             lookup_hit, AirlineCode("UA"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_DD,
+            StationCode("ORD"), StationCode("ORD"), MCT_DD,
         )
         @test result_exc.mct_id == Int32(99)
         @test result_exc.source == SOURCE_EXCEPTION
@@ -287,14 +287,14 @@
         )
         lookup_std = MCTLookup(
             stations = Dict(
-                StationCode("ORD") => (
+                (StationCode("ORD"), StationCode("ORD")) => (
                     [std_rec], MCTRecord[], MCTRecord[], MCTRecord[],
                 ),
             ),
         )
         result_std = lookup_mct(
             lookup_std, AirlineCode("UA"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_DD,
+            StationCode("ORD"), StationCode("ORD"), MCT_DD,
         )
         @test result_std.mct_id == Int32(7)
         @test result_std.source == SOURCE_STATION_STANDARD
@@ -309,14 +309,14 @@
         )
         lookup_supp = MCTLookup(
             stations = Dict(
-                StationCode("ORD") => (
+                (StationCode("ORD"), StationCode("ORD")) => (
                     [supp_rec], MCTRecord[], MCTRecord[], MCTRecord[],
                 ),
             ),
         )
         result_supp = lookup_mct(
             lookup_supp, AirlineCode("UA"), AirlineCode("AA"),
-            StationCode("ORD"), MCT_DD,
+            StationCode("ORD"), StationCode("ORD"), MCT_DD,
         )
         @test result_supp.mct_id == Int32(55)
         @test result_supp.suppressed
@@ -345,8 +345,8 @@
                 store, Set([StationCode("ORD")]); constraints = constraints,
             )
 
-            @test haskey(lookup.stations, StationCode("ORD"))
-            dd_records = lookup.stations[StationCode("ORD")][1]   # status index 1 = DD
+            @test haskey(lookup.stations, (StationCode("ORD"), StationCode("ORD")))
+            dd_records = lookup.stations[(StationCode("ORD"), StationCode("ORD"))][1]   # status index 1 = DD
 
             # 30-min record must be absent
             times = [r.time for r in dd_records]

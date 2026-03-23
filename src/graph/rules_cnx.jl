@@ -232,12 +232,14 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
     prv_stn_rec = (from_leg.org::GraphStation).record
     nxt_stn_rec = (to_leg.dst::GraphStation).record
 
-    # Cascade lookup
+    # Cascade lookup — same station for both arr and dep (intra-station connection)
+    stn_code = (cp.station::GraphStation).code
     result = lookup_mct(
         r.lookup,
         from_rec.airline,
         to_rec.airline,
-        (cp.station::GraphStation).code,
+        stn_code,
+        stn_code,
         mct_status;
         arr_body = from_rec.body_type,
         dep_body = to_rec.body_type,

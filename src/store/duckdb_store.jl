@@ -897,11 +897,12 @@ function query_segment_stops(store::DuckDBStore, segment_hash::UInt64)::Tuple{Ve
 end
 
 """
-    `query_mct(store::DuckDBStore, arr_carrier, dep_carrier, station, status; kwargs...)::MCTResult`
+    `query_mct(store::DuckDBStore, arr_carrier, dep_carrier, arr_station, dep_station, status; kwargs...)::MCTResult`
 ---
 
 # Description
-- Look up MCT for a connection at `station` with the given traffic status
+- Look up MCT for a connection where the arriving flight lands at `arr_station`
+  and the departing flight departs from `dep_station`
 - Tries carrier-specific exception records first, then falls back to global default
 - Full SSIM8 hierarchical lookup deferred to Subsystem 2
 
@@ -909,14 +910,16 @@ end
 1. `store::DuckDBStore`: the DuckDB-backed store
 2. `arr_carrier::AirlineCode`: arriving flight carrier
 3. `dep_carrier::AirlineCode`: departing flight carrier
-4. `station::StationCode`: connecting station
-5. `status::MCTStatus`: connection traffic type (MCT_DD, MCT_DI, MCT_ID, MCT_II)
+4. `arr_station::StationCode`: station where the arriving flight lands
+5. `dep_station::StationCode`: station where the departing flight departs
+6. `status::MCTStatus`: connection traffic type (MCT_DD, MCT_DI, MCT_ID, MCT_II)
 
 # Returns
 - `::MCTResult`: MCT value, source, specificity, and suppression flag
 """
 function query_mct(store::DuckDBStore, arr_carrier::AirlineCode, dep_carrier::AirlineCode,
-                   station::StationCode, status::MCTStatus; kwargs...)::MCTResult
+                   arr_station::StationCode, dep_station::StationCode,
+                   status::MCTStatus; kwargs...)::MCTResult
     status_str = status == MCT_DD ? "DD" :
                  status == MCT_DI ? "DI" :
                  status == MCT_ID ? "ID" : "II"
@@ -931,7 +934,7 @@ function query_mct(store::DuckDBStore, arr_carrier::AirlineCode, dep_carrier::Ai
       AND suppress = false
     ORDER BY CASE WHEN arr_carrier != '' THEN 0 ELSE 1 END
     LIMIT 1
-    """, [String(station), String(station), status_str, String(arr_carrier)])
+    """, [String(arr_station), String(dep_station), status_str, String(arr_carrier)])
 
     rows = collect(result)
     if !isempty(rows)

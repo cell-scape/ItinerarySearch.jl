@@ -169,7 +169,8 @@ end
         )
         """)
 
-        mct = query_mct(store, AirlineCode("UA"), AirlineCode("UA"), StationCode("ORD"), MCT_DD)
+        mct = query_mct(store, AirlineCode("UA"), AirlineCode("UA"),
+                        StationCode("ORD"), StationCode("ORD"), MCT_DD)
         @test mct.time == Int16(45)
         @test mct.source == SOURCE_EXCEPTION  # carrier-specific match
 
@@ -186,12 +187,14 @@ end
             '', false, 0
         )
         """)
-        mct_std = query_mct(store, AirlineCode("DL"), AirlineCode("DL"), StationCode("ORD"), MCT_II)
+        mct_std = query_mct(store, AirlineCode("DL"), AirlineCode("DL"),
+                            StationCode("ORD"), StationCode("ORD"), MCT_II)
         @test mct_std.time == Int16(90)
         @test mct_std.source == SOURCE_STATION_STANDARD
 
         # Global default fallback
-        mct_default = query_mct(store, AirlineCode("XX"), AirlineCode("XX"), StationCode("ZZZ"), MCT_II)
+        mct_default = query_mct(store, AirlineCode("XX"), AirlineCode("XX"),
+                                StationCode("ZZZ"), StationCode("ZZZ"), MCT_II)
         @test mct_default.source == SOURCE_GLOBAL_DEFAULT
     end
 
@@ -245,7 +248,7 @@ end
 
     # MCT lookup
     mct_result = query_mct(store, AirlineCode("UA"), AirlineCode("UA"),
-                           StationCode("ORD"), MCT_II)
+                           StationCode("ORD"), StationCode("ORD"), MCT_II)
     @test mct_result.time > 0
 
     # Cleanup

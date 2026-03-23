@@ -144,32 +144,41 @@ end
 
 MCTLookup — In-memory hierarchical MCT lookup structure.
 
-`stations` maps station code → 4-element `NTuple` of `Vector{MCTRecord}`, one
-per `MCTStatus` (index 1 = `MCT_DD`, 2 = `MCT_DI`, 3 = `MCT_ID`, 4 = `MCT_II`).
+`stations` maps an `(arr_station, dep_station)` pair → 4-element `NTuple` of
+`Vector{MCTRecord}`, one per `MCTStatus` (index 1 = `MCT_DD`, 2 = `MCT_DI`,
+3 = `MCT_ID`, 4 = `MCT_II`).  When both elements of the key are the same
+station code the entry covers an intra-station connection; when they differ the
+entry covers an inter-station (multi-airport city) connection.
+
 Records within each vector are sorted by descending `specificity` for
 first-match-wins lookup.
 
 `global_defaults` provides the fallback MCT time (minutes) for each status when
-no station-level record matches.
+no station-pair record matches and the connection is intra-station.
+
+`inter_station_default` provides the fallback MCT time when no record matches
+and the arrival and departure stations differ (SSIM8 global default = 240 min).
 
 # Fields
-- `stations::Dict{StationCode, NTuple{4, Vector{MCTRecord}}}` — per-station records
+- `stations::Dict{Tuple{StationCode,StationCode}, NTuple{4, Vector{MCTRecord}}}` — per-station-pair records
 - `global_defaults::NTuple{4, Minutes}` — IATA fallback times (DD=60, DI=90, ID=90, II=120)
+- `inter_station_default::Minutes` — fallback for inter-station connections (default 240 min)
 
 # Examples
 ```julia
 julia> lookup = MCTLookup();
 julia> result = lookup_mct(lookup, AirlineCode("UA"), AirlineCode("AA"),
-                           StationCode("ORD"), MCT_DD);
+                           StationCode("ORD"), StationCode("ORD"), MCT_DD);
 julia> result.source == SOURCE_GLOBAL_DEFAULT
 true
 ```
 """
 @kwdef struct MCTLookup
-    stations::Dict{StationCode, NTuple{4, Vector{MCTRecord}}} =
-        Dict{StationCode, NTuple{4, Vector{MCTRecord}}}()
+    stations::Dict{Tuple{StationCode,StationCode}, NTuple{4, Vector{MCTRecord}}} =
+        Dict{Tuple{StationCode,StationCode}, NTuple{4, Vector{MCTRecord}}}()
     global_defaults::NTuple{4, Minutes} =
         (Minutes(60), Minutes(90), Minutes(90), Minutes(120))
+    inter_station_default::Minutes = Minutes(240)
 end
 
 # ── Specificity computation ───────────────────────────────────────────────────
@@ -354,18 +363,23 @@ end
 # ── MCT lookup cascade ────────────────────────────────────────────────────────
 
 """
-    `function lookup_mct(lookup::MCTLookup, arr_carrier, dep_carrier, station, status; kwargs...)::MCTResult`
+    `function lookup_mct(lookup::MCTLookup, arr_carrier, dep_carrier, arr_station, dep_station, status; kwargs...)::MCTResult`
 ---
 
 # Description
-- Perform a hierarchical SSIM8 MCT cascade lookup for a connection at `station`
+- Perform a hierarchical SSIM8 MCT cascade lookup for a connection where the
+  arriving flight lands at `arr_station` and the departing flight departs from
+  `dep_station`
+- Both stations are the same for intra-station connections; they differ for
+  inter-station (multi-airport city) connections
 - Cascade order:
-  1. Station-specific exception records (non-suppressed, non-standard), tried in
+  1. Station-pair exception records (non-suppressed, non-standard), tried in
      descending specificity order — first match wins
-  2. Station-specific suppression records — if any matching suppression is found,
+  2. Station-pair suppression records — if any matching suppression is found,
      return a suppressed `MCTResult` with `time = 0`
-  3. Station standard record — the generic station-level default
-  4. Global default — `lookup.global_defaults[Int(status)]`
+  3. Station-pair standard record — the generic station-level default
+  4. Global default — `lookup.global_defaults[Int(status)]` for intra-station;
+     `lookup.inter_station_default` for inter-station connections
 - The `status` integer value (1–4) directly indexes the `NTuple` of record vectors
 - Records outside their `eff_date`/`dis_date` window are skipped when
   `target_date != 0`; suppression geography scope is applied to Pass 2
@@ -374,8 +388,9 @@ end
 1. `lookup::MCTLookup`: the populated in-memory lookup structure
 2. `arr_carrier::AirlineCode`: arriving flight carrier
 3. `dep_carrier::AirlineCode`: departing flight carrier
-4. `station::StationCode`: connecting station code
-5. `status::MCTStatus`: connection traffic type (MCT_DD, MCT_DI, MCT_ID, MCT_II)
+4. `arr_station::StationCode`: station where the arriving flight lands
+5. `dep_station::StationCode`: station where the departing flight departs
+6. `status::MCTStatus`: connection traffic type (MCT_DD, MCT_DI, MCT_ID, MCT_II)
 
 # Keyword Arguments
 - `arr_body::Char=' '`: arriving aircraft body type
@@ -407,7 +422,7 @@ end
 ```julia
 julia> lookup = MCTLookup();
 julia> result = lookup_mct(lookup, AirlineCode("UA"), AirlineCode("AA"),
-                           StationCode("ORD"), MCT_DD);
+                           StationCode("ORD"), StationCode("ORD"), MCT_DD);
 julia> result.time == Minutes(60)
 true
 ```
@@ -416,7 +431,8 @@ function lookup_mct(
     lookup::MCTLookup,
     arr_carrier::AirlineCode,
     dep_carrier::AirlineCode,
-    station::StationCode,
+    arr_station::StationCode,
+    dep_station::StationCode,
     status::MCTStatus;
     # Existing
     arr_body::Char = ' ',
@@ -448,10 +464,14 @@ function lookup_mct(
 )::MCTResult
     status_idx = Int(status)   # 1=DD, 2=DI, 3=ID, 4=II
 
-    # ── No station-level records: return global default ──────────────────────
-    if !haskey(lookup.stations, station)
+    # ── No station-pair records: return appropriate default ───────────────────
+    key = (arr_station, dep_station)
+    if !haskey(lookup.stations, key)
+        default_time = arr_station == dep_station ?
+            lookup.global_defaults[status_idx] :
+            lookup.inter_station_default
         return MCTResult(
-            time           = lookup.global_defaults[status_idx],
+            time           = default_time,
             queried_status = status,
             matched_status = status,
             suppressed     = false,
@@ -461,7 +481,7 @@ function lookup_mct(
         )
     end
 
-    records = lookup.stations[station][status_idx]
+    records = lookup.stations[key][status_idx]
 
     # ── Pass 1: exceptions (non-standard, non-suppressed) ────────────────────
     # Records are pre-sorted by descending specificity so the first match is
@@ -557,8 +577,11 @@ function lookup_mct(
     end
 
     # ── Pass 4: global default ────────────────────────────────────────────────
+    default_time = arr_station == dep_station ?
+        lookup.global_defaults[status_idx] :
+        lookup.inter_station_default
     MCTResult(
-        time           = lookup.global_defaults[status_idx],
+        time           = default_time,
         queried_status = status,
         matched_status = status,
         suppressed     = false,
@@ -585,18 +608,26 @@ function _mct_status_from_string(s::AbstractString)::MCTStatus
 end
 
 """
-    `function _build_mct_record(r)::Tuple{StationCode, MCTStatus, MCTRecord}`
+    `function _build_mct_record(r)::Tuple{Tuple{StationCode,StationCode}, MCTStatus, MCTRecord}`
 
-Convert a single DuckDB `mct` table row `r` into a station key, status index,
-and populated `MCTRecord`.  Called during `materialize_mct_lookup`.
+Convert a single DuckDB `mct` table row `r` into a station-pair key, status
+index, and populated `MCTRecord`.  Called during `materialize_mct_lookup`.
+
+The key is `(arr_stn, dep_stn)`.  When both stations are the same this is an
+intra-station record; when they differ it is an inter-station (multi-airport
+city) record.
 """
-function _build_mct_record(r)::Tuple{StationCode, MCTStatus, MCTRecord}
+function _build_mct_record(r)::Tuple{Tuple{StationCode,StationCode}, MCTStatus, MCTRecord}
     arr_stn_str = _safe_string(r.arr_stn)
+    dep_stn_str_raw = _safe_string(r.dep_stn)
     status_str  = _safe_string(r.mct_status)
     status      = _mct_status_from_string(status_str)
 
-    # Station key: prefer arr_stn; fall back to dep_stn for dep-station records
-    station_key = StationCode(isempty(arr_stn_str) ? _safe_string(r.dep_stn) : arr_stn_str)
+    # Station-pair key: use arr_stn and dep_stn directly.
+    # When arr_stn is empty fall back to dep_stn for both sides (legacy dep-only records).
+    arr_key = StationCode(isempty(arr_stn_str) ? dep_stn_str_raw : arr_stn_str)
+    dep_key = StationCode(isempty(dep_stn_str_raw) ? arr_stn_str : dep_stn_str_raw)
+    station_key = (arr_key, dep_key)
 
     arr_carrier_str = strip(_safe_string(r.arr_carrier))
     dep_carrier_str = strip(_safe_string(r.dep_carrier))
@@ -784,7 +815,7 @@ end
 # Examples
 ```julia
 julia> lookup = materialize_mct_lookup(store, Set([StationCode("ORD")]));
-julia> haskey(lookup.stations, StationCode("ORD"))
+julia> haskey(lookup.stations, (StationCode("ORD"), StationCode("ORD")))
 true
 ```
 """
@@ -830,12 +861,13 @@ function materialize_mct_lookup(
 
     result = DBInterface.execute(store.db, sql, [min_mct, min_mct, max_mct, max_mct])
 
-    # Accumulate into a staging dict: station → status_idx → Vector{MCTRecord}
-    staging = Dict{StationCode, NTuple{4, Vector{MCTRecord}}}()
+    # Accumulate into a staging dict: (arr_stn, dep_stn) → status_idx → Vector{MCTRecord}
+    staging = Dict{Tuple{StationCode,StationCode}, NTuple{4, Vector{MCTRecord}}}()
 
     for r in result
         station_key, status, rec = _build_mct_record(r)
-        station_key == NO_STATION && continue   # malformed row: skip
+        # Both elements of the key must be non-empty
+        (station_key[1] == NO_STATION || station_key[2] == NO_STATION) && continue
 
         if !haskey(staging, station_key)
             staging[station_key] = (

@@ -11,7 +11,7 @@ Required methods for any concrete backend:
 - `load_schedule!(store, config)` — Load all data from files into the store
 - `query_legs(store, origin, destination, date)` — Legs for an O-D pair on a date
 - `query_station(store, code)` — Station reference data
-- `query_mct(store, arr_carrier, dep_carrier, station, status; kwargs...)` — MCT lookup
+- `query_mct(store, arr_carrier, dep_carrier, arr_station, dep_station, status; kwargs...)` — MCT lookup
 - `get_departures(store, station, date)` — All departing legs from a station on a date
 - `get_arrivals(store, station, date)` — All arriving legs to a station on a date
 - `query_market_distance(store, stn_a, stn_b)` — NDOD market distance
@@ -80,27 +80,31 @@ function query_station(store::AbstractStore, code::StationCode)
 end
 
 """
-    `query_mct(store::AbstractStore, arr_carrier::AirlineCode, dep_carrier::AirlineCode,
-               station::StationCode, status::MCTStatus; kwargs...)`
+    `query_mct(store::AbstractStore, arr_carrier::AirlineCode, dep_carrier::AirlineCode, arr_station::StationCode, dep_station::StationCode, status::MCTStatus; kwargs...)`
 ---
 
 # Description
-- Look up the Minimum Connecting Time for a connection at `station`
+- Look up the Minimum Connecting Time for a connection where the arriving flight
+  lands at `arr_station` and the departing flight departs from `dep_station`
 - Follows the SSIM8 specificity hierarchy: exception → station standard → global default
 - `status` encodes the domestic/international crossing (DD/DI/ID/II)
+- For intra-station connections pass the same station code for both `arr_station`
+  and `dep_station`
 
 # Arguments
 1. `store::AbstractStore`: the backend
 2. `arr_carrier::AirlineCode`: arriving flight carrier
 3. `dep_carrier::AirlineCode`: departing flight carrier
-4. `station::StationCode`: connecting station
-5. `status::MCTStatus`: connection traffic type (MCT_DD, MCT_DI, MCT_ID, MCT_II)
+4. `arr_station::StationCode`: station where the arriving flight lands
+5. `dep_station::StationCode`: station where the departing flight departs
+6. `status::MCTStatus`: connection traffic type (MCT_DD, MCT_DI, MCT_ID, MCT_II)
 
 # Returns
 - `::MCTResult`: MCT value, source, specificity, and suppression flag
 """
 function query_mct(store::AbstractStore, arr_carrier::AirlineCode, dep_carrier::AirlineCode,
-                   station::StationCode, status::MCTStatus; kwargs...)
+                   arr_station::StationCode, dep_station::StationCode,
+                   status::MCTStatus; kwargs...)
     error("query_mct not implemented for $(typeof(store))")
 end
 
