@@ -706,7 +706,7 @@ function itinerary_legs(
             flight_minutes  = flight_mins,
             layover_minutes = layover,
             distance_miles  = Float32(itn.total_distance),
-            circuity        = Float32(itn.circuity),
+            circuity        = num_stops == 0 ? Float32(1.0) : Float32(itn.circuity),
         ))
     end
     return result
