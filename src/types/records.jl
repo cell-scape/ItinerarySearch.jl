@@ -155,6 +155,77 @@ function LegKey(r::LegRecord)
     )
 end
 
+flight_id(k::LegKey) = "$(k.airline)$(lpad(k.flt_no, 4))"
+
+# ── ItineraryRef ─────────────────────────────────────────────────────────────
+
+"""
+    struct ItineraryRef
+
+Lightweight itinerary reference containing summary information and a sequence
+of `LegKey` references. Decoupled from the graph — suitable for serialization,
+cross-system handoff, and reaccommodation candidate lists.
+
+# Fields
+- `legs::Vector{LegKey}` — ordered leg references (position = leg position in itinerary)
+- `flights::String` — flight chain (e.g., "UA0774" or "UA4247/UA0284/UA3612")
+- `stops::Vector{String}` — station codes visited in order, including origin and destination
+  (e.g., ["DEN", "LAX"] for nonstop, ["LFT", "IAH", "ORD", "YYZ"] for 2-stop)
+- `num_stops::Int` — number of intermediate stops (0 = nonstop)
+- `origin::String` — first departure station
+- `destination::String` — final arrival station
+"""
+@kwdef struct ItineraryRef
+    legs::Vector{LegKey} = LegKey[]
+    flights::String = ""
+    stops::Vector{String} = String[]
+    num_stops::Int = 0
+    origin::String = ""
+    destination::String = ""
+end
+
+"""
+    `ItineraryRef(legs::Vector{LegKey})::ItineraryRef`
+
+Construct an `ItineraryRef` from a sequence of `LegKey`s, computing the summary fields.
+"""
+function ItineraryRef(legs::Vector{LegKey})
+    isempty(legs) && return ItineraryRef()
+
+    # Flight chain: unique consecutive flight IDs joined with /
+    flt_ids = String[]
+    prev_flt = ""
+    for k in legs
+        fid = flight_id(k)
+        if fid != prev_flt
+            push!(flt_ids, fid)
+            prev_flt = fid
+        end
+    end
+    flights = join(flt_ids, "/")
+
+    # Stops: origin of each leg + destination of last leg, deduplicated consecutively
+    stops = String[]
+    for k in legs
+        s = strip(String(k.org))
+        (isempty(stops) || stops[end] != s) && push!(stops, s)
+    end
+    push!(stops, strip(String(legs[end].dst)))
+
+    origin = stops[1]
+    destination = stops[end]
+    num_stops = max(0, length(stops) - 2)  # intermediate stations
+
+    ItineraryRef(
+        legs        = legs,
+        flights     = flights,
+        stops       = stops,
+        num_stops   = num_stops,
+        origin      = origin,
+        destination = destination,
+    )
+end
+
 """
     `segment_id(r::LegRecord)::String`
 

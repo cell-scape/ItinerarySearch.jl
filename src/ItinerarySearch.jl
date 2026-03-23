@@ -54,7 +54,7 @@ export InterlineMode, INTERLINE_ONLINE, INTERLINE_CODESHARE, INTERLINE_ALL
 export parse_mct_status, MCT_DEFAULTS
 
 # Exports — record types
-export LegKey, LegRecord, StationRecord, MCTResult, SegmentRecord
+export LegKey, ItineraryRef, LegRecord, StationRecord, MCTResult, SegmentRecord
 export flight_id, segment_id, full_id
 export pack_date, unpack_date
 

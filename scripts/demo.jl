@@ -175,8 +175,8 @@ for day_offset in 0:(n_days - 1)
                 n_rows = 0
                 open(fname, "w") do io
                     println(io, psv_header)
-                    for (itn_idx, itn) in enumerate(itineraries)
-                        for (leg_pos, k) in enumerate(itn)
+                    for (itn_idx, itn_ref) in enumerate(itineraries)
+                        for (leg_pos, k) in enumerate(itn_ref.legs)
                             println(io, join([itn_idx, leg_pos,
                                               Int(k.row_number), Int(k.record_serial),
                                               strip(String(k.airline)), Int(k.flt_no),

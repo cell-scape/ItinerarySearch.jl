@@ -613,7 +613,7 @@ end
 # ── Compact itinerary leg index ──────────────────────────────────────────────
 
 """
-    `function itinerary_legs(stations, origin, dest, date, ctx)::Vector{Vector{LegKey}}`
+    `function itinerary_legs(stations, origin, dest, date, ctx)::Vector{ItineraryRef}`
 ---
 
 # Description
@@ -629,7 +629,7 @@ end
 5. `ctx::RuntimeContext`: search context
 
 # Returns
-- `::Vector{Vector{LegKey}}`: one inner vector per itinerary, each containing the
+- `::Vector{ItineraryRef}`: one inner vector per itinerary, each containing the
   `LegKey` references for its legs in route order. Itinerary index = position in
   the outer vector. Leg position = position in the inner vector.
 """
@@ -639,7 +639,7 @@ function itinerary_legs(
     dest::StationCode,
     date::Date,
     ctx::RuntimeContext,
-)::Vector{Vector{LegKey}}
+)::Vector{ItineraryRef}
     itineraries = copy(search_itineraries(stations, origin, dest, date, ctx))
 
     # Filter to itineraries whose first leg operates on the requested date
@@ -662,8 +662,8 @@ function itinerary_legs(
         push!(unique_itns, itn)
     end
 
-    # Extract LegKey sequences
-    result = Vector{LegKey}[]
+    # Extract LegKey sequences and wrap in ItineraryRef
+    result = ItineraryRef[]
     for itn in unique_itns
         keys = LegKey[]
         last_leg = nothing
@@ -679,7 +679,7 @@ function itinerary_legs(
                 last_leg = to_l
             end
         end
-        push!(result, keys)
+        push!(result, ItineraryRef(keys))
     end
     return result
 end
@@ -743,7 +743,7 @@ _to_dates(v::AbstractVector) = Date[d for d in v]
 - `cross::Bool=false`: when true, search all origins × all destinations; when false, pair them
 
 # Returns
-- Nested `Dict{Date, Dict{String, Dict{String, Vector{Vector{LegKey}}}}}` keyed by date → origin → destination
+- Nested `Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}}` keyed by date → origin → destination
 
 # Examples
 ```julia
@@ -804,7 +804,7 @@ function itinerary_legs_multi(
         end
     end
 
-    result = Dict{Date, Dict{String, Dict{String, Vector{Vector{LegKey}}}}}()
+    result = Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}}()
     for date in ds
         for (org, dst) in od_pairs
             haskey(stations, org) || continue
@@ -814,10 +814,10 @@ function itinerary_legs_multi(
             org_s = strip(String(org))
             dst_s = strip(String(dst))
             date_dict = get!(result, date) do
-                Dict{String, Dict{String, Vector{Vector{LegKey}}}}()
+                Dict{String, Dict{String, Vector{ItineraryRef}}}()
             end
             org_dict = get!(date_dict, org_s) do
-                Dict{String, Vector{Vector{LegKey}}}()
+                Dict{String, Vector{ItineraryRef}}()
             end
             org_dict[dst_s] = legs
         end
@@ -831,17 +831,17 @@ function itinerary_legs_multi(
     od_pairs::Vector{Tuple{StationCode,StationCode,Date}},
     ctx::RuntimeContext,
 )
-    result = Dict{Date, Dict{String, Dict{String, Vector{Vector{LegKey}}}}}()
+    result = Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}}()
     for (org, dst, date) in od_pairs
         legs = itinerary_legs(stations, org, dst, date, ctx)
         isempty(legs) && continue
         org_s = strip(String(org))
         dst_s = strip(String(dst))
         date_dict = get!(result, date) do
-            Dict{String, Dict{String, Vector{Vector{LegKey}}}}()
+            Dict{String, Dict{String, Vector{ItineraryRef}}}()
         end
         org_dict = get!(date_dict, org_s) do
-            Dict{String, Vector{Vector{LegKey}}}()
+            Dict{String, Vector{ItineraryRef}}()
         end
         org_dict[dst_s] = legs
     end
@@ -868,7 +868,7 @@ function _legkey_to_dict(k::LegKey)::Dict{String,Any}
     )
 end
 
-function _nested_to_json(nested::Dict{Date, Dict{String, Dict{String, Vector{Vector{LegKey}}}}})::String
+function _nested_to_json(nested::Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}})::String
     json_root = Dict{String,Any}()
     for (date, org_dict) in nested
         json_date = Dict{String,Any}()
@@ -876,7 +876,14 @@ function _nested_to_json(nested::Dict{Date, Dict{String, Dict{String, Vector{Vec
             json_org = Dict{String,Any}()
             for (dst, itineraries) in dst_dict
                 json_org[dst] = [
-                    [_legkey_to_dict(k) for k in itn]
+                    Dict{String,Any}(
+                        "flights"     => itn.flights,
+                        "stops"       => itn.stops,
+                        "num_stops"   => itn.num_stops,
+                        "origin"      => itn.origin,
+                        "destination" => itn.destination,
+                        "legs"        => [_legkey_to_dict(k) for k in itn.legs],
+                    )
                     for itn in itineraries
                 ]
             end
