@@ -68,6 +68,7 @@ using Dates
     include("test_builder.jl")
     include("test_formats.jl")
     include("test_integration_graph.jl")
+    include("test_instrumentation.jl")
 
     @testset "SSIM Parsing Helpers" begin
         using ItinerarySearch: parse_ddmonyy, parse_hhmm, parse_frequency_bitmask
