@@ -642,6 +642,10 @@ function itinerary_legs(
     ctx::RuntimeContext,
 )::Vector{NamedTuple}
     itineraries = copy(search_itineraries(stations, origin, dest, date, ctx))
+
+    # Sort by stops (ascending), then elapsed time, then total distance
+    sort!(itineraries; by=itn -> (itn.num_stops, itn.elapsed_time, itn.total_distance))
+
     rows = NamedTuple[]
     for (itn_idx, itn) in enumerate(itineraries)
         # Extract unique legs in route order.
