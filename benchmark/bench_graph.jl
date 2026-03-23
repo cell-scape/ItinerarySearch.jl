@@ -220,14 +220,37 @@ function bench_mct_lookup(graph)
     println("\n── MCT Lookup ──")
     lookup = graph.mct_lookup
 
-    # Typical lookup
-    lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"), StationCode("ORD"), MCT_DD)
-    b = @be lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"), StationCode("ORD"), MCT_DD)
+    # Typical lookup (dual-station signature)
+    lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"),
+               StationCode("ORD"), StationCode("ORD"), MCT_DD)
+    b = @be lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"),
+                        StationCode("ORD"), StationCode("ORD"), MCT_DD)
     print("  Station standard (ORD DD): ")
     display(b)
 
     # Global default fallback
-    b = @be lookup_mct(lookup, AirlineCode("XX"), AirlineCode("XX"), StationCode("ZZZ"), MCT_II)
+    b = @be lookup_mct(lookup, AirlineCode("XX"), AirlineCode("XX"),
+                        StationCode("ZZZ"), StationCode("ZZZ"), MCT_II)
     print("  Global default fallback: ")
+    display(b)
+
+    # Inter-station default (different arr/dep stations)
+    b = @be lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"),
+                        StationCode("JFK"), StationCode("EWR"), MCT_II)
+    print("  Inter-station default (JFK→EWR): ")
+    display(b)
+
+    # Full SSIM8 kwargs (codeshare, flight range, aircraft type, geography)
+    b = @be lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"),
+                        StationCode("ORD"), StationCode("ORD"), MCT_DD;
+                        arr_body='W', dep_body='N',
+                        arr_is_codeshare=false, dep_is_codeshare=false,
+                        arr_acft_type=InlineString7("789"), dep_acft_type=InlineString7("738"),
+                        arr_flt_no=FlightNumber(1234), dep_flt_no=FlightNumber(567),
+                        prv_country=InlineString3("GB"), nxt_country=InlineString3("US"),
+                        prv_state=InlineString3(""), nxt_state=InlineString3("IL"),
+                        prv_region=InlineString3("EUR"), nxt_region=InlineString3("NOA"),
+                        target_date=UInt32(20260615))
+    print("  Full SSIM8 kwargs: ")
     display(b)
 end

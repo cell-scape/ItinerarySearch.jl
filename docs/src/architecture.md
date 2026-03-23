@@ -54,13 +54,13 @@ A SQL post-ingest pipeline runs inside DuckDB to join codeshare data, build the 
 2. Creates one `GraphLeg` node per schedule row and links each leg to its origin and destination station nodes
 3. Gap-fills missing leg distances using the configured geodesic formula (haversine or Vincenty)
 4. Groups legs into `GraphSegment` nodes by segment hash; resolves codeshare / operating carrier per segment
-5. Materializes the `MCTLookup` in memory from the DuckDB `mct` table
+5. Materializes the `MCTLookup` in memory from the DuckDB `mct` table, keyed by `(arr_station, dep_station)` pairs for inter-station MCT support
 
 ### Stage 3: Connection Building
 
 `build_connections!` makes an O(n²) pass over departing and arriving legs at each station. For every arriving-leg / departing-leg pair at a station, it runs the connection rule chain:
 
-- `MCTRule` — minimum connecting time from the SSIM8 cascade
+- `MCTRule` — minimum connecting time from the SSIM8 cascade (passes full context: codeshare status, operating carrier, equipment, flight number, geography, target date)
 - `MAFTRule` — maximum aircraft flow time (connection window upper bound)
 - `CircuityRule` — per-leg circuity ratio
 - `check_cnx_scope` — domestic / international scope filter
@@ -138,12 +138,14 @@ classDiagram
     }
     class ItineraryRef {
         +legs: Vector~LegKey~
-        +flights: String
-        +route: String
         +num_stops: Int
         +elapsed_minutes: Int32
+        +flight_minutes: Int32
+        +layover_minutes: Int32
         +distance_miles: Float32
         +circuity: Float32
+        +flights_str() String
+        +route_str() String
     }
     class GraphStation {
         +code: StationCode
@@ -195,7 +197,7 @@ classDiagram
 
 The type system splits into two layers:
 
-**Record layer** — Immutable, `isbits` structs used as the DuckDB↔Julia bridge. `LegRecord` is the canonical 41-field schedule record. `LegKey` is a compact cross-reference carrying only identity fields. `ItineraryRef` is a serializable summary with an ordered `Vector{LegKey}` — suitable for cross-system handoff and reaccommodation candidate lists without carrying graph pointers.
+**Record layer** — Immutable, `isbits` structs used as the DuckDB↔Julia bridge. `LegRecord` is the canonical 41-field schedule record. `LegKey` is a compact cross-reference carrying only identity fields. `ItineraryRef` is a serializable summary with an ordered `Vector{LegKey}` and numeric aggregates (elapsed, flight, layover minutes, distance, circuity) — display strings like `flights_str()` and `route_str()` are derived on demand to minimize allocations. Suitable for cross-system handoff and reaccommodation candidate lists without carrying graph pointers.
 
 **Graph layer** — Mutable, pointer-linked structs forming the in-memory network. `GraphStation`, `GraphLeg`, and `GraphConnection` are linked by direct object references for zero-cost traversal during DFS. `Itinerary` and `Trip` aggregate graph edges into the search result containers.
 
@@ -210,7 +212,7 @@ Domain string types (`StationCode`, `AirlineCode`, `FlightNumber`) are type alia
 ```julia
 const StationCode = InlineString7   # "ORD", "LHR", etc.
 const AirlineCode = InlineString3   # "UA", "LH", etc.
-const FlightNumber = UInt16         # 774, 3612, etc.
+const FlightNumber = Int16          # 774, 3612, etc.
 ```
 
 ### CEnum enums

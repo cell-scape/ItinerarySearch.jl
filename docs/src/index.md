@@ -7,7 +7,7 @@ ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Ti
 ## Features
 
 - **SSIM ingest** — streaming fixed-width parser for OAG/SSIM Type 1-5 records, with EDF expansion, codeshare (DEI 50) resolution, and segment building
-- **MCT lookup** — SSIM8 specificity cascade with station-standard, exception, and global-default fallback tiers
+- **MCT lookup** — Full SSIM8 Chapter 8 matching with 29-level specificity cascade, codeshare indicators, aircraft type, flight number ranges, state geography, date validity, suppression geography, and inter-station (multi-airport city) support
 - **Graph-based connection building** — O(n²) rule-chain pass producing `GraphConnection` edges at every station
 - **DFS search with pruning** — depth-first traversal with elapsed-time, circuity, direction, and stop-count pruning; optional Layer 1 one-stop pre-computation
 - **Trip search with scoring** — multi-leg trip pairing with configurable weighted scoring

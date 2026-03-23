@@ -81,23 +81,25 @@ refs = itinerary_legs(
 println("Found $(length(refs)) itineraries")
 
 for (i, ref) in enumerate(refs[1:min(5, length(refs))])
-    println("  $i. $(ref.route) — $(ref.num_stops) stops, $(ref.elapsed_minutes) min")
+    println("  $i. $(route_str(ref)) — $(ref.num_stops) stops, $(ref.elapsed_minutes) min")
 end
 ```
 
 Each `ItineraryRef` contains:
 
-| Field | Description |
+| Field / Accessor | Description |
 |-------|-------------|
 | `legs` | `Vector{LegKey}` — ordered leg references |
-| `flights` | Human-readable flight chain, e.g., `"UA 920"` or `"UA4247 -> UA 284"` |
-| `route` | Station chain, e.g., `"ORD -> LHR"` or `"ORD -> EWR -> LHR"` |
 | `num_stops` | Number of intermediate stops (0 = nonstop) |
 | `elapsed_minutes` | Total elapsed time (minutes, UTC-corrected) |
 | `flight_minutes` | Total in-flight block time (minutes) |
 | `layover_minutes` | Total ground time at connect points (minutes) |
-| `distance_miles` | Total flown distance (miles) |
+| `distance_miles` | Total flown distance (statute miles) |
 | `circuity` | Ratio of flown distance to great-circle distance |
+| `flights_str(ref)` | Human-readable flight chain, e.g., `"UA 920"` or `"UA4247 -> UA 284"` |
+| `route_str(ref)` | Station chain, e.g., `"ORD -> LHR"` or `"ORD -> EWR -> LHR"` |
+| `origin(ref)` | Origin station code (first leg's org) |
+| `destination(ref)` | Destination station code (last leg's dst) |
 
 ### Multiple O-D Pairs (Keyword Interface)
 
@@ -178,10 +180,15 @@ JSON structure:
         {
           "flights": "UA 920",
           "route": "ORD -> LHR",
+          "origin": "ORD",
+          "destination": "LHR",
+          "stops": ["ORD", "LHR"],
           "num_stops": 0,
           "elapsed_minutes": 480,
+          "flight_minutes": 465,
+          "layover_minutes": 0,
           "distance_miles": 3958.0,
-          "circuity": 1.01,
+          "circuity": 1.0,
           "legs": [
             {
               "row_number": 8234,
