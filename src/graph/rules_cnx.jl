@@ -267,6 +267,29 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
     cp.mct_result = result
     cp.mct = result.time
 
+    # ── Tier 1: MCT cascade instrumentation ──────────────────────────────────
+    bs = ctx.build_stats
+    bs.mct_lookups += 1
+    if result.suppressed
+        bs.mct_suppressions += 1
+    elseif result.source == SOURCE_EXCEPTION
+        bs.mct_exceptions += 1
+    elseif result.source == SOURCE_STATION_STANDARD
+        bs.mct_standards += 1
+    elseif result.source == SOURCE_GLOBAL_DEFAULT
+        bs.mct_defaults += 1
+    end
+    # Histogram and average for non-suppressed lookups
+    if !result.suppressed
+        bucket = clamp(div(Int(result.time), 10) + 1, 1, 48)
+        bs.mct_time_hist[bucket] += 1
+        n_nonsup = bs.mct_lookups - bs.mct_suppressions
+        if n_nonsup > 0
+            bs.mct_avg_time = bs.mct_avg_time * (n_nonsup - 1) / n_nonsup +
+                              Float64(result.time) / n_nonsup
+        end
+    end
+
     # Apply min MCT override from constraints
     if ctx.constraints.defaults.min_mct_override != NO_MINUTES
         cp.mct = max(cp.mct, ctx.constraints.defaults.min_mct_override)
