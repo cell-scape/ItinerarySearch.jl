@@ -234,7 +234,7 @@ end
 # ── Field matching ────────────────────────────────────────────────────────────
 
 """
-    `function _mct_record_matches(rec::MCTRecord, arr_carrier, dep_carrier, arr_body, dep_body, prv_stn, nxt_stn, arr_term, dep_term, prv_country, nxt_country, arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare, arr_acft_type, dep_acft_type, arr_flt_no, dep_flt_no, prv_state, nxt_state)::Bool`
+    `function _mct_record_matches(rec::MCTRecord, arr_carrier, dep_carrier, arr_body, dep_body, prv_stn, nxt_stn, arr_term, dep_term, prv_country, nxt_country, arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare, arr_acft_type, dep_acft_type, arr_flt_no, dep_flt_no, prv_state, nxt_state, prv_region, nxt_region)::Bool`
 ---
 
 # Description
@@ -268,6 +268,8 @@ end
 19. `dep_flt_no::FlightNumber`: departing flight number
 20. `prv_state::InlineString3`: state/province of arriving flight's origin
 21. `nxt_state::InlineString3`: state/province of departing flight's destination
+22. `prv_region::InlineString3`: IATA region of arriving flight's origin
+23. `nxt_region::InlineString3`: IATA region of departing flight's destination
 
 # Returns
 - `::Bool`: `true` if all specified fields match
@@ -294,6 +296,8 @@ end
     dep_flt_no::FlightNumber,
     prv_state::InlineString3,
     nxt_state::InlineString3,
+    prv_region::InlineString3 = InlineString3(""),
+    nxt_region::InlineString3 = InlineString3(""),
 )::Bool
     sp = rec.specified
     sp == UInt32(0) && return true   # fast path: pure wildcard record
@@ -305,7 +309,10 @@ end
     (sp & MCT_BIT_NXT_STN)     != 0 && rec.nxt_stn     != nxt_stn     && return false
     (sp & MCT_BIT_ARR_TERM)    != 0 && rec.arr_term    != arr_term    && return false
     (sp & MCT_BIT_DEP_TERM)    != 0 && rec.dep_term    != dep_term    && return false
-    # Region matching: deferred to Task 4 (no region arg passed yet); treat as wildcard
+
+    # Region matching
+    (sp & MCT_BIT_PRV_REGION) != 0 && rec.prv_region != prv_region && return false
+    (sp & MCT_BIT_NXT_REGION) != 0 && rec.nxt_region != nxt_region && return false
 
     # Codeshare matching: 'Y' means MCT applies to codeshare flights
     if (sp & MCT_BIT_DEP_CS_IND) != 0
@@ -337,7 +344,7 @@ end
     (sp & MCT_BIT_PRV_STATE) != 0 && rec.prv_state != prv_state && return false
     (sp & MCT_BIT_NXT_STATE) != 0 && rec.nxt_state != nxt_state && return false
 
-    # Country matching (fixed — was incorrectly comparing against carrier)
+    # Country matching
     (sp & MCT_BIT_PRV_COUNTRY) != 0 && rec.prv_country != prv_country && return false
     (sp & MCT_BIT_NXT_COUNTRY) != 0 && rec.nxt_country != nxt_country && return false
 
@@ -360,6 +367,8 @@ end
   3. Station standard record — the generic station-level default
   4. Global default — `lookup.global_defaults[Int(status)]`
 - The `status` integer value (1–4) directly indexes the `NTuple` of record vectors
+- Records outside their `eff_date`/`dis_date` window are skipped when
+  `target_date != 0`; suppression geography scope is applied to Pass 2
 
 # Arguments
 1. `lookup::MCTLookup`: the populated in-memory lookup structure
@@ -375,6 +384,21 @@ end
 - `nxt_stn::StationCode=NO_STATION`: destination of departing flight
 - `arr_term::InlineString3=InlineString3("")`: arrival terminal
 - `dep_term::InlineString3=InlineString3("")`: departure terminal
+- `arr_op_carrier::AirlineCode=NO_AIRLINE`: operating carrier of arriving flight (codeshare)
+- `dep_op_carrier::AirlineCode=NO_AIRLINE`: operating carrier of departing flight (codeshare)
+- `arr_is_codeshare::Bool=false`: true if arriving flight is a codeshare
+- `dep_is_codeshare::Bool=false`: true if departing flight is a codeshare
+- `arr_acft_type::InlineString7=InlineString7("")`: arriving aircraft IATA type code
+- `dep_acft_type::InlineString7=InlineString7("")`: departing aircraft IATA type code
+- `arr_flt_no::FlightNumber=FlightNumber(0)`: arriving flight number
+- `dep_flt_no::FlightNumber=FlightNumber(0)`: departing flight number
+- `prv_country::InlineString3=InlineString3("")`: country of arriving flight's origin
+- `nxt_country::InlineString3=InlineString3("")`: country of departing flight's destination
+- `prv_state::InlineString3=InlineString3("")`: state/province of arriving flight's origin
+- `nxt_state::InlineString3=InlineString3("")`: state/province of departing flight's destination
+- `prv_region::InlineString3=InlineString3("")`: IATA region of arriving flight's origin
+- `nxt_region::InlineString3=InlineString3("")`: IATA region of departing flight's destination
+- `target_date::UInt32=UInt32(0)`: connection date packed as YYYYMMDD; 0 disables date filtering
 
 # Returns
 - `::MCTResult`: MCT time, source label, specificity score, and suppression flag
@@ -394,12 +418,33 @@ function lookup_mct(
     dep_carrier::AirlineCode,
     station::StationCode,
     status::MCTStatus;
+    # Existing
     arr_body::Char = ' ',
     dep_body::Char = ' ',
     prv_stn::StationCode = NO_STATION,
     nxt_stn::StationCode = NO_STATION,
     arr_term::InlineString3 = InlineString3(""),
     dep_term::InlineString3 = InlineString3(""),
+    # New — codeshare
+    arr_op_carrier::AirlineCode = NO_AIRLINE,
+    dep_op_carrier::AirlineCode = NO_AIRLINE,
+    arr_is_codeshare::Bool = false,
+    dep_is_codeshare::Bool = false,
+    # New — aircraft
+    arr_acft_type::InlineString7 = InlineString7(""),
+    dep_acft_type::InlineString7 = InlineString7(""),
+    # New — flight numbers
+    arr_flt_no::FlightNumber = FlightNumber(0),
+    dep_flt_no::FlightNumber = FlightNumber(0),
+    # New — geography
+    prv_country::InlineString3 = InlineString3(""),
+    nxt_country::InlineString3 = InlineString3(""),
+    prv_state::InlineString3 = InlineString3(""),
+    nxt_state::InlineString3 = InlineString3(""),
+    prv_region::InlineString3 = InlineString3(""),
+    nxt_region::InlineString3 = InlineString3(""),
+    # New — date validity
+    target_date::UInt32 = UInt32(0),
 )::MCTResult
     status_idx = Int(status)   # 1=DD, 2=DI, 3=ID, 4=II
 
@@ -424,15 +469,20 @@ function lookup_mct(
     for rec in records
         rec.station_standard && continue   # skip standard records in this pass
         rec.suppressed && continue         # skip suppression records in this pass
+        # Date validity — skip records outside their effective window
+        if rec.eff_date != UInt32(0) && target_date != UInt32(0)
+            (target_date < rec.eff_date || target_date > rec.dis_date) && continue
+        end
         _mct_record_matches(
             rec, arr_carrier, dep_carrier, arr_body, dep_body,
             prv_stn, nxt_stn, arr_term, dep_term,
-            InlineString3(""), InlineString3(""),
-            NO_AIRLINE, NO_AIRLINE,
-            false, false,
-            InlineString7(""), InlineString7(""),
-            FlightNumber(0), FlightNumber(0),
-            InlineString3(""), InlineString3(""),
+            prv_country, nxt_country,
+            arr_op_carrier, dep_op_carrier,
+            arr_is_codeshare, dep_is_codeshare,
+            arr_acft_type, dep_acft_type,
+            arr_flt_no, dep_flt_no,
+            prv_state, nxt_state,
+            prv_region, nxt_region,
         ) || continue
         return MCTResult(
             time           = rec.time,
@@ -448,16 +498,34 @@ function lookup_mct(
     # ── Pass 2: suppressions ─────────────────────────────────────────────────
     for rec in records
         rec.suppressed || continue
+        # Date validity — skip records outside their effective window
+        if rec.eff_date != UInt32(0) && target_date != UInt32(0)
+            (target_date < rec.eff_date || target_date > rec.dis_date) && continue
+        end
         _mct_record_matches(
             rec, arr_carrier, dep_carrier, arr_body, dep_body,
             prv_stn, nxt_stn, arr_term, dep_term,
-            InlineString3(""), InlineString3(""),
-            NO_AIRLINE, NO_AIRLINE,
-            false, false,
-            InlineString7(""), InlineString7(""),
-            FlightNumber(0), FlightNumber(0),
-            InlineString3(""), InlineString3(""),
+            prv_country, nxt_country,
+            arr_op_carrier, dep_op_carrier,
+            arr_is_codeshare, dep_is_codeshare,
+            arr_acft_type, dep_acft_type,
+            arr_flt_no, dep_flt_no,
+            prv_state, nxt_state,
+            prv_region, nxt_region,
         ) || continue
+        # Suppression geography scope — only suppress if connection matches scope
+        _supp_rgn = strip(String(rec.supp_region))
+        _supp_ctry = strip(String(rec.supp_country))
+        _supp_st = strip(String(rec.supp_state))
+        if !isempty(_supp_rgn)
+            _supp_rgn != strip(String(prv_region)) && _supp_rgn != strip(String(nxt_region)) && continue
+        end
+        if !isempty(_supp_ctry)
+            _supp_ctry != strip(String(prv_country)) && _supp_ctry != strip(String(nxt_country)) && continue
+        end
+        if !isempty(_supp_st)
+            _supp_st != strip(String(prv_state)) && _supp_st != strip(String(nxt_state)) && continue
+        end
         return MCTResult(
             time           = Minutes(0),
             queried_status = status,
@@ -472,6 +540,10 @@ function lookup_mct(
     # ── Pass 3: station standard ──────────────────────────────────────────────
     for rec in records
         rec.station_standard || continue
+        # Date validity — skip records outside their effective window
+        if rec.eff_date != UInt32(0) && target_date != UInt32(0)
+            (target_date < rec.eff_date || target_date > rec.dis_date) && continue
+        end
         # Station standards are wildcards by definition; skip match check.
         return MCTResult(
             time           = rec.time,
@@ -539,6 +611,39 @@ function _build_mct_record(r)::Tuple{StationCode, MCTStatus, MCTRecord}
     arr_body_str    = strip(_safe_string(r.arr_acft_body))
     dep_body_str    = strip(_safe_string(r.dep_acft_body))
 
+    # New fields — codeshare indicators
+    arr_cs_ind_val  = _first_char(r.arr_cs_ind, ' ')
+    dep_cs_ind_val  = _first_char(r.dep_cs_ind, ' ')
+    arr_cs_op_str   = strip(_safe_string(r.arr_cs_op_carrier))
+    dep_cs_op_str   = strip(_safe_string(r.dep_cs_op_carrier))
+
+    # New fields — aircraft type
+    arr_acft_type_str = strip(_safe_string(r.arr_acft_type))
+    dep_acft_type_str = strip(_safe_string(r.dep_acft_type))
+
+    # New fields — flight number ranges
+    arr_flt_start = Int16(_safe_missing(r.arr_flt_rng_start, 0))
+    arr_flt_end   = Int16(_safe_missing(r.arr_flt_rng_end, 0))
+    dep_flt_start = Int16(_safe_missing(r.dep_flt_rng_start, 0))
+    dep_flt_end   = Int16(_safe_missing(r.dep_flt_rng_end, 0))
+
+    # New fields — state geography
+    prv_state_str = strip(_safe_string(r.prv_state))
+    nxt_state_str = strip(_safe_string(r.nxt_state))
+
+    # New fields — effective/discontinue dates (DuckDB DATE columns)
+    eff_val  = _safe_missing(r.eff_date, nothing)
+    dis_val  = _safe_missing(r.dis_date, nothing)
+    eff_packed = eff_val === nothing ? UInt32(0) :
+        pack_date(eff_val isa DateTime ? Date(eff_val) : Date(eff_val))
+    dis_packed = dis_val === nothing ? UInt32(0) :
+        pack_date(dis_val isa DateTime ? Date(dis_val) : Date(dis_val))
+
+    # New fields — suppression geography
+    supp_rgn_str  = strip(_safe_string(r.supp_rgn))
+    supp_ctry_str = strip(_safe_string(r.supp_ctry))
+    supp_st_str   = strip(_safe_string(r.supp_state))
+
     # Build specified bitmask
     sp = UInt32(0)
     !isempty(arr_carrier_str) && (sp |= MCT_BIT_ARR_CARRIER)
@@ -553,6 +658,16 @@ function _build_mct_record(r)::Tuple{StationCode, MCTStatus, MCTRecord}
     !isempty(nxt_rgn_str)     && (sp |= MCT_BIT_NXT_REGION)
     !isempty(arr_body_str)    && (sp |= MCT_BIT_ARR_BODY)
     !isempty(dep_body_str)    && (sp |= MCT_BIT_DEP_BODY)
+    arr_cs_ind_val != ' '     && (sp |= MCT_BIT_ARR_CS_IND)
+    !isempty(arr_cs_op_str)   && (sp |= MCT_BIT_ARR_CS_OP)
+    dep_cs_ind_val != ' '     && (sp |= MCT_BIT_DEP_CS_IND)
+    !isempty(dep_cs_op_str)   && (sp |= MCT_BIT_DEP_CS_OP)
+    !isempty(arr_acft_type_str) && (sp |= MCT_BIT_ARR_ACFT_TYPE)
+    !isempty(dep_acft_type_str) && (sp |= MCT_BIT_DEP_ACFT_TYPE)
+    arr_flt_start != Int16(0) && (sp |= MCT_BIT_ARR_FLT_RNG)
+    dep_flt_start != Int16(0) && (sp |= MCT_BIT_DEP_FLT_RNG)
+    !isempty(prv_state_str)   && (sp |= MCT_BIT_PRV_STATE)
+    !isempty(nxt_state_str)   && (sp |= MCT_BIT_NXT_STATE)
 
     mct_id_val = Int32(_safe_missing(r.mct_id, 0))
 
@@ -569,6 +684,23 @@ function _build_mct_record(r)::Tuple{StationCode, MCTStatus, MCTRecord}
         nxt_region     = InlineString3(isempty(nxt_rgn_str) ? "" : nxt_rgn_str),
         arr_body       = isempty(arr_body_str) ? ' ' : arr_body_str[1],
         dep_body       = isempty(dep_body_str) ? ' ' : dep_body_str[1],
+        arr_cs_ind        = arr_cs_ind_val,
+        arr_cs_op_carrier = isempty(arr_cs_op_str) ? NO_AIRLINE : AirlineCode(arr_cs_op_str),
+        dep_cs_ind        = dep_cs_ind_val,
+        dep_cs_op_carrier = isempty(dep_cs_op_str) ? NO_AIRLINE : AirlineCode(dep_cs_op_str),
+        arr_acft_type  = InlineString7(isempty(arr_acft_type_str) ? "" : arr_acft_type_str),
+        dep_acft_type  = InlineString7(isempty(dep_acft_type_str) ? "" : dep_acft_type_str),
+        arr_flt_rng_start = FlightNumber(arr_flt_start),
+        arr_flt_rng_end   = FlightNumber(arr_flt_end),
+        dep_flt_rng_start = FlightNumber(dep_flt_start),
+        dep_flt_rng_end   = FlightNumber(dep_flt_end),
+        prv_state      = InlineString3(isempty(prv_state_str) ? "" : prv_state_str),
+        nxt_state      = InlineString3(isempty(nxt_state_str) ? "" : nxt_state_str),
+        eff_date       = eff_packed,
+        dis_date       = dis_packed,
+        supp_region    = InlineString3(isempty(supp_rgn_str) ? "" : supp_rgn_str),
+        supp_country   = InlineString3(isempty(supp_ctry_str) ? "" : supp_ctry_str),
+        supp_state     = InlineString3(isempty(supp_st_str) ? "" : supp_st_str),
         specified      = sp,
         time           = Int16(_safe_missing(r.time_minutes, 0)),
         suppressed     = Bool(_safe_missing(r.suppress, false)),
@@ -592,6 +724,23 @@ function _build_mct_record(r)::Tuple{StationCode, MCTStatus, MCTRecord}
         nxt_region     = rec_partial.nxt_region,
         arr_body       = rec_partial.arr_body,
         dep_body       = rec_partial.dep_body,
+        arr_cs_ind        = rec_partial.arr_cs_ind,
+        arr_cs_op_carrier = rec_partial.arr_cs_op_carrier,
+        dep_cs_ind        = rec_partial.dep_cs_ind,
+        dep_cs_op_carrier = rec_partial.dep_cs_op_carrier,
+        arr_acft_type  = rec_partial.arr_acft_type,
+        dep_acft_type  = rec_partial.dep_acft_type,
+        arr_flt_rng_start = rec_partial.arr_flt_rng_start,
+        arr_flt_rng_end   = rec_partial.arr_flt_rng_end,
+        dep_flt_rng_start = rec_partial.dep_flt_rng_start,
+        dep_flt_rng_end   = rec_partial.dep_flt_rng_end,
+        prv_state      = rec_partial.prv_state,
+        nxt_state      = rec_partial.nxt_state,
+        eff_date       = rec_partial.eff_date,
+        dis_date       = rec_partial.dis_date,
+        supp_region    = rec_partial.supp_region,
+        supp_country   = rec_partial.supp_country,
+        supp_state     = rec_partial.supp_state,
         specified      = sp,
         time           = rec_partial.time,
         suppressed     = rec_partial.suppressed,
@@ -664,7 +813,13 @@ function materialize_mct_lookup(
             arr_term, dep_term,
             prv_stn, nxt_stn,
             prv_ctry, nxt_ctry,
-            prv_rgn, nxt_rgn
+            prv_rgn, nxt_rgn,
+            arr_cs_ind, arr_cs_op_carrier, dep_cs_ind, dep_cs_op_carrier,
+            arr_acft_type, dep_acft_type,
+            arr_flt_rng_start, arr_flt_rng_end, dep_flt_rng_start, dep_flt_rng_end,
+            prv_state, nxt_state,
+            eff_date, dis_date,
+            supp_rgn, supp_ctry, supp_state
         FROM mct
         WHERE (arr_stn IN ($quoted) OR dep_stn IN ($quoted))
           AND (suppress = true OR (
