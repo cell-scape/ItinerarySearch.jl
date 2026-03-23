@@ -1,5 +1,7 @@
 #!/usr/bin/env julia
 # benchmark/run_benchmarks.jl — One-button benchmark suite
+#
+# Usage: make bench
 
 using Dates
 
@@ -24,19 +26,27 @@ if isfile(config.ssim_path)
     stats = table_stats(store)
     println("  Legs: $(stats.legs), Stations: $(stats.stations), MCT: $(stats.mct)")
 
-    # Phase 3: Graph build
+    # Phase 3: Graph build + connection stats
     graph = bench_graph_build(store, config)
-
-    # Phase 4: Connection build stats
     bench_connection_build(store, config)
 
-    # Phase 5: Layer 1
-    bench_layer1(graph)
-
-    # Phase 6: Search (without and with Layer 1)
+    # Phase 4: DFS search
     bench_search(graph, store)
 
-    # Phase 7: Trip search
+    # Phase 5: itinerary_legs (primary output interface)
+    bench_itinerary_legs(graph, store)
+    bench_itinerary_legs_multi(graph, store)
+
+    # Phase 6: JSON serialization
+    bench_json_output(graph, store)
+
+    # Phase 7: Resolution
+    bench_resolve(graph, store)
+
+    # Phase 8: MCT lookup
+    bench_mct_lookup(graph)
+
+    # Phase 9: Trip search
     bench_trip_search(graph, store)
 
     close(store)

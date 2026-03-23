@@ -1,0 +1,514 @@
+ABF   ABB  Airbus A300-600ST Beluga (Freighter)      J     W    2878   544                        F                          
+ABF   ABF  Airbus A300 (Freighter)                   J     W    2920   570                        AFM                        
+ABF   ABX  Airbus A300B4/A300C4/A300F4 Freighter     J     W    2920   570                        F                          
+ABF   ABY  Airbus A300-600 Freighter                 J     W    2920   570                        F                          
+AB3   AB3  Airbus A300 Passenger                     J     W    2600   570              CGJS      F                          
+AB3   AB4  Airbus A300B2/B4 Passenger                J     W    2600   570              CGJS      F                          
+AB3   AB6  Airbus A300-600 Passenger                 J     W    2920   570              CGJS      F                          
+ACD   ACD  Twin (Aero) Commander/Turbo/Jetprop       P     N    1220   205              CGJS      F                          
+ACD   ACP  Twin Commander Aircraft                   P     N    1078   215              CGJS      F                          
+ACD   ACT  Twin (Aero) Turbo/Jetprop Commander       T     N    1078   215              CGJS      F                          
+AGH   AGH  AgustaWestland A109                       H     N    600    177              CGJS                                 
+AI4   AI4  AIRBUS Atlas                              T     W    2050   485              J         F                          
+ANF   ANF  Antonov An-12                             T     N    3500   480                        F                          
+AN4   AN4  Antonov An-24                             T     N    1715   280    LQ        CGJS      F                          
+AN6   AN6  Antonov An-26/30/32                       T     N    1400   270              CGJS      AF                         
+AN6   A26  Antonov An-26                             T     N    1553   270    Q         CGJS                                 
+AN6   A30  Antonov An-30                             T     N    1616   336              CGJS                                 
+AN6   A32  Antonov An-32                             T     N    1554   398              CGJS                                 
+AN7   AN7  Antonov An-72/74                          J     N    497    373    Q         CGJS      F                          
+APF   APF  BAE Systems ATP Freighter                 T     N    1134   308                        AFM                        
+APH   APH  Airbus Helicopters H215                   H     N    360    159              CGJS      F                          
+ARJ   ARJ  Avro RJ70/RJ85/RJ100                      J     N    2500   490              CGJS      F                          
+ARJ   AR1  Avro RJ100                                J     N    1721   486              CGJS      F                          
+ARJ   AR7  Avro RJ70                                 J     N    1427   482              CGJS      F                          
+ARJ   AR8  Avro RJ85                                 J     N    1427   482              CGJS      F                          
+ATF   ATF  ATR 72 (Freighter)                        T     N    949    316                        AFM                        
+ATP   ATP  British Aerospace ATP                     T     N    649    350              CGJS      F                          
+ATR   ATR  ATR42/ATR72                               T     N    1955   320    LQ        CGJRS     AF                         
+ATR   AT4  ATR 42                                    T     N    1149   310              CGJS      AF                         
+ATR   AT7  ATR 72                                    T     N    1955   320    Q         CGJRS     AF                         
+ATZ   ATZ  ATR 42 Freighter                          T     N    868    326                        F                          
+AWH   AWH  AgustaWestland AW139                      H     N    776    190              CGJS                                 
+AW6   AW6  AgustaWestland AW169                      H     N    510    190              CGJS      F                          
+AW8   AW8  AgustaWestland AW189                      H     N    490    173              CGJS                                 
+A22   A22  Antonov An-22                             T     N    3100   460              CGJS                                 
+A28   A28  Antonov An28/PZL Mielec M-28 Skytruck     T     N    848    205              CGJS      AF                         
+A38   A38  Antonov AN-38                             T     N    1087   252              CGJS                                 
+A4F   A4F  Antonov An-124 Ruslan                     J     W    5000   450                        F                          
+A40   A40  Antonov An-140                            T     N    1584   323              CGJS                                 
+A5F   A5F  Antonov An-225                            J     W    9569   528                        AFM                        
+A58   A58  Antonov An-158                            J     N    1553   520              CGJS                                 
+A78   A78  Antonov An-178                            J     N    1553   479              S                                    
+A81   A81  Antonov AN148-100                         J     N    2236   540              CGJS      AF                         
+BEC   BEC  Beechcraft (Light Aircraft)               P     N    1511   300    Q         CGJS      F                          
+BEC   BEP  Hawker Beechcraft (Light/single piston)   P     N    824    326              CGJS      F                          
+BEC   BET  Beechcraft (Lght Acft - Twin Turboprop)   T     N    1505   347              CGJS      F                          
+BEC   BE2  Beechcraft-Lght Acft-Twin Piston Engine   P     N    2140   325              CGJS      F                          
+BEF   BEF  Hawker Beechcraft 1900 (Freighter)        T     N    439    322                        AFM                        
+BE1   BEH  Beechcraft 1900D Airliner                 T     N    860    300              CGJS      F                          
+BE1   BES  Beechcraft 1900C Airliner                 T     N    860    300              CGJS      F                          
+BE1   BE1  Beechcraft 1900 Airliner                  T     N    860    300    Q         CGJS      F                          
+BE9   BE9  Beechcraft C99 Airliner                   T     N    1150   285              CGJS      F                          
+BH2   BH2  Bell (Helicopters)                        H     N    261    142    Q         CGJS      F                          
+BNI   BNI  Britten-Norman BN-2A/BN-2B Islander       P     N    1000   160              CGJS      FM                         
+BNT   BNT  Britten-Norman BN-2A Mk.III Trislander    P     N    1000   160              CGJS      FM                         
+BTA   BTA  Business Turbo-Prop Aircraft              T     N    0      0                CGJS      F                          
+BUS   BUS  Bus                                       S     N    700    100              U                                    
+B11   B11  British Aerospace (BAC) One-Eleven        J     N    2300   550              CGJS                                 
+B11   B12  British Aerospace (BAC) One-Eleven 200    J     N    2130   470              CGJS                                 
+B11   B13  British Aerospace (BAC) One-Eleven 300    J     N    2400   470              CGJS                                 
+B11   B14  British Aerospace (BAC) 1-11 400/475      J     N    2300   550              CGJS      F                          
+B11   B15  British Aerospace (BAC) 1-11 500/Rombac   J     N    2300   550              CGJS                                 
+CCJ   CCJ  Canadair CL-600/601/604/605/650           J     N    4077   542              CGJS                                 
+CCX   CCX  Bombardier BD-700 Global Exp/G5000/5500   J     N    5983   580              CGJS      F                          
+CC6   CC6  Bombardier Global 6000 / 6500             J     N    6904   690              CGJS                                 
+CC7   CC7  Bombardier Global 7000                    J     N    13705  618              CGJS      F                          
+CD2   CD2  Gippsland Aeronautics N22B/N24A Nomad     T     N    840    193    Q         CGJS      F                          
+CL3   CL3  Bombardier Challenger 300                 J     N    3567   554              CGJS      F                          
+CL5   CL5  Bombardier Challenger 350                 J     N    3682   554              CGJS      F                          
+CNA   CNA  Cessna (Light Aircraft)                   P     N    1450   240    Q         CGJS      F                          
+CNA   CNC  Cessna Light Aircraft(Single Turboprop)   T     N    1450   240    Q         CGJS      F                          
+CNA   CNT  Cessna Light Aircraft (Twin Turboprop)    T     N    1380   283              CGJS      F                          
+CNA   CN1  Cessna Light Acft(Single piston engine)   P     N    1242   149    Q         CGJS      F                          
+CNA   CN2  Cessna Light Acft (Twin piston engines)   P     N    1270   230              CGJS                                 
+CNF   CNF  Cessna 208B Caravan                       T     N    749    202              BGJ       F                          
+CNJ   CJL  Cessna 560 XL/XLS Citation                J     N    2138   507              CGJS      F                          
+CNJ   CJM  Cessna 510 Mustang Citation               J     N    1343   390              CGJS      F                          
+CNJ   CJS  CESSNA Citation Sovereign                 J     N    3666   528              CGJS                                 
+CNJ   CJT  Cessna Citation Latitude                  J     N    3279   513              CGJS                                 
+CNJ   CJX  Cessna 750 Citation X                     J     N    3700   604              CGJS      F                          
+CNJ   CJ1  Cessna 500/501/525/M2 Citation            J     N    1783   748              CGJS      F                          
+CNJ   CJ2  Cessna 550/551/552 Citation               J     N    2300   464              CGJS      F                          
+CNJ   CJ5  Cessna 560 Citation                       J     N    2257   495              CGJS      F                          
+CNJ   CJ6  Cessna 650 Citation                       J     N    2345   544              CGJS      F                          
+CNJ   CJ7  CESSNA 700 Citation Longitude             J     N    4027   556              CGJS                                 
+CNJ   CJ8  Cessna 680 Citation                       J     N    3280   513              CGJS      F                          
+CNJ   CNJ  Cessna Citation                           J     N    2800   540              CGJS      F                          
+CRF   CRF  Canadair Regional Jet Freighter           J     N    1864   534                        F                          
+CRJ   CRA  Canadair CRJ Series 705                   J     N    2371   515              CGJS                                 
+CRJ   CRJ  Canadair Regional Jet                     J     N    1866   550    Q         CGJS      F                          
+CRJ   CRK  Canadair (Bombardier) Regional Jet 1000   J     N    1866   550    Q         CGJS      F                          
+CRJ   CR1  Canadair Regional Jet 100                 J     N    1200   550    Q         CGJS                                 
+CRJ   CR2  Canadair Regional Jet 200                 J     N    2005   534              CGJS                                 
+CRJ   CR5  Bombardier Regional Jet 550               J     N    1150   0                CGJS      F                          
+CRJ   CR7  Canadair Regional Jet 700                 J     N    1586   500              CGJS      AF                         
+CRJ   CR9  Canadair Regional Jet 900                 J     N    1993   534    Q         CGJS      AF                         
+CS2   CS2  Casa C212/Nusantara NC-212 Aviocar        T     N    1400   220    Q         CGJS      F                          
+CS4   CS4  Cessna 408 SkyCourier                     T     W    459    229              CGJS                                 
+CS5   CS5  Casa/Nusantara CN-235                     T     N    2706   288              CGJS      F                          
+CS9   CS9  Casa / IAe C-295                          T     N    2300   358              CGJS      F                          
+CVF   CVF  Convair 440/580/600/640 (Freighter)       T     N    1280   300                        F                          
+CVF   CVV  Convair 240 (Freighter)                   P     N    1200   280                        AFM                        
+CVF   CVX  Convair 340/440 (Freighter)               P     N    1790   289                        AFM                        
+CVF   CVY  Convair 580/5800/600/640 (freighter)      T     N    2866   360                        AFM                        
+CVR   CVR  Convair 240/440/580 (Passenger)           P     N    2866   342    Q         CGJS      F                          
+CVR   CV2  Convair 240 (Passenger)                   P     N    1200   280              CGJS      F                          
+CVR   CV4  Convair 440 Metropolitan (Passenger)      P     N    2866   342              CGJS                                 
+CVR   CV5  Convair 580 Passenger                     T     N    2866   342              CGJS                                 
+CWC   CWC  Curtiss C-46 Commando                     P     N    1600   220              CGJS      F                          
+C17   C17  Boeing C17 Globemaster                    J     W    2785   515              CGJS      F                          
+C21   C21  Comac ARJ21                               J     N    2300   541              CGJS      F                          
+C21   C27  Comac ARJ21-700                           J     N    2300   541              CGJS      F                          
+C75   C75  Bombardier Global 7500                    J     N    6691   0                CGJS      F                          
+DC3   DC3  Boeing (Douglas) DC-3 Passenger           P     N    1330   207    Q         GJS       FM                         
+DC4   DC4  Boeing (Douglas) DC-4                     P     N    4250   280              CGJS      F                          
+DC6   DC6  Boeing (Douglas) DC-6B Passenger          P     N    3070   309              CGJS                                 
+DC8   DC8  Boeing (Douglas) DC-8 Passenger           J     N    6000   580    Q         CGJS      F                          
+DC8   D8L  Boeing (Douglas) DC-8-62 Passenger        J     N    6000   580              CGJS                                 
+DC8   D8Q  Boeing (Douglas) DC-8-72 Passenger        J     N    4605   556              CGJS      F                          
+DC9   DC9  Boeing (Douglas) DC-9 Passenger           J     N    1840   576              CGJS      M                          
+DC9   D91  Boeing (Douglas) DC-9-10 Passenger        J     N    1311   576              CGJS                                 
+DC9   D92  Boeing (Douglas) DC-9-20                  J     N    1840   576              CGJS                                 
+DC9   D93  Boeing (Douglas) DC9-30 Passenger         J     N    2280   575              CGJS                                 
+DC9   D94  Boeing (Douglas) DC9-40 Passenger         J     N    2130   575              CGJS                                 
+DC9   D95  Boeing (Douglas) DC9-50 Passenger         J     N    2516   575              CGJS      F                          
+DFL   DFL  Dassault Falcon                           J     N    3910   546              CGJS      F                          
+DFL   DF1  Dassault Falcon 10/100                    J     N    2212   566              CGJS      F                          
+DFL   DF2  Dassault Falcon 10/20/100/200/2000        J     N    2890   541              CGJS      F                          
+DFL   DF5  Dassault Falcon 50/50EX                   J     N    3538   630              CGJS      F                          
+DFL   DF7  Dassault Falcon 7X                        J     N    6846   594              CGJS      F                          
+DFL   DF8  Dassault Falcon 8X                        J     N    5604   594              CGJS      F                          
+DFL   DF9  Dassault Falcon 900s EASY                 J     N    4598   590              CGJS      F                          
+DFL   D2L  Dassault Falcon 2000EX/EASY/LX            J     N    3740   530              CGJS      F                          
+DFL   D20  Dassault Falcon 2000/2000DX               J     N    3740   530              CGJS      F                          
+DFL   D9L  Dassault Falcon 900LX                     J     N    4598   590              CGJS      F                          
+DHB   DHB  DHvilld-Bombardier DHC2 Bvr/Tb Bvr        T     N    1335   260              CGJS                                 
+DHB   DHP  DHvilld-Bombardier DHC2 Bvr               P     N    400    350    Q         CGJS      F                          
+DHB   DHR  De Havilland (Bombardier)DHC-2 Turbo      T     N    455    158              CGJS      F                          
+DHC   DHC  DHvilld-Bombardier DHC4 Caribou           P     N    1059   210    Q         CGJS      F                          
+DHD   DHD  British Aerospace(De Havilland)104 Dove   P     N    880    209              CGJS                                 
+DHF   DHF  De Havilland (Bombardier) DHC-8 Frt       T     N    1063   330                        AFM                        
+DHF   D3X  De Havilland DHC-8-300 Dash 8/8Q Frt      T     N    1063   330                        AFM                        
+DHF   D4X  De Havilland DHC-8-400 Dash 8Q-Freight    T     N    1281   402                        AFM                        
+DHH   DHH  British Aerospace(DeHavilland)114 Heron   P     N    500    195              CGJS      F                          
+DHO   DHL  DHvilld-Bombardier DHC3 Tb Otter          T     N    960    132              CGJS                                 
+DHO   DHO  DHvilld-Bombardier DHC3 Otter/Tb Ottr     P     N    960    132              CGJS      M                          
+DHO   DHS  DHvilld-Bombardier DHC3 Otter             P     N    960    132              CGJS                                 
+DHT   DHT  DHvilld-Bombardier DHC6 T/Otter           T     N    1059   210    Q         CGJS      F                          
+DH7   DH7  DHvilld-Bombardier DHC7 Dsh 7             T     N    1335   260    Q         CGJS      F                          
+DH8   DH1  DHvilld-Bombardier DHC8-100 Dsh 8/8Q      T     N    1266   310    Q         CGJS      F                          
+DH8   DH2  DHvilld-Bombardier DHC8-200 Dsh 8/8Q      T     N    1115   339    Q         CGJS      F                          
+DH8   DH3  DHvilld-Bombardier DHC8-300 Dsh 8/8Q      T     N    1266   310    Q         CGJS      F                          
+DH8   DH4  DHvilld-Bombardier DHC8 Dsh 8-400/8Q      T     N    1294   210    L         CGJS      AF                         
+DH8   DH8  DHvilld-Bombardier DHC8 Dsh 8             T     N    1266   310    Q         CGJS      FH                         
+D1F   D1F  Boeing (Douglas) DC10 (Freighter)         J     W    3800   564                        AF                         
+D1F   D1X  Boeing (Douglas) DC-10-10 (Freighter)     J     W    3800   610              J         AFM                        
+D1F   D1Y  Boeing (Douglas) DC10 - 30/40 Freighter   J     W    3800   564                        F                          
+D1M   D1M  Boeing (Douglas) DC10-30(Mixed Config)    J     W    7490   610    Q         CGJS      F                          
+D10   D1C  Boeing (Douglas) DC10-30/40 (Pax)         J     W    5860   564              CGJS      FM                         
+D10   D10  Boeing (Douglas) DC10 Passenger           J     W    5860   564              CGJS                                 
+D10   D11  Boeing (Douglas) DC10-10/15 Passenger     J     W    3800   564              CGJS      FM                         
+D28   D28  Fairchild Dornier 228                     T     N    1224   268              CGJS      F                          
+D3F   D3F  Boeing (Douglas) DC3 Freighter            P     N    1330   207                        F                          
+D38   D38  Fairchild Dornier 328-100                 T     N    1300   290              CGJS                                 
+D42   D42  Diamond Aircraft DA42 Twin Star           P     N    1052   221              CGJS                                 
+D6F   D6F  Boeing (Douglas) DC6A/B/C Freighter       P     N    3070   309                        F                          
+D62   D62  DIAMOND AIRCRAFT DA-62                    P     N    1478   235              CGJS                                 
+D8F   D8F  Boeing (Douglas) DC8 Freighter            J     N    6000   580                        AFM                        
+D8F   D8T  Boeing (Douglas) DC-8-50 Freighter        J     N    5087   556                        AFM                        
+D8F   D8X  Boeing (Douglas) DC-8-61/62/63 Frtr       J     N    6000   580                        FM                         
+D8F   D8Y  Boeing (Douglas) DC-8-71/72/73 Frtr       J     N    6000   580                        F                          
+D8M   D8M  Boeing (Douglas) DC8-62 Mixed Config      J     N    6000   580    Q         CGJS      F                          
+D9F   D9C  Boeing (Douglas) DC-9-30 Freighter        J     N    1923   565                        AFM                        
+D9F   D9D  Boeing (Douglas) DC-9-40 Freighter        J     N    1790   558                        AFM                        
+D9F   D9F  Boeing (Douglas) DC9 Freighter            J     N    2280   593                        F                          
+D9F   D9X  Boeing (Douglas) DC-9-10 Freighter        J     N    1831   564                        AFM                        
+EAC   EAC  Eclipse                                   J     N    1295   425              CGJS      F                          
+EAC   EA5  Eclipse 500                               J     N    1295   425              CGJS      F                          
+EC3   EC3  Airbus Helicopters H130/H130T2            H     N    378    178              CGJS                                 
+EC4   EC4  Airbus Helicopters H 145 / H 145T2        H     N    426    153              CGJS                                 
+EC5   EC5  Airbus Helicopters H 155                  H     N    533    201    Q         CGJS                                 
+EC7   EC7  Airbus Helicopters H 175                  H     N    782    195              CGJS                                 
+EMB   EMB  Embraer 110 Bandeirante                   T     N    1819   338              CGJS      F                          
+EMJ   EMJ  Embraer 170/195                           J     N    2819   511              CGJS                                 
+EMJ   E7W  Embraer 175 (Enhanced Winglets)           J     N    2071   540              CGJS      AF                         
+EMJ   E70  Embraer 170                               J     N    2417   540    Q         CGJS      AF                         
+EMJ   E75  Embraer 175                               J     N    2071   540    Q         CGJS      AF                         
+EMJ   E90  Embraer 190                               J     N    2819   511    Q         CGJRS     AF                         
+EMJ   E95  Embraer 195                               J     N    2072   540              CGJRS                                
+EMJ   275  Embraer175 E2                             J     N    2373   540              CGJS                                 
+EMJ   290  Embraer 190 E2                            J     N    3231   540              CGJS                                 
+EMJ   295  Embraer 195 E2                            J     N    2982   540              CGJS      A                          
+EML   EML  Embraer Legacy                            J     N    3596   466              CGJS      F                          
+EML   EM4  Embraer Legacy 450                        J     N    3337   462              CGJS      F                          
+EML   EM5  Embraer Legacy 500                        J     N    3596   466              CGJS      F                          
+EM2   EM2  Embraer 120 Brasilia                      T     N    1087   288              CGJS      F                          
+EPH   EPH  Embraer Phenom                            J     N    0      0                CGJS                                 
+EPH   EP1  Embraer EMB-500 Phenom 100                J     N    1355   536              CGJS      F                          
+EPH   EP3  Embraer EMB-505 Phenom 300                J     N    2268   598              CGJS                                 
+ERJ   ERD  Embraer RJ140                             J     N    1876   518              CGJS                                 
+ERJ   ERJ  Embraer RJ 135/140/145                    J     N    1530   511    Q         CGJS      F                          
+ERJ   ER3  Embraer RJ135                             J     N    2013   511              CGJS                                 
+ERJ   ER4  Embraer RJ145                             J     N    1530   511    Q         CGJS      F                          
+ETR   ETR  Embraer Praetor ET5/ET6                   J     N    3843   531              CJ                                   
+ETR   ET5  Embraer Praetor 500                       J     N    3843   531              CJ                                   
+ETR   ET6  Embraer Praetor 600                       J     N    4623   515              CJ                                   
+EV5   EV5  EVEKTOR EV-55 Outback                     P     N    1064   254              CGJS                                 
+FK7   FK7  Fairchild Industries FH227                T     N    2680   294              CGJS      F                          
+FRJ   FRJ  Fairchild Dornier 328JET                  J     N    1036   460              CGJS      F                          
+F27   F27  Fokker F27 Friendship/Fairchild F27       T     N    1203   298              CGJS      FM                         
+F28   F21  Fokker F28-1000 Fellowship                J     N    1300   416              CGJS                                 
+F28   F22  Fokker F28-2000 Fellowship                J     N    806    416              CGJS                                 
+F28   F23  Fokker F28-3000 Fellowship                J     N    1969   523              CGJS                                 
+F28   F24  Fokker F28-4000 Fellowship                J     N    1295   523              CGJS                                 
+F28   F28  Fokker F28 Fellowship                     J     N    1969   523    Q         CGJS      F                          
+F5F   F5F  Fokker 50 Freighter                       T     N    1277   348              CGJS      AFHM                       
+F50   F50  Fokker 50                                 T     N    1100   335              BCGJS     F                          
+F70   F70  Fokker 70                                 J     N    1600   500    Q         CGJS                                 
+GA1   GA1  Gippsland Aeronautics GA10                T     N    633    181              CGJS                                 
+GA8   GA8  Gippsland Aeronautics GA8 Airvan          P     N    840    150              CGJS      F                          
+GRG   GRG  Grumman G-21 Goose (Amphibian)            A     N    1600   243              CGJS      F                          
+GRJ   GA5  GULFSTREAM AEROSPACE G500                 J     N    5063   610              CGJS                                 
+GRJ   GA6  GULFSTREAM AEROSPACE G600                 J     N    6329   610              CGJS                                 
+GRJ   GJ2  Gulfstream Aerospace G1159 II             T     N    4123   581              CGJS      F                          
+GRJ   GJ3  Gulfstream Aerospace G-1159A III          T     N    4200   576              CGJS      F                          
+GRJ   GJ4  Gulfstream Aerospace IV (G300-450)        J     N    4373   580              CGJS      F                          
+GRJ   GJ5  Gulfstream Aerospace V (G500/G550)        J     N    7767   674              CGJS      F                          
+GRJ   GJ6  Gulfstream Aerospace G650                 J     N    8055   690              CGJS      F                          
+GRJ   GJ7  Gulfstream Aerospace G700                 J     N    8630   690              CJS                                  
+GRJ   GRJ  Gulfstream Aerospace G/stream 2/3/4/5/6   J     N    4785   577              CGJS      F                          
+GRJ   GR1  Gulfstream Aerospace G-100/G-150          J     N    3394   557              CGJS      F                          
+GRJ   GR2  Gulfstream Aerospace G-200 (Galaxy)       J     N    3910   560              CGJS      F                          
+GRJ   GR3  Gulfstream Aerospace G280                 J     N    4142   644              CGJS      F                          
+GRJ   G2B  Gulfstream Aerospace G-1159 IIB           T     N    4200   576              CGJS      F                          
+GRJ   G2S  Gulfstream Aerospace G-1159 IISP          T     N    4123   581              CGJS      F                          
+GRM   GRM  Grumman G-73 Mallard (Amphibian)          A     N    1380   180              CGJS      F                          
+HBA   BE4  Hawker 400 Beechjet/400A/400XP/400T       J     N    1471   290              CGJS      F                          
+HBA   HBA  Hawker Beechcraft                         J     N    1471   290              CGJS      F                          
+HBA   H20  Hawker 200                                J     N    912    293              CGJS      F                          
+HBA   H21  Hawker 1000                               J     N    2692   282              CGJS      F                          
+HBA   H24  Hawker 4000                               J     N    2850   300              CGJS      F                          
+HBA   H28  Hawker 850XP/900                          J     N    3040   278              CGJS      F                          
+HBA   H29  Hawker 900XP                              J     N    3040   288              CGJS      F                          
+HBA   PR1  Hawker 390 Premier 1/1A                   J     N    1268   282              CGJS      F                          
+HEC   HEC  Helio H250 Courier/H295/395SuperCourier   P     N    660    165              CGJS      F                          
+HHJ   HHJ  Honda HA-420 JondaJet                     J     N    1388   423              CGJS                                 
+HOV   HOV  Hovercraft                                A     N    500    60               U                                    
+HS7   HS7  British Aerospace (Hawker Siddeley) 748   T     N    1624   280              CGJS      F                          
+H16   H16  AIRBUS HELICOPTERS H-160                  H     N    0      0                J                                    
+H25   H25  British Aerospace (Hawker Siddeley) 125   J     N    1624   280              CGJS      F                          
+ILW   ILW  Ilyushin Il-86                            J     W    2858   590    Q         CGJS      FM                         
+IL6   IL6  Ilyushin Il-62                            J     N    5715   530    Q         CGJS      F                          
+IL7   IL7  Ilyushin Il-76                            J     N    4163   528              CGJS      FH                         
+IL8   IL8  Ilyushin Il-18                            T     N    1860   400    Q         CGJS      F                          
+IL9   IL9  Ilyushin Il-96 Passenger                  J     W    7136   528              CGJS      F                          
+I14   I14  Ilyushin Il114                            T     N    621    292              CGJS      F                          
+I4F   I4F  Ilyushin II-114T Freighter                T     N    621    311              CGJS      F                          
+I9F   I9F  Ilyushin II-96 Freighter                  J     W    2699   550                        F                          
+JST   JST  British Aerospace Jetstream               T     N    700    250              CGJS      F                          
+JST   J31  British Aerospace Jetstream 31            T     N    782    293              CGJS      F                          
+JST   J32  British Aerospace Jetstream 32            T     N    579    304              CGJS      F                          
+JST   J41  British Aerospace Jetstream 41            T     N    785    310              CGJS      F                          
+JU5   JU5  Junkers Ju 52/3m                          P     N    746    164              CGJS      F                          
+LCH   LCH  Launch/Boat                               S     N    250    75               U         V                          
+LMO   LMO  Limousine                                 S     N    700    100              SU                                   
+LOE   LOE  Lockheed L188 Electra (Passenger)         T     N    2750   405              CGJS      F                          
+LOF   LOF  Lockheed L188 Electra (Freighter)         T     N    2750   405                        F                          
+LOH   LOH  Lockheed L182/L282/L382 (L100) Hercules   T     N    1431   355              CGJS      F                          
+LRJ   LJ2  Learjet 23/24/25                          J     N    1830   561              CGJS      F                          
+LRJ   LJ3  Learjet 28/29/31/35/36                    J     N    3290   542              CGJS      F                          
+LRJ   LJ4  Learjet 40/45                             J     N    1947   534              CGJS      F                          
+LRJ   LJ6  Learjet 55/60                             J     N    2492   541              CGJS      F                          
+LRJ   LJ7  Learjet 70/75                             J     N    2348   533              CGJS      F                          
+LRJ   LJ8  Learjet 85                                J     N    3000   541              CGJS      F                          
+LRJ   LRJ  Learjet                                   J     N    3132   529              CGJS      F                          
+L1F   L1F  Lockheed L1011 Tristar Freighter          J     W    6200   521                        F                          
+L10   L10  Lockheed L1011 Tristar Passenger          J     W    5661   680              CGJS      F                          
+L10   L11  Lockheed L1011 Tristar 1/50/100/150/200   J     W    5322   680              CGJS      F                          
+L10   L15  Lockheed L1011 Tristar 500 Passenger      J     W    6996   680              CGJS      F                          
+L4F   L4F  Aircraft Industries (LET)410 freight      T     N    857    236                        AFM                        
+L4T   L4T  Let 410                                   T     N    317    227              CGJS      F                          
+MA6   MA6  Xian Yunshuji MA-60                       T     N    994    267              CGJS                                 
+MBH   MBH  Airbus Helicopters BO 105                 H     N    320    150              CGJS                                 
+MD9   MD9  MD Helicopters MD 900 Explorer            H     N    337    154              CGJS                                 
+MIH   MIH  Mil Mi-8/Mi-17/Mi-171/Mi-172              H     N    264    112              CGJS      F                          
+MTL   MTL  Metroliner Train                          S     N    1000   200              U                                    
+MU2   MU2  Mitsubishi MU-2                           T     N    1842   370              CGJS      F                          
+M1F   M1F  Boeing (Douglas) MD-11 (Freighter)        J     W    7500   600                        AFM                        
+M1M   M1M  Boeing (Douglas) MD-11 Mixed Config       J     W    7500   600    Q         CGJS      F                          
+M11   M11  Boeing (Douglas) MD-11 Passenger          J     W    7500   600    Q         CGJRS     F                          
+M2F   M2F  Boeing (Douglas) MD82 Freighter           J     N    2360   504                        AFM                        
+M3F   M3F  Boeing (Douglas) MD83 Freighter           J     N    2900   504                        AFM                        
+M6F   M6F  Xian Yunshuji MA600 Freighter             T     N    888    319                        AFM                        
+M8F   M8F  Boeing (Douglas) MD88 Freighter           J     N    2900   504                        AFM                        
+M80   M80  Boeing (Douglas) MD-80                    J     N    3060   560              CGJS      F                          
+M80   M81  Boeing (Douglas) MD-81                    J     N    2350   576              CGJS      F                          
+M80   M82  Boeing (Douglas) MD-82                    J     N    3060   560              CGJS      F                          
+M80   M83  Boeing (Douglas) MD-83                    J     N    3060   560              CGJS      F                          
+M80   M87  Boeing (Douglas) MD-87                    J     N    2740   576              CGJS      F                          
+M80   M88  Boeing (Douglas) MD-88                    J     N    2530   576              CGJS      F                          
+M90   M90  Boeing (Douglas) MD-90                    J     N    2600   575    Q         CGJS      F                          
+NDC   NDC  Aerospatiale SN601 Corvette               J     N    1000   440              CGJS      F                          
+NDE   NDE  Airbus Helicopters H125                   H     N    423    180    Q         CGJS                                 
+NDH   NDH  Airbus Helicopters A365C/A365N Dauphin2   H     N    423    180              CGJS                                 
+PAG   PAG  Piper (Light Aircraft)                    P     N    1484   296    Q         CGJS      F                          
+PAG   PAT  Piper (Light Aircraft - Twin Turboprop)   T     N    1530   325              CGJS      F                          
+PAG   PA1  Piper (Light Aircraft - Single Piston)    P     N    851    188              CGJS      F                          
+PAG   PA2  Piper (Light Aircraft - Twin Piston)      P     N    713    191    Q         CGJS      F                          
+PL2   PL2  Pilatus PC-12                             T     N    2602   295    Q         CGJS      F                          
+PL4   PL4  Pilatus PC-24                             J     N    2243   489              CGJS                                 
+PL6   PL6  Pilatus PC6 Turbo-Porter                  T     N    1007   161              CGJS      F                          
+PN6   PN6  Partenavia P68                            P     N    1393   235              CGJS      F                          
+P18   P18  Piaggio P180 Avanti II                    T     N    2036   462              CGJS      F                          
+RFS   RFS  Road Feeder Service (Truck)               S     W    700    100                        AV                         
+SFF   SFF  Saab 340 Freighter                        T     N    1076   312                        AFM                        
+SF3   SFA  Saab 340 Passenger                        T     N    1076   290              CGJS                                 
+SF3   SFB  Saab 340B                                 T     N    1074   324              CGJS      F                          
+SF3   SF3  Saab 340                                  T     N    1036   300    L         BCGJS     F                          
+SF5   SF5  CIRRUS SJ-X Vision                        J     N    0      0                J                                    
+SHS   SHS  Shorts Skyvan (SC-7)                      T     N    694    250              CGJS      F                          
+SH3   SH3  Shorts 330 (SD3-30)                       T     N    872    218              CGJS      F                          
+SH6   SH6  Shorts 360 (SD3-60)                       T     N    655    243              CGJS      F                          
+SU1   SU1  Sukhoi Superjet                           J     N    0      0                CGJS      F                          
+SU1   SU7  Sukhoi Superjet 100-75                    J     N    1894   511              CGJS      F                          
+SU1   SU9  Sukhoi Superjet 100-95                    J     N    2037   594              CGJS      F                          
+SU1   S9S  Sukhoi Superjet 100-95 (Saberlets)        J     N    1893   540              CGJS                                 
+SWF   SWF  Fairchild (Swearingen)SA226 freight       T     N    1324   355                        AFM                        
+SWM   SWM  Fairchild SA26/SA226/SA227 Merlin/Metro   T     N    1324   300    Q         CGJS      FM                         
+SY8   SY8  Shaanxi Y-8                               T     N    3485   410              CGJS      F                          
+S20   S20  Saab 2000                                 T     N    1416   311              CGJS      F                          
+S58   S58  Sikorsky S-58T                            H     N    530    167              CGJS      F                          
+S61   S61  Sikorsky S61                              H     N    625    140              CGJS      F                          
+S76   S76  Sikorsky S-76                             H     N    690    286              CGJS      F                          
+TBM   TBM  SOCATA TBM-700                            T     N    752    153              CGJS      F                          
+TGV   TGV  Train A Grand Vitesse                     S     N    0      0                U                                    
+THS   THS  High Speed Trains                         S     N    1000   200              U                                    
+THT   THT  Hotel Train                               S     N    1000   200              U                                    
+TPT   TPT  Tecnam P2012                              T     N    0      0                CGJS      F                          
+TPT   T12  Tecnam P2012 Traveler                     T     N    1044   223              CGJS      F                          
+TRN   TRN  Train                                     S     N    1000   200              SU        F                          
+TRN   TRS  High Speed Train                          S     N    3000   240              U                                    
+TSL   TSL  Sleeper Train                             S     N    1000   200              U                                    
+TU3   TU3  Tupolev Tu134                             J     N    1876   550    L         CGJS      F                          
+TU5   TU5  Tupolev Tu154                             J     N    4287   590    Q         CGJS      F                          
+T2F   T2F  Tupolev Tu-204 Freighter                  J     N    1939   515                        F                          
+T20   T20  Tupolev Tu-204/Tu-214                     J     N    3211   500              CGJS                                 
+T34   T34  Tupolev Tu-334                            J     N    1957   510              CGJS      F                          
+WWP   WWP  Israel Aircraft Ind.1124 Westwind         J     N    2785   524              CGJS      F                          
+YK2   YK2  Yakovlev Yak-42/142                       J     N    1864   503              CGJS      F                          
+YK4   YK4  Yakovlev Yak-40                           J     N    1240   342    Q         CGJS      F                          
+YMC   YMC  Yakovelev MC-21                           J     N    3728   589              CGJS                                 
+YMC   YM3  Yakovelev MC-21-300 Passenger             J     N    3728   589              CGJS                                 
+YN2   YN2  Harbin Yunshuji Y12                       T     N    832    155              CGJS      F                          
+YN7   YN7  Xian Yunshuji Y7/MA60                     T     N    250    150              CGJS      F                          
+YS1   YS1  NAMC YS-11                                T     N    1310   290              CGJS      F                          
+100   100  Fokker 100                                J     N    1400   500              CGJS      F                          
+14F   14F  British Aerospace 146 (Freighter)         J     N    1200   266                        F                          
+14F   14X  BAE Systems 146-100 Freighter             J     W    2404   490                        F                          
+14F   14Y  BAE Systems 146-200 (Freighter)           J     N    1808   498                        AFM                        
+14F   14Z  BAE Systems 146-300 (Freighter)           J     N    1749   484                        AFM                        
+146   141  British Aerospace 146-100 Passenger       J     N    1785   482    Q         CGJS      FM                         
+146   142  British Aerospace 146-200 Passenger       J     N    1704   482              CGJS      F                          
+146   143  British Aerospace 146-300 Passenger       J     N    1704   482              CGJ       FM                         
+146   146  British Aerospace 146 Passenger           J     N    1785   482              CGJS      F                          
+219   219  Indonesian Aerospace (IAe) N219           T     N    967    242              CGJS      F                          
+220   220  Airbus A220 Passenger                     J     N    3682   829              CGJS      F                          
+220   221  Airbus A220-100 Passenger                 J     N    3394   541              CGJS      AF                         
+220   223  Airbus A220-300 Passenger                 J     N    3682   515              CGJS      AF                         
+31F   31F  Airbus A310 Freighter                     J     W    3449   556                        F                          
+31F   31X  Airbus A310-200 Freighter                 J     W    3449   556                        F                          
+31F   31Y  Airbus A310-300 Freighter                 J     W    4873   556                        AFH                        
+310   310  Airbus A310 Passenger                     J     W    4018   556              CGJS      F                          
+310   312  Airbus A310-200 Passenger                 J     W    4018   556              CGJS      F                          
+310   313  Airbus A310-300 Passenger                 J     W    5002   528              CGJS      F                          
+32F   32F  Airbus A320 (Freighter)                   J     N    3790   541                        AFM                        
+32S   31A  Airbus A318 (sharklets)                   J     N    3572   541              CGJS      F                          
+32S   31B  Airbus A319 (sharklets)                   J     N    4318   541              CGJS      F                          
+32S   31N  Airbus A319neo                            J     N    4318   544              CGJS      F                          
+32S   318  Airbus A318                               J     N    3572   608    Q         CGJS      AF                         
+32S   319  Airbus A319                               J     N    4318   556    LQ        CGJOS     AFHM                       
+32S   32A  Airbus A320 (Sharklets)                   J     N    3821   514    Q         CGJOS     AFH                        
+32S   32B  Airbus A321 (Sharklets)                   J     N    3697   561    Q         CGJS                                 
+32S   32N  Airbus A320neo                            J     N    4038   544    LQ        CGJOS     FH                         
+32S   32Q  Airbus A321neo                            J     N    4598   544    L         CGJOS     AF                         
+32S   32S  Airbus A318/319/320/321                   J     N    4018   556    Q         CGJRS     AFM                        
+32S   320  Airbus A320                               J     N    4018   556    LQ        BCGJORS   AFHM                       
+32S   321  Airbus A321                               J     N    4018   556    LQ        CGJORS    AFHM                       
+32X   32X  Airbus A321 (Freighter)                   J     N    3697   541                        AFM                        
+33F   33B  AIRBUS Beluga XL                          J     W    2671   457                        AFH                        
+33F   33F  Airbus A330 Freighter                     J     W    4598   537                        FH                         
+33F   33X  Airbus A330-200 Freighter                 J     W    4598   333                        AFH                        
+33F   33Y  Airbus A330-300 Freighter                 J     W    7301   541                        AFM                        
+330   330  Airbus A330                               J     W    7301   482    LQ        CGJOS     AFH                        
+330   332  Airbus A330-200                           J     W    8326   567    LQ        CGJOS     AF                         
+330   333  Airbus A330-300                           J     W    7021   567    LQ        CGJRS     AFH                        
+330   338  Airbus A330-800neo Passenger              J     W    8150   570              CGJOS     F                          
+330   339  Airbus A330-900neo                        J     W    7537   918    Q         CGJS      AF                         
+340   340  Airbus A340                               J     W    7700   470    Q         CGJS      F                          
+340   342  Airbus A340-200                           J     W    8700   470              CGJS      F                          
+340   343  Airbus A340-300                           J     W    7700   470    Q         CGJS      AFH                        
+340   345  Airbus A340-500                           J     W    7700   470              CGJS      F                          
+340   346  Airbus A340-600                           J     W    9072   567    Q         CGJS      F                          
+350   350  Airbus A350                               J     W    0      0      Q         CGJS      FH                         
+350   351  Airbus A350-1000                          J     W    9196   587    L         CGJS      AF                         
+350   358  Airbus A350-800                           J     W    9774   561              CGJS      F                          
+350   359  Airbus A350-900                           J     W    9774   587    LQ        CGJRS     AFH                        
+38F   38F  Airbus A380-800F(Freighter)               J     W    6467   630                        F                          
+380   380  Airbus A380 Passenger                     J     W    9206   630              CGJS                                 
+380   388  Airbus A380-800 Passenger                 J     W    9206   630    Q         CGJS                                 
+70F   70F  Boeing 707-320B/320C (Freighter)          J     N    7475   615                        F                          
+70M   70M  Boeing 707-320B/320C (Mixed Config)       J     N    7475   615    Q         CGJS      F                          
+707   B72  Boeing 720/020B                           J     N    4155   600              CGJS                                 
+707   703  Boeing 707-320B/320C (Passenger)          J     N    7475   615              CGJS                                 
+707   707  Boeing 707/720 Passenger                  J     N    7475   615              CGJS      FM                         
+717   717  Boeing 717-200                            J     N    2085   563              CGJS      AF                         
+72F   72F  Boeing 727 (Freighter)                    J     N    2690   622                        AFM                        
+72F   72X  Boeing 727-100 (Freighter)                J     N    2671   540                        AFM                        
+72F   72Y  Boeing 727-200 (Freighter)                J     N    1387   684                        AFM                        
+72M   72B  Boeing 727-100 (Mixed Configuration)      J     N    3106   631    Q         CGJS      F                          
+72M   72C  Boeing 727-200 (Mixed Config)             J     N    2982   540              CGJS      F                          
+72M   72M  Boeing 727 (Mixed Configuration)          J     N    2690   622    Q         CGJS      F                          
+727   72W  Boeing 727-200 (Passenger) winglets       J     N    2982   540              CGJS      F                          
+727   721  Boeing 727-100 (Passenger)                J     N    2690   622    Q         CGJS      AFM                        
+727   722  Boeing 727-200 Passenger                  J     N    2994   632    Q         CGJS      AFM                        
+727   727  Boeing 727 (Passenger)                    J     N    2690   622              CGJS      F                          
+73F   7F8  Boeing 737-800 F (Scimitar Winglets)      J     N    3464   838                        AFM                        
+73F   73F  Boeing 737 (Freighter)                    J     N    2764   586              J         FM                         
+73F   73K  Boeing 737-800 Freighter (winglets)       J     N    3464   838                        AFHM                       
+73F   73P  Boeing 737-400 (Freighter)                J     N    2367   552                        FM                         
+73F   73S  Boeing 737-700 Freighter                  J     N    2764   586                        F                          
+73F   73T  Boeing 737-700 (Winglets) Freighter       J     N    2764   586                        F                          
+73F   73U  Boeing 737-800 Freighter                  J     N    3464   838                        AFM                        
+73F   73X  Boeing 737-200 (Freighter)                J     N    2764   586                        F                          
+73F   73Y  Boeing 737-300 (Freighter)                J     N    2764   586                        FM                         
+73M   73L  Boeing 737-200 (Mixed Configuration)      J     N    2982   580    Q         CGJS      F                          
+73M   73M  Boeing 737 (Mixed Configuration)          J     N    2597   580    Q         CGJS      F                          
+73M   73N  Boeing 737-300 (Mixed Configuration)      J     N    2597   552    Q         CGJS      F                          
+73M   73Q  Boeing 737-400 (Mixed Configuration)      J     N    2367   552    LQ        CGJS      F                          
+73M   73R  Boeing 737-700 (Mixed Configuration)      J     N    3688   586    Q         CGJS      F                          
+737   7M1  Boeing 737 MAX 10 Passenger               J     N    3796   521    Q         CGJS      A                          
+737   7M7  Boeing 737MAX 7 Passenger                 J     N    4402   521              CGJS                                 
+737   7M8  Boeing 737MAX 8 Passenger                 J     N    4045   521              CGJOS     AF                         
+737   7M9  Boeing 737MAX 9 Passenger                 J     N    4045   521              CGJS                                 
+737   7S7  Boeing 737-700 (Scimitar Winglets) Pax    J     N    3464   586    Q         CGJS                                 
+737   7S8  Boeing 737-800 (Scimitar Winglets) Pax    J     N    3582   586    LQ        BCGJS     F                          
+737   7S9  Boeing 737-900 (Scimitar Winglets) Pax    J     N    3140   586    Q         CGJS                                 
+737   73C  Boeing 737-300 (Winglets) Passenger       J     N    2879   586              CGJS                                 
+737   73E  Boeing 737-500 (Winglets) Passenger       J     N    2800   586              CGJS                                 
+737   73G  Boeing 737-700 Passenger                  J     N    3464   586    L         CGJS      AF                         
+737   73H  Boeing 737-800 (Winglets) Passenger       J     N    3902   586    LQ        BCGJOS    AFHM                       
+737   73J  Boeing 737-900 (Winglets) Passenger       J     N    3464   586    Q         CGJS      A                          
+737   73W  Boeing 737-700 (Winglets) Passenger       J     N    3464   586    Q         CGJS      AF                         
+737   731  Boeing 737-100 Passenger                  J     N    2084   586              CGJS      F                          
+737   732  Boeing 737-200 Passenger                  J     N    2764   580    Q         CGJS                                 
+737   733  Boeing 737-300 Passenger                  J     N    2764   586    Q         CGJS      FM                         
+737   734  Boeing 737-400 Passenger                  J     N    2800   550              CGJS      F                          
+737   735  Boeing 737-500 Passenger                  J     N    2764   586              CGJS      AFH                        
+737   736  Boeing 737-600 Passenger                  J     N    2764   586              CGJOS                                
+737   737  Boeing 737 Passenger                      J     N    4401   586    Q         BCGJS     F                          
+737   738  Boeing 737-800 Passenger                  J     N    3752   586    LQ        CGJOS     AFH                        
+737   739  Boeing 737-900 Passenger                  J     N    3140   586              CGJS      AF                         
+74F   74B  Boeing 747-400 Swingtail Freighter        J     W    8000   600                        F                          
+74F   74F  Boeing 747 (Freighter)                    J     W    8000   600                        AFHM                       
+74F   74N  Boeing 747-8F (Freighter)                 J     W    5051   626                        AFH                        
+74F   74T  Boeing 747-100 Freighter                  J     W    3452   600                        F                          
+74F   74U  Boeing 747-300/747-200 SUD (Freighter)    J     W    7280   583                        AFM                        
+74F   74V  Boeing 747SR (Freighter)                  J     W    5320   563                        AFM                        
+74F   74X  Boeing 747-200 (Freighter)                J     W    8000   600                        F                          
+74F   74Y  Boeing 747-400F (Freighter)               J     W    8000   600                        AFH                        
+74M   74C  Boeing 747-200 (Mixed Configuration)      J     W    7830   600    Q         CGJS      F                          
+74M   74D  Boeing 747-300/747-200 SUD (Mxd Config)   J     W    7830   600    Q         CGJS      F                          
+74M   74E  Boeing 747-400 (Mixed Configuration)      J     W    8000   630    Q         CGJS      FH                         
+74M   74M  Boeing 747 (Mixed Configuration)          J     W    7830   600    Q         CJRS      F                          
+747   74H  Boeing 747-8 Passenger                    J     W    10212  614    Q         CGJS      AF                         
+747   74J  Boeing 747-400 (Domestic) Passenger       J     W    2077   565              CGJS      F                          
+747   74L  Boeing 747SP Passenger                    J     W    8000   600    Q         CGJS      F                          
+747   74R  Boeing 747SR Passenger                    J     W    6500   600              CGJS      AFM                        
+747   741  Boeing 747-100 (Passenger)                J     W    7830   600              CGJS      F                          
+747   742  Boeing 747-200 (Passenger)                J     W    7830   600    Q         CGJS      F                          
+747   743  Boeing 747-300/747-100/200 SUD (Pax)      J     W    7830   600              CGJS      AFM                        
+747   744  Boeing 747-400 (Passenger)                J     W    7830   600    Q         CGJS      F                          
+747   747  Boeing 747 (Passenger)                    J     W    7830   600    Q         CGJS      FH                         
+75F   75C  Boeing 757-200 Freighter                  J     N    3377   531                        AFM                        
+75F   75F  Boeing 757-200PF (Freighter)              J     N    2867   560                        AFM                        
+75F   75V  Boeing 757-200 Freighter (winglets)       J     N    3377   531                        AFM                        
+75M   75M  Boeing 757-200 Mixed Configuration        J     N    4750   592    Q         CGJS      F                          
+757   75T  Boeing 757-300 (winglets) Passenger       J     N    3906   567              CGJS      F                          
+757   75W  Boeing 757-200 (Winglets) Passenger       J     N    4750   592              CGJS      F                          
+757   752  Boeing 757-200 Passenger                  J     N    4520   592              BCGJS     AF                         
+757   753  Boeing 757-300 Passenger                  J     N    3990   592              CGJS      F                          
+757   757  Boeing 757 (Passenger)                    J     N    4520   592    Q         CGJS      AF                         
+76F   76F  Boeing 767 Freighter                      J     W    3762   528                        AFM                        
+76F   76V  Boeing 767-300 (winglets) Freighter       J     W    4902   528                        F                          
+76F   76X  Boeing 767-200 Freighter                  J     W    3604   528                        F                          
+76F   76Y  Boeing 767-300 Freighter                  J     W    3762   528                        F                          
+767   76W  Boeing 767-300 (winglets) Passenger       J     W    6878   530    LQ        BCGJS     AF                         
+767   762  Boeing 767-200 Passenger                  J     W    4473   528              BCGJOS    F                          
+767   763  Boeing 767-300 Passenger                  J     W    4473   528    Q         BCGJS     F                          
+767   764  Boeing 767-400 Passenger                  J     W    5700   528              CGJS      F                          
+767   767  Boeing 767 Passenger                      J     W    7580   560    Q         CGJS      F                          
+77F   77F  Boeing 777 Freighter                      J     W    5622   557    Q                   AFH                        
+77F   77X  Boeing 777-200F Freighter                 J     W    5622   557                        AFH                        
+777   77L  Boeing 777-200LR                          J     W    10840  557    Q         CGJS      AFH                        
+777   77W  Boeing 777-300ER Passenger                J     W    9608   557    LQ        CGJS      AFH                        
+777   772  Boeing 777-200/200ER Passenger            J     W    8270   557    LQ        CGJS      FH                         
+777   773  Boeing 777-300 Passenger                  J     W    6937   557    LQ        CGJS      FH                         
+777   777  Boeing 777 Passenger                      J     W    9844   557              CGJS      FH                         
+777   779  Boeing 777-9 Passenger                    J     W    8661   0      Q         CGJS      F                          
+787   781  Boeing 787-10                             J     W    7399   561    Q         CGJS      FH                         
+787   787  Boeing 787                                J     W    9436   630    Q         BCGJRS    AFH                        
+787   788  Boeing 787-8                              J     W    8463   577    Q         CGJS      AFH                        
+787   789  Boeing 787-9                              J     W    9781   630    Q         BCGJRS    AFH                        
+919   C19  COMAC C-919                               J     N    2532   518              CGJS                                 
+919   919  Comac C919                                J     N    2532   518              CGJS                                 

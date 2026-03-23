@@ -4,4 +4,6 @@
 docs/superpowers/
 docs/build/
 .DS_Store
-data/
+data/input/*
+data/output/*
+data/viz/*
