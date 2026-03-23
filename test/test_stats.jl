@@ -89,3 +89,66 @@ using InlineStrings
         @test a.mct_avg_time ≈ 70.0
     end
 end
+
+@testset "aggregate_geo_stats" begin
+    using ItinerarySearch: GraphStation, StationRecord
+
+    # Build two stations with known geography
+    ord_rec = StationRecord(
+        code = StationCode("ORD"),
+        country = InlineString3("US"),
+        state = InlineString3("IL"),
+        metro_area = InlineString3("CHI"),
+        region = InlineString3("NOA"),
+        lat = 41.97,
+        lng = -87.91,
+        utc_offset = Int16(-300),
+    )
+    lhr_rec = StationRecord(
+        code = StationCode("LHR"),
+        country = InlineString3("GB"),
+        state = InlineString3(""),
+        metro_area = InlineString3("LON"),
+        region = InlineString3("EUR"),
+        lat = 51.47,
+        lng = -0.45,
+        utc_offset = Int16(0),
+    )
+
+    ord = GraphStation(code = StationCode("ORD"), record = ord_rec)
+    lhr = GraphStation(code = StationCode("LHR"), record = lhr_rec)
+
+    # Give ORD some stats
+    ord.stats.num_departures = Int32(10)
+    ord.stats.num_arrivals = Int32(8)
+    ord.stats.num_connections = Int32(5)
+
+    # Give LHR some stats
+    lhr.stats.num_departures = Int32(20)
+    lhr.stats.num_arrivals = Int32(15)
+    lhr.stats.num_connections = Int32(12)
+
+    stations = Dict(StationCode("ORD") => ord, StationCode("LHR") => lhr)
+
+    geo = aggregate_geo_stats(stations)
+
+    # Metro: CHI has ORD, LON has LHR
+    @test haskey(geo.by_metro, InlineString3("CHI"))
+    @test haskey(geo.by_metro, InlineString3("LON"))
+    @test geo.by_metro[InlineString3("CHI")].num_departures == Int32(10)
+    @test geo.by_metro[InlineString3("LON")].num_departures == Int32(20)
+
+    # Country: US has ORD, GB has LHR
+    @test haskey(geo.by_country, InlineString3("US"))
+    @test haskey(geo.by_country, InlineString3("GB"))
+
+    # State: IL has ORD, LHR has no state (skipped)
+    @test haskey(geo.by_state, InlineString3("IL"))
+    @test !haskey(geo.by_state, InlineString3(""))
+
+    # Region: NOA has ORD, EUR has LHR
+    @test haskey(geo.by_region, InlineString3("NOA"))
+    @test haskey(geo.by_region, InlineString3("EUR"))
+    @test geo.by_region[InlineString3("NOA")].num_connections == Int32(5)
+    @test geo.by_region[InlineString3("EUR")].num_connections == Int32(12)
+end

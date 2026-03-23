@@ -261,6 +261,8 @@ function merge_station_stats!(target::StationStats, source::StationStats)
             source.avg_ground_time * source.num_connections
         ) / total_cnx
     end
+    target.num_departures += source.num_departures
+    target.num_arrivals += source.num_arrivals
     target.num_connections += source.num_connections
     target.num_pairs_evaluated += source.num_pairs_evaluated
     target.num_nonstops += source.num_nonstops

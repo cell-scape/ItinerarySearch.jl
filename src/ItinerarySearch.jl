@@ -62,6 +62,7 @@ export pack_date, unpack_date
 # Exports — stats types (Subsystem 2 instrumentation)
 export StationStats, BuildStats, SearchStats, MCTSelectionRow
 export merge_build_stats!, merge_station_stats!
+export GeoStats, aggregate_geo_stats
 
 # Exports — constraints
 export ParameterSet, MarketOverride, SearchConstraints

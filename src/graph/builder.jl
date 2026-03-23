@@ -13,6 +13,80 @@
 
 using UUIDs
 
+# ── GeoStats ──────────────────────────────────────────────────────────────────
+
+"""
+    const GeoStats
+
+NamedTuple of four `Dict{InlineString3, StationStats}` grouping station-level
+stats by metro area, state, country, and IATA region.
+"""
+const GeoStats = NamedTuple{
+    (:by_metro, :by_state, :by_country, :by_region),
+    NTuple{4,Dict{InlineString3,StationStats}},
+}
+
+"""
+    `function aggregate_geo_stats(stations::Dict{StationCode, GraphStation})::GeoStats`
+---
+
+# Description
+- Single-pass aggregation of per-station `StationStats` grouped by four
+  geographic levels: metro area, state, country, and IATA region
+- For each station, its `StationStats` is merged into the corresponding
+  group accumulator via `merge_station_stats!`
+- Empty geographic fields (`InlineString3("")`) are skipped for that level
+
+# Arguments
+1. `stations::Dict{StationCode, GraphStation}`: all stations in the graph
+
+# Returns
+- `::GeoStats`: NamedTuple with four `Dict{InlineString3, StationStats}`
+"""
+function aggregate_geo_stats(stations::Dict{StationCode,GraphStation})::GeoStats
+    by_metro = Dict{InlineString3,StationStats}()
+    by_state = Dict{InlineString3,StationStats}()
+    by_country = Dict{InlineString3,StationStats}()
+    by_region = Dict{InlineString3,StationStats}()
+
+    empty_code = InlineString3("")
+
+    for (_, stn) in stations
+        rec = stn.record
+        if rec.metro_area != empty_code
+            acc = get!(by_metro, rec.metro_area) do
+                StationStats()
+            end
+            merge_station_stats!(acc, stn.stats)
+        end
+        if rec.state != empty_code
+            acc = get!(by_state, rec.state) do
+                StationStats()
+            end
+            merge_station_stats!(acc, stn.stats)
+        end
+        if rec.country != empty_code
+            acc = get!(by_country, rec.country) do
+                StationStats()
+            end
+            merge_station_stats!(acc, stn.stats)
+        end
+        if rec.region != empty_code
+            acc = get!(by_region, rec.region) do
+                StationStats()
+            end
+            merge_station_stats!(acc, stn.stats)
+        end
+    end
+
+    return (
+        by_metro = by_metro,
+        by_state = by_state,
+        by_country = by_country,
+        by_region = by_region,
+    )
+end
+
 # ── FlightGraph ───────────────────────────────────────────────────────────────
 
 """
@@ -22,7 +96,7 @@ using UUIDs
 # Description
 - Top-level container for the materialised flight network
 - Built by `build_graph!`; holds all stations, legs, segments, connections,
-  MCT lookup, and build metadata
+  MCT lookup, build metadata, and geographic stats aggregations
 - Immutable in practice once built — safe to share across threads for read-only
   search access; mutate only during the build phase
 
@@ -38,6 +112,7 @@ using UUIDs
 - `config::SearchConfig` — snapshot of the config used to build this graph
 - `layer1_built::Bool` — `true` once the Layer 1 one-stop index has been built
 - `layer1::OneStopIndex` — pre-computed `(org, dst) → Vector{OneStopConnection}` index
+- `geo_stats::GeoStats` — station stats aggregated by metro, state, country, and IATA region
 """
 @kwdef mutable struct FlightGraph
     stations::Dict{StationCode,GraphStation} = Dict{StationCode,GraphStation}()
@@ -61,6 +136,14 @@ using UUIDs
     # Layer 1 (one-stop pre-computed index)
     layer1_built::Bool = false
     layer1::OneStopIndex = OneStopIndex()
+
+    # Geographic stats aggregation
+    geo_stats::GeoStats = (
+        by_metro = Dict{InlineString3,StationStats}(),
+        by_state = Dict{InlineString3,StationStats}(),
+        by_country = Dict{InlineString3,StationStats}(),
+        by_region = Dict{InlineString3,StationStats}(),
+    )
 end
 
 # ── Codeshare resolution helper ───────────────────────────────────────────────
@@ -316,6 +399,9 @@ function build_graph!(
     ctx.build_stats.total_pairs_evaluated = total_pairs
     @info "Built connections" total = total_connections
 
+    geo = aggregate_geo_stats(stations)
+    @info "Geographic stats" metros = length(geo.by_metro) states = length(geo.by_state) countries = length(geo.by_country) regions = length(geo.by_region)
+
     # 9. Assemble FlightGraph
     build_time = time_ns() - t0
 
@@ -334,6 +420,7 @@ function build_graph!(
         mct_lookup = mct_lookup,
         build_stats = ctx.build_stats,
         config = config,
+        geo_stats = geo,
     )
 
     @info "Graph built" build_time_ms = round(build_time / 1.0e6; digits = 1)
