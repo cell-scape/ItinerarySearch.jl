@@ -81,16 +81,14 @@ n_days = 3
 first_graph = build_graph!(store, config, start_date)
 all_stations = collect(keys(first_graph.stations))
 
-# Pick 10 random OD pairs from stations with departures
-active = [s for s in all_stations if !isempty(first_graph.stations[s].departures)]
-od_pairs = Tuple{StationCode,StationCode}[]
-while length(od_pairs) < 10 && length(active) >= 2
-    o = rand(active)
-    d = rand(active)
-    o == d && continue
-    (o, d) in od_pairs && continue
-    push!(od_pairs, (o, d))
-end
+# Curated OD pairs covering nonstop, 1-stop, and 2-stop itineraries
+od_pairs = Tuple{StationCode,StationCode}[
+    (StationCode("DEN"), StationCode("LAX")),   # short domestic — nonstop + 1-stop + 2-stop
+    (StationCode("ORD"), StationCode("SFO")),   # transcon — nonstop + 1-stop + 2-stop
+    (StationCode("IAH"), StationCode("EWR")),   # domestic — nonstop + 1-stop + 2-stop
+    (StationCode("ORD"), StationCode("LHR")),   # hub-to-hub intl — 1-stop + 2-stop
+    (StationCode("LFT"), StationCode("YYZ")),   # small city — 1-stop + 2-stop
+]
 
 println("\nSelected OD pairs:")
 for (o, d) in od_pairs
@@ -163,11 +161,15 @@ for day_offset in 0:(n_days - 1)
             # Header
             println(io, join(["itinerary", "leg_pos", "row_number", "record_serial",
                               "airline", "flt_no", "operational_suffix", "itin_var",
-                              "leg_seq", "svc_type", "org", "dst"], "|"))
+                              "leg_seq", "svc_type",
+                              "codeshare_airline", "codeshare_flt_no",
+                              "org", "dst"], "|"))
             for r in legs
                 println(io, join([r.itinerary, r.leg_pos, r.row_number, r.record_serial,
                                   r.airline, r.flt_no, r.operational_suffix, r.itin_var,
-                                  r.leg_seq, r.svc_type, r.org, r.dst], "|"))
+                                  r.leg_seq, r.svc_type,
+                                  r.codeshare_airline, r.codeshare_flt_no,
+                                  r.org, r.dst], "|"))
             end
         end
         println("[$(target)]   Leg index: $(origin)→$(dest) $(length(legs)) rows → $(fname)")

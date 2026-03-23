@@ -674,6 +674,13 @@ end
 
 function _push_leg_index!(rows, itn_idx, pos, leg::GraphLeg)
     r = leg.record
+    cs_al = strip(String(r.codeshare_airline))
+    cs_flt = Int(r.codeshare_flt_no)
+    # Default codeshare to self when operating
+    if cs_al == "" || cs_al == strip(String(r.airline))
+        cs_al = strip(String(r.airline))
+        cs_flt = Int(r.flt_no)
+    end
     push!(rows, (
         itinerary           = itn_idx,
         leg_pos             = pos,
@@ -685,6 +692,8 @@ function _push_leg_index!(rows, itn_idx, pos, leg::GraphLeg)
         itin_var            = Int(r.itin_var),
         leg_seq             = Int(r.leg_seq),
         svc_type            = r.svc_type,
+        codeshare_airline   = cs_al,
+        codeshare_flt_no    = cs_flt,
         org                 = strip(String(r.org)),
         dst                 = strip(String(r.dst)),
     ))
