@@ -121,6 +121,12 @@
             r, AirlineCode("UA"), AirlineCode("AA"),
             ' ', ' ', NO_STATION, NO_STATION,
             InlineString3(""), InlineString3(""),
+            InlineString3(""), InlineString3(""),
+            NO_AIRLINE, NO_AIRLINE,
+            false, false,
+            InlineString7(""), InlineString7(""),
+            FlightNumber(0), FlightNumber(0),
+            InlineString3(""), InlineString3(""),
         )
 
         # Carrier specified, must match
@@ -129,10 +135,22 @@
             r2, AirlineCode("UA"), AirlineCode("AA"),
             ' ', ' ', NO_STATION, NO_STATION,
             InlineString3(""), InlineString3(""),
+            InlineString3(""), InlineString3(""),
+            NO_AIRLINE, NO_AIRLINE,
+            false, false,
+            InlineString7(""), InlineString7(""),
+            FlightNumber(0), FlightNumber(0),
+            InlineString3(""), InlineString3(""),
         )
         @test !ItinerarySearch._mct_record_matches(
             r2, AirlineCode("DL"), AirlineCode("AA"),
             ' ', ' ', NO_STATION, NO_STATION,
+            InlineString3(""), InlineString3(""),
+            InlineString3(""), InlineString3(""),
+            NO_AIRLINE, NO_AIRLINE,
+            false, false,
+            InlineString7(""), InlineString7(""),
+            FlightNumber(0), FlightNumber(0),
             InlineString3(""), InlineString3(""),
         )
     end

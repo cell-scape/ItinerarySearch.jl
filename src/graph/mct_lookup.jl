@@ -192,26 +192,49 @@ end
 - `::UInt32`: specificity weight (0 = completely generic, larger = more specific)
 """
 function _compute_specificity(rec::MCTRecord)::UInt32
+    sp = rec.specified
     s = UInt32(0)
-    (rec.specified & MCT_BIT_ARR_CARRIER) != 0 && (s += UInt32(1) << 23)
-    (rec.specified & MCT_BIT_DEP_CARRIER) != 0 && (s += UInt32(1) << 22)
-    (rec.specified & MCT_BIT_ARR_TERM)    != 0 && (s += UInt32(1) << 17)
-    (rec.specified & MCT_BIT_DEP_TERM)    != 0 && (s += UInt32(1) << 16)
-    (rec.specified & MCT_BIT_PRV_STN)     != 0 && (s += UInt32(1) << 15)
-    (rec.specified & MCT_BIT_NXT_STN)     != 0 && (s += UInt32(1) << 14)
-    (rec.specified & MCT_BIT_DEP_BODY)    != 0 && (s += UInt32(1) << 11)
-    (rec.specified & MCT_BIT_ARR_BODY)    != 0 && (s += UInt32(1) << 10)
-    (rec.specified & MCT_BIT_PRV_COUNTRY) != 0 && (s += UInt32(1) << 7)
-    (rec.specified & MCT_BIT_NXT_COUNTRY) != 0 && (s += UInt32(1) << 6)
-    (rec.specified & MCT_BIT_PRV_REGION)  != 0 && (s += UInt32(1) << 5)
-    (rec.specified & MCT_BIT_NXT_REGION)  != 0 && (s += UInt32(1) << 4)
+    # Priority 2-4: Dep codeshare + carrier
+    (sp & MCT_BIT_DEP_CS_IND)    != 0 && (s += UInt32(1) << 29)
+    (sp & MCT_BIT_DEP_CARRIER)   != 0 && (s += UInt32(1) << 28)
+    (sp & MCT_BIT_DEP_CS_OP)     != 0 && (s += UInt32(1) << 27)
+    # Priority 5-7: Arr codeshare + carrier
+    (sp & MCT_BIT_ARR_CS_IND)    != 0 && (s += UInt32(1) << 26)
+    (sp & MCT_BIT_ARR_CARRIER)   != 0 && (s += UInt32(1) << 25)
+    (sp & MCT_BIT_ARR_CS_OP)     != 0 && (s += UInt32(1) << 24)
+    # Priority 8-11: Flight number ranges
+    (sp & MCT_BIT_DEP_FLT_RNG)   != 0 && (s += UInt32(1) << 23)
+    (sp & MCT_BIT_ARR_FLT_RNG)   != 0 && (s += UInt32(1) << 22)
+    # Priority 12-13: Terminals
+    (sp & MCT_BIT_DEP_TERM)      != 0 && (s += UInt32(1) << 21)
+    (sp & MCT_BIT_ARR_TERM)      != 0 && (s += UInt32(1) << 20)
+    # Priority 14-15: Stations
+    (sp & MCT_BIT_NXT_STN)       != 0 && (s += UInt32(1) << 19)
+    (sp & MCT_BIT_PRV_STN)       != 0 && (s += UInt32(1) << 18)
+    # Priority 16-17: States
+    (sp & MCT_BIT_NXT_STATE)     != 0 && (s += UInt32(1) << 17)
+    (sp & MCT_BIT_PRV_STATE)     != 0 && (s += UInt32(1) << 16)
+    # Priority 18-19: Countries
+    (sp & MCT_BIT_NXT_COUNTRY)   != 0 && (s += UInt32(1) << 15)
+    (sp & MCT_BIT_PRV_COUNTRY)   != 0 && (s += UInt32(1) << 14)
+    # Priority 20-21: Regions
+    (sp & MCT_BIT_NXT_REGION)    != 0 && (s += UInt32(1) << 13)
+    (sp & MCT_BIT_PRV_REGION)    != 0 && (s += UInt32(1) << 12)
+    # Priority 22-23: Aircraft type
+    (sp & MCT_BIT_DEP_ACFT_TYPE) != 0 && (s += UInt32(1) << 11)
+    (sp & MCT_BIT_ARR_ACFT_TYPE) != 0 && (s += UInt32(1) << 10)
+    # Priority 24-25: Aircraft body
+    (sp & MCT_BIT_DEP_BODY)      != 0 && (s += UInt32(1) << 9)
+    (sp & MCT_BIT_ARR_BODY)      != 0 && (s += UInt32(1) << 8)
+    # Priority 26-27: Effective dates
+    (rec.eff_date != UInt32(0))          && (s += UInt32(1) << 7)
     return s
 end
 
 # ── Field matching ────────────────────────────────────────────────────────────
 
 """
-    `function _mct_record_matches(rec::MCTRecord, arr_carrier, dep_carrier, arr_body, dep_body, prv_stn, nxt_stn, arr_term, dep_term)::Bool`
+    `function _mct_record_matches(rec::MCTRecord, arr_carrier, dep_carrier, arr_body, dep_body, prv_stn, nxt_stn, arr_term, dep_term, prv_country, nxt_country, arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare, arr_acft_type, dep_acft_type, arr_flt_no, dep_flt_no, prv_state, nxt_state)::Bool`
 ---
 
 # Description
@@ -219,6 +242,9 @@ end
 - For each bit set in `rec.specified`, the corresponding field must equal the
   supplied value; fields whose bit is *not* set are wildcards and always match
 - Used by `lookup_mct` in the first-match-wins pass over sorted records
+- Covers the full SSIM8 matching hierarchy: carriers, body types, terminals,
+  station pairs, codeshare indicators, flight number ranges, aircraft types,
+  states, countries, and regions
 
 # Arguments
 1. `rec::MCTRecord`: the candidate record
@@ -230,6 +256,18 @@ end
 7. `nxt_stn::StationCode`: destination of departing flight
 8. `arr_term::InlineString3`: arrival terminal
 9. `dep_term::InlineString3`: departure terminal
+10. `prv_country::InlineString3`: country of arriving flight's origin
+11. `nxt_country::InlineString3`: country of departing flight's destination
+12. `arr_op_carrier::AirlineCode`: operating carrier of arriving flight (for codeshare)
+13. `dep_op_carrier::AirlineCode`: operating carrier of departing flight (for codeshare)
+14. `arr_is_codeshare::Bool`: true if arriving flight is a codeshare
+15. `dep_is_codeshare::Bool`: true if departing flight is a codeshare
+16. `arr_acft_type::InlineString7`: arriving aircraft IATA type code
+17. `dep_acft_type::InlineString7`: departing aircraft IATA type code
+18. `arr_flt_no::FlightNumber`: arriving flight number
+19. `dep_flt_no::FlightNumber`: departing flight number
+20. `prv_state::InlineString3`: state/province of arriving flight's origin
+21. `nxt_state::InlineString3`: state/province of departing flight's destination
 
 # Returns
 - `::Bool`: `true` if all specified fields match
@@ -244,6 +282,18 @@ end
     nxt_stn::StationCode,
     arr_term::InlineString3,
     dep_term::InlineString3,
+    prv_country::InlineString3,
+    nxt_country::InlineString3,
+    arr_op_carrier::AirlineCode,
+    dep_op_carrier::AirlineCode,
+    arr_is_codeshare::Bool,
+    dep_is_codeshare::Bool,
+    arr_acft_type::InlineString7,
+    dep_acft_type::InlineString7,
+    arr_flt_no::FlightNumber,
+    dep_flt_no::FlightNumber,
+    prv_state::InlineString3,
+    nxt_state::InlineString3,
 )::Bool
     sp = rec.specified
     sp == UInt32(0) && return true   # fast path: pure wildcard record
@@ -255,12 +305,42 @@ end
     (sp & MCT_BIT_NXT_STN)     != 0 && rec.nxt_stn     != nxt_stn     && return false
     (sp & MCT_BIT_ARR_TERM)    != 0 && rec.arr_term    != arr_term    && return false
     (sp & MCT_BIT_DEP_TERM)    != 0 && rec.dep_term    != dep_term    && return false
-    # Country/region fields are informational in the in-memory table; if somehow
-    # set they must match too (rare in practice).
-    (sp & MCT_BIT_PRV_COUNTRY) != 0 && rec.prv_country != InlineString3("") &&
-        rec.prv_country != arr_carrier && return false  # no separate arg; treated as wildcard
-    (sp & MCT_BIT_NXT_COUNTRY) != 0 && rec.nxt_country != InlineString3("") &&
-        rec.nxt_country != dep_carrier && return false
+    # Region matching: deferred to Task 4 (no region arg passed yet); treat as wildcard
+
+    # Codeshare matching: 'Y' means MCT applies to codeshare flights
+    if (sp & MCT_BIT_DEP_CS_IND) != 0
+        rec.dep_cs_ind == 'Y' && !dep_is_codeshare && return false
+    end
+    if (sp & MCT_BIT_DEP_CS_OP) != 0
+        rec.dep_cs_op_carrier != dep_op_carrier && return false
+    end
+    if (sp & MCT_BIT_ARR_CS_IND) != 0
+        rec.arr_cs_ind == 'Y' && !arr_is_codeshare && return false
+    end
+    if (sp & MCT_BIT_ARR_CS_OP) != 0
+        rec.arr_cs_op_carrier != arr_op_carrier && return false
+    end
+
+    # Flight number range matching
+    if (sp & MCT_BIT_ARR_FLT_RNG) != 0
+        (arr_flt_no < rec.arr_flt_rng_start || arr_flt_no > rec.arr_flt_rng_end) && return false
+    end
+    if (sp & MCT_BIT_DEP_FLT_RNG) != 0
+        (dep_flt_no < rec.dep_flt_rng_start || dep_flt_no > rec.dep_flt_rng_end) && return false
+    end
+
+    # Aircraft type matching
+    (sp & MCT_BIT_ARR_ACFT_TYPE) != 0 && rec.arr_acft_type != arr_acft_type && return false
+    (sp & MCT_BIT_DEP_ACFT_TYPE) != 0 && rec.dep_acft_type != dep_acft_type && return false
+
+    # State matching
+    (sp & MCT_BIT_PRV_STATE) != 0 && rec.prv_state != prv_state && return false
+    (sp & MCT_BIT_NXT_STATE) != 0 && rec.nxt_state != nxt_state && return false
+
+    # Country matching (fixed — was incorrectly comparing against carrier)
+    (sp & MCT_BIT_PRV_COUNTRY) != 0 && rec.prv_country != prv_country && return false
+    (sp & MCT_BIT_NXT_COUNTRY) != 0 && rec.nxt_country != nxt_country && return false
+
     return true
 end
 
@@ -347,6 +427,12 @@ function lookup_mct(
         _mct_record_matches(
             rec, arr_carrier, dep_carrier, arr_body, dep_body,
             prv_stn, nxt_stn, arr_term, dep_term,
+            InlineString3(""), InlineString3(""),
+            NO_AIRLINE, NO_AIRLINE,
+            false, false,
+            InlineString7(""), InlineString7(""),
+            FlightNumber(0), FlightNumber(0),
+            InlineString3(""), InlineString3(""),
         ) || continue
         return MCTResult(
             time           = rec.time,
@@ -365,6 +451,12 @@ function lookup_mct(
         _mct_record_matches(
             rec, arr_carrier, dep_carrier, arr_body, dep_body,
             prv_stn, nxt_stn, arr_term, dep_term,
+            InlineString3(""), InlineString3(""),
+            NO_AIRLINE, NO_AIRLINE,
+            false, false,
+            InlineString7(""), InlineString7(""),
+            FlightNumber(0), FlightNumber(0),
+            InlineString3(""), InlineString3(""),
         ) || continue
         return MCTResult(
             time           = Minutes(0),
