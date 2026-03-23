@@ -745,24 +745,87 @@ function _itinerary_fingerprint(itn::Itinerary)::UInt64
     return h
 end
 
+# ── Input normalization helpers ───────────────────────────────────────────────
+
+_to_station_codes(s::AbstractString) = [StationCode(s)]
+_to_station_codes(s::StationCode) = [s]
+_to_station_codes(v::AbstractVector) = StationCode[isa(x, StationCode) ? x : StationCode(x) for x in v]
+
+_to_dates(d::Date) = [d]
+_to_dates(v::AbstractVector{Date}) = collect(v)
+_to_dates(v::AbstractVector) = Date[d for d in v]
+
+# ── Flexible multi-search ────────────────────────────────────────────────────
+
 """
-    `function itinerary_legs_multi(stations, od_pairs, ctx)`
+    `function itinerary_legs_multi(stations, ctx; origins, destinations=nothing, dates)`
 ---
 
 # Description
-- Search itineraries for multiple O-D pairs and return a nested dictionary:
-  `origin → destination → date → Vector{NamedTuple}`
-- Each leaf value is the same compact leg index as `itinerary_legs`
+- Flexible search accepting single values or collections for origins, destinations, and dates
+- When `destinations` is omitted or `nothing`, searches all stations reachable from each origin
+- Returns a nested dictionary: `origin → destination → date → Vector{NamedTuple}`
 
 # Arguments
 1. `stations::Dict{StationCode,GraphStation}`: the station graph
-2. `od_pairs::Vector{Tuple{StationCode,StationCode,Date}}`: list of (origin, dest, date) tuples
-3. `ctx::RuntimeContext`: search context
+2. `ctx::RuntimeContext`: search context
+
+# Keyword Arguments
+- `origins`: a station code or vector of station codes (String or StationCode)
+- `destinations`: a station code, vector, or `nothing` (all destinations)
+- `dates`: a Date or vector of Dates
 
 # Returns
 - Nested `Dict{String, Dict{String, Dict{Date, Vector{NamedTuple}}}}`
-  keyed by origin → destination → date
+
+# Examples
+```julia
+# Single O-D, single date
+result = itinerary_legs_multi(stations, ctx; origins="ORD", destinations="LHR", dates=Date(2026,3,20))
+
+# Multiple origins, all destinations, multiple dates
+result = itinerary_legs_multi(stations, ctx; origins=["ORD","DEN"], dates=[Date(2026,3,20), Date(2026,3,21)])
+
+# Single origin, multiple destinations
+result = itinerary_legs_multi(stations, ctx; origins="ORD", destinations=["LHR","SFO","LAX"], dates=Date(2026,3,20))
+```
 """
+function itinerary_legs_multi(
+    stations::Dict{StationCode,GraphStation},
+    ctx::RuntimeContext;
+    origins,
+    destinations = nothing,
+    dates,
+)
+    orgs = _to_station_codes(origins)
+    dsts = destinations === nothing ? collect(keys(stations)) : _to_station_codes(destinations)
+    ds = _to_dates(dates)
+
+    result = Dict{String, Dict{String, Dict{Date, Vector{NamedTuple}}}}()
+    for org in orgs
+        haskey(stations, org) || continue
+        for dst in dsts
+            org == dst && continue
+            haskey(stations, dst) || continue
+            for date in ds
+                legs = itinerary_legs(stations, org, dst, date, ctx)
+                isempty(legs) && continue
+                org_s = strip(String(org))
+                dst_s = strip(String(dst))
+                org_dict = get!(result, org_s) do
+                    Dict{String, Dict{Date, Vector{NamedTuple}}}()
+                end
+                dst_dict = get!(org_dict, dst_s) do
+                    Dict{Date, Vector{NamedTuple}}()
+                end
+                dst_dict[date] = legs
+            end
+        end
+    end
+    return result
+end
+
+# Legacy positional method — convert to keyword form
 function itinerary_legs_multi(
     stations::Dict{StationCode,GraphStation},
     od_pairs::Vector{Tuple{StationCode,StationCode,Date}},
@@ -771,6 +834,7 @@ function itinerary_legs_multi(
     result = Dict{String, Dict{String, Dict{Date, Vector{NamedTuple}}}}()
     for (org, dst, date) in od_pairs
         legs = itinerary_legs(stations, org, dst, date, ctx)
+        isempty(legs) && continue
         org_s = strip(String(org))
         dst_s = strip(String(dst))
         org_dict = get!(result, org_s) do
@@ -784,29 +848,9 @@ function itinerary_legs_multi(
     return result
 end
 
-"""
-    `function itinerary_legs_json(stations, od_pairs, ctx)::String`
----
+# ── JSON export ──────────────────────────────────────────────────────────────
 
-# Description
-- Same as `itinerary_legs_multi` but returns a JSON string reflecting the
-  nested structure: `{ "ORD": { "LHR": { "2026-03-20": [ { leg... }, ... ] } } }`
-
-# Arguments
-1. `stations::Dict{StationCode,GraphStation}`: the station graph
-2. `od_pairs::Vector{Tuple{StationCode,StationCode,Date}}`: list of (origin, dest, date) tuples
-3. `ctx::RuntimeContext`: search context
-
-# Returns
-- `::String`: JSON string
-"""
-function itinerary_legs_json(
-    stations::Dict{StationCode,GraphStation},
-    od_pairs::Vector{Tuple{StationCode,StationCode,Date}},
-    ctx::RuntimeContext,
-)::String
-    nested = itinerary_legs_multi(stations, od_pairs, ctx)
-    # Convert to JSON-serializable structure (Dates → strings, NamedTuples → Dicts)
+function _nested_to_json(nested::Dict{String, Dict{String, Dict{Date, Vector{NamedTuple}}}})::String
     json_root = Dict{String,Any}()
     for (org, dst_dict) in nested
         json_org = Dict{String,Any}()
@@ -837,4 +881,29 @@ function itinerary_legs_json(
         json_root[org] = json_org
     end
     return JSON3.write(json_root)
+end
+
+"""
+    `function itinerary_legs_json(stations, ctx; origins, destinations=nothing, dates)::String`
+
+Same as `itinerary_legs_multi` but returns a JSON string.
+Accepts the same flexible keyword arguments.
+"""
+function itinerary_legs_json(
+    stations::Dict{StationCode,GraphStation},
+    ctx::RuntimeContext;
+    origins,
+    destinations = nothing,
+    dates,
+)::String
+    _nested_to_json(itinerary_legs_multi(stations, ctx; origins, destinations, dates))
+end
+
+# Legacy positional method
+function itinerary_legs_json(
+    stations::Dict{StationCode,GraphStation},
+    od_pairs::Vector{Tuple{StationCode,StationCode,Date}},
+    ctx::RuntimeContext,
+)::String
+    _nested_to_json(itinerary_legs_multi(stations, od_pairs, ctx))
 end
