@@ -2,7 +2,7 @@
 
 ## What It Does
 
-The `itinerary_legs` function searches all valid itineraries between an origin and destination on a specific date, then returns a compact index of the legs in each itinerary. The output is:
+The itinerary leg index functions search all valid itineraries between origins and destinations on given dates, returning a compact index of the legs in each itinerary. The output is:
 
 - **Sorted** by number of stops (fewest first), then elapsed time, then total distance
 - **Deduplicated** — identical leg sequences appear only once
@@ -29,6 +29,59 @@ Each row contains the flight identity fields needed to cross-reference with the 
 | `codeshare_flt_no` | Operating flight number (same as flt_no when operating) |
 | `org` | Departure station IATA code |
 | `dst` | Arrival station IATA code |
+
+### Functions
+
+| Function | Returns | Use Case |
+|----------|---------|----------|
+| `itinerary_legs(stations, org, dst, date, ctx)` | `Vector{NamedTuple}` | Single O-D pair, single date |
+| `itinerary_legs_multi(stations, ctx; origins, destinations, dates)` | Nested `Dict` (origin → dest → date → legs) | Multiple O-Ds, flexible inputs |
+| `itinerary_legs_json(stations, ctx; origins, destinations, dates)` | `String` (JSON) | Same as multi, for external consumption |
+
+---
+
+## Flexible Input Arguments
+
+All three input arguments (`origins`, `destinations`, `dates`) accept single values or collections:
+
+| Argument | Accepts | Examples |
+|----------|---------|----------|
+| `origins` | `String`, `StationCode`, or `Vector` of either | `"ORD"`, `StationCode("ORD")`, `["ORD", "DEN"]` |
+| `destinations` | `String`, `StationCode`, `Vector`, or `nothing` | `"LHR"`, `["LHR", "SFO"]`, `nothing` (all reachable) |
+| `dates` | `Date` or `Vector{Date}` | `Date(2026,3,20)`, `[Date(2026,3,20), Date(2026,3,21)]` |
+
+When `destinations` is omitted or `nothing`, the search finds all reachable destinations from each origin — every station reachable via up to `max_stops` connections.
+
+### Return Structure (Dict)
+
+```
+Dict{String, Dict{String, Dict{Date, Vector{NamedTuple}}}}
+```
+
+Nested by origin → destination → date:
+
+```julia
+result["ORD"]["LHR"][Date(2026, 3, 20)]  # → Vector of leg NamedTuples
+result["ORD"]["SFO"][Date(2026, 3, 20)]  # → Vector of leg NamedTuples
+result["DEN"]["LAX"][Date(2026, 3, 20)]  # → ...
+```
+
+### Return Structure (JSON)
+
+```json
+{
+  "ORD": {
+    "LHR": {
+      "2026-03-20": [
+        {"itinerary": 1, "leg_pos": 1, "airline": "UA", "flt_no": 920, "org": "ORD", "dst": "LHR", ...},
+        ...
+      ]
+    },
+    "SFO": { ... }
+  },
+  "DEN": { ... }
+}
+```
 
 ---
 
@@ -86,7 +139,9 @@ ctx = RuntimeContext(
 )
 ```
 
-### Step 4: Search a Single O-D Pair
+### Step 4: Search
+
+#### Single O-D Pair
 
 ```julia
 legs = itinerary_legs(
@@ -96,48 +151,106 @@ legs = itinerary_legs(
     target_date,
     ctx,
 )
+# Returns Vector{NamedTuple} — one row per leg per itinerary
 ```
 
-Returns a `Vector{NamedTuple}` — one row per leg per itinerary, sorted and deduplicated.
-
-### Step 5: Write to a PSV File
+#### Multiple O-D Pairs (Keyword Interface)
 
 ```julia
-mkpath("data/output/legs_index")
-open("data/output/legs_index/DEN_LAX_2026-03-20.psv", "w") do io
-    # Header
-    println(io, join([
-        "itinerary", "leg_pos", "row_number", "record_serial",
-        "airline", "flt_no", "operational_suffix", "itin_var",
-        "leg_seq", "svc_type", "codeshare_airline", "codeshare_flt_no",
-        "org", "dst",
-    ], "|"))
-    # Data
-    for r in legs
-        println(io, join([
-            r.itinerary, r.leg_pos, r.row_number, r.record_serial,
-            r.airline, r.flt_no, r.operational_suffix, r.itin_var,
-            r.leg_seq, r.svc_type, r.codeshare_airline, r.codeshare_flt_no,
-            r.org, r.dst,
-        ], "|"))
-    end
-end
+# Specific destinations
+result = itinerary_legs_multi(graph.stations, ctx;
+    origins      = ["DEN", "ORD"],
+    destinations = ["LAX", "SFO", "LHR"],
+    dates        = Date(2026, 3, 20),
+)
+
+# Access: result["DEN"]["LAX"][Date(2026, 3, 20)]
 ```
 
-### Step 6: Search Multiple O-D Pairs at Once
+#### All Destinations from a Station
+
+```julia
+# Omit destinations to search all reachable stations
+result = itinerary_legs_multi(graph.stations, ctx;
+    origins = "DEN",
+    dates   = Date(2026, 3, 20),
+)
+# result["DEN"] contains all reachable destinations from DEN
+```
+
+#### Multiple Dates
+
+```julia
+result = itinerary_legs_multi(graph.stations, ctx;
+    origins      = "ORD",
+    destinations = "LHR",
+    dates        = [Date(2026, 3, 20), Date(2026, 3, 21), Date(2026, 3, 22)],
+)
+# result["ORD"]["LHR"][Date(2026, 3, 20)]  → legs for March 20
+# result["ORD"]["LHR"][Date(2026, 3, 21)]  → legs for March 21
+```
+
+#### JSON Output
+
+```julia
+json = itinerary_legs_json(graph.stations, ctx;
+    origins      = ["DEN", "ORD"],
+    destinations = ["LAX", "LHR"],
+    dates        = Date(2026, 3, 20),
+)
+# Write to file
+write("data/output/itineraries.json", json)
+```
+
+#### Legacy Positional Interface
+
+The original tuple-based interface still works:
 
 ```julia
 od_pairs = [
     (StationCode("DEN"), StationCode("LAX"), Date(2026, 3, 20)),
     (StationCode("ORD"), StationCode("SFO"), Date(2026, 3, 20)),
-    (StationCode("ORD"), StationCode("LHR"), Date(2026, 3, 20)),
 ]
+result = itinerary_legs_multi(graph.stations, od_pairs, ctx)
+```
 
-results = itinerary_legs_multi(graph.stations, od_pairs, ctx)
+### Step 5: Write PSV Files
 
-# results is a Dict keyed by (origin, dest, date)
-for ((org, dst, date), legs) in results
-    println("$(org)→$(dst) on $(date): $(length(legs)) leg rows")
+```julia
+outdir = "data/output/legs_index"
+mkpath(outdir)
+
+result = itinerary_legs_multi(graph.stations, ctx;
+    origins      = ["DEN", "ORD", "IAH"],
+    destinations = ["LAX", "SFO", "LHR", "EWR"],
+    dates        = Date(2026, 3, 20),
+)
+
+header = join([
+    "itinerary", "leg_pos", "row_number", "record_serial",
+    "airline", "flt_no", "operational_suffix", "itin_var",
+    "leg_seq", "svc_type", "codeshare_airline", "codeshare_flt_no",
+    "org", "dst",
+], "|")
+
+for (org, dst_dict) in result
+    for (dst, date_dict) in dst_dict
+        for (date, legs) in date_dict
+            fname = joinpath(outdir, "$(org)_$(dst)_$(date).psv")
+            open(fname, "w") do io
+                println(io, header)
+                for r in legs
+                    println(io, join([
+                        r.itinerary, r.leg_pos, r.row_number, r.record_serial,
+                        r.airline, r.flt_no, r.operational_suffix, r.itin_var,
+                        r.leg_seq, r.svc_type, r.codeshare_airline, r.codeshare_flt_no,
+                        r.org, r.dst,
+                    ], "|"))
+                end
+            end
+            println("$(org)→$(dst) $(date): $(length(legs)) rows → $(fname)")
+        end
+    end
 end
 ```
 
@@ -163,40 +276,14 @@ ctx = RuntimeContext(
     itn_rules = build_itn_rules(config),
 )
 
-# Search and write per-OD files
-markets = [
-    (StationCode("DEN"), StationCode("LAX")),
-    (StationCode("ORD"), StationCode("SFO")),
-    (StationCode("IAH"), StationCode("EWR")),
-    (StationCode("ORD"), StationCode("LHR")),
-]
-
-outdir = "data/output/legs_index"
-mkpath(outdir)
-
-for (org, dst) in markets
-    legs = itinerary_legs(graph.stations, org, dst, target, ctx)
-    isempty(legs) && continue
-
-    fname = joinpath(outdir, "$(org)_$(dst)_$(target).psv")
-    open(fname, "w") do io
-        println(io, join([
-            "itinerary", "leg_pos", "row_number", "record_serial",
-            "airline", "flt_no", "operational_suffix", "itin_var",
-            "leg_seq", "svc_type", "codeshare_airline", "codeshare_flt_no",
-            "org", "dst",
-        ], "|"))
-        for r in legs
-            println(io, join([
-                r.itinerary, r.leg_pos, r.row_number, r.record_serial,
-                r.airline, r.flt_no, r.operational_suffix, r.itin_var,
-                r.leg_seq, r.svc_type, r.codeshare_airline, r.codeshare_flt_no,
-                r.org, r.dst,
-            ], "|"))
-        end
-    end
-    println("$(org)→$(dst): $(length(legs)) rows → $(fname)")
-end
+# Search all destinations from DEN and ORD, write JSON
+json = itinerary_legs_json(graph.stations, ctx;
+    origins = ["DEN", "ORD"],
+    dates   = target,
+)
+mkpath("data/output")
+write("data/output/all_itineraries_$(target).json", json)
+println("Written $(length(json)) bytes")
 
 close(store)
 ```
