@@ -372,6 +372,15 @@ function _validate_and_commit!(itn::Itinerary, ctx::RuntimeContext)
         ctx.search_stats.paths_by_stops[bucket] += Int32(1)
     end
 
+    # Elapsed time histogram (30-min buckets, 0–1440 min)
+    et = committed.elapsed_time
+    et_bucket = clamp(div(Int(et), 30) + 1, 1, 48)
+    ctx.search_stats.elapsed_time_hist[et_bucket] += Int32(1)
+
+    # Distance histogram (250-mile buckets, 0–10000 miles)
+    dist_bucket = clamp(div(Int(round(committed.total_distance)), 250) + 1, 1, 40)
+    ctx.search_stats.total_distance_hist[dist_bucket] += Int32(1)
+
     return nothing
 end
 
@@ -675,6 +684,8 @@ function _dfs!(
         # DOW intersection
         itn.status |= cp.status
         itn.num_stops += Int16(1)
+        ctx.search_stats.max_depth_reached = max(
+            ctx.search_stats.max_depth_reached, Int32(itn.num_stops))
 
         # Equipment-change detection (skip through-service legs)
         if !cp.is_through && (cp.from_leg::GraphLeg).record.eqp != next_leg.record.eqp
@@ -776,6 +787,8 @@ function search_itineraries(
     dst_stn = get(stations, dest, nothing)
     (org_stn === nothing || dst_stn === nothing) && return Itinerary[]
 
+    t0 = time_ns()
+
     # Update search state
     ctx.target_date = pack_date(target_date)
     ctx.target_dow = dow_bit(Dates.dayofweek(target_date))
@@ -848,6 +861,7 @@ function search_itineraries(
         pop!(working.connections)
     end
 
+    ctx.search_stats.search_time_ns += time_ns() - t0
     return ctx.results
 end
 

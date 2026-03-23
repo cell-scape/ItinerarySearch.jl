@@ -118,7 +118,7 @@ end
 - `max_depth_reached::Int32` — deepest DFS level hit during any search
 - `layer1_hits::Int64` — L1 cache hits during connection traversal
 - `layer1_misses::Int64` — L1 cache misses during connection traversal
-- `elapsed_time_hist::Vector{Int32}` — 48-bucket histogram of query elapsed time (ms)
+- `elapsed_time_hist::Vector{Int32}` — 48-bucket histogram of itinerary elapsed time in 30-min steps (0–1440 min)
 - `total_distance_hist::Vector{Int32}` — 40-bucket histogram of itinerary total distance
 - `search_time_ns::UInt64` — total wall-clock nanoseconds spent in search
 """
