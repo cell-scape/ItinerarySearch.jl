@@ -112,7 +112,7 @@ using Dates
             config=SearchConfig(scope=scope, interline=interline),
             constraints=sc,
             itn_rules=build_itn_rules(SearchConfig(scope=scope, interline=interline)),
-            gc_cache=Dict{UInt64,Float64}(),
+            gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
         )
     end
 
@@ -204,7 +204,7 @@ using Dates
             constraints=constraints,
             build_stats=BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
             mct_cache=Dict{UInt64,MCTResult}(),
-            gc_cache=Dict{UInt64,Float64}(),
+            gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
         )
         cnx_rules = build_cnx_rules(SearchConfig(interline=INTERLINE_ALL), constraints, MCTLookup())
 
@@ -333,7 +333,7 @@ using Dates
         end
 
         # Market distance is cached in gc_cache after first call
-        gc_key = hash(StationCode("JFK"), hash(StationCode("LHR")))
+        gc_key = (StationCode("JFK"), StationCode("LHR"))
         @test haskey(ctx.gc_cache, gc_key)
         @test ctx.gc_cache[gc_key] > 0.0
     end
@@ -535,7 +535,7 @@ using Dates
             constraints=constraints,
             build_stats=BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
             mct_cache=Dict{UInt64,MCTResult}(),
-            gc_cache=Dict{UInt64,Float64}(),
+            gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
         )
         cnx_rules = build_cnx_rules(SearchConfig(interline=INTERLINE_ALL), constraints, MCTLookup())
         stations = Dict{StationCode,GraphStation}(
@@ -698,7 +698,7 @@ using Dates
             constraints=rt_constraints,
             build_stats=BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
             mct_cache=Dict{UInt64,MCTResult}(),
-            gc_cache=Dict{UInt64,Float64}(),
+            gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
         )
         cnx_rules = build_cnx_rules(
             SearchConfig(interline=INTERLINE_ALL), rt_constraints, MCTLookup()
@@ -715,7 +715,7 @@ using Dates
             config=SearchConfig(interline=INTERLINE_ALL, allow_roundtrips=false),
             constraints=rt_constraints,
             itn_rules=build_itn_rules(SearchConfig(interline=INTERLINE_ALL)),
-            gc_cache=Dict{UInt64,Float64}(),
+            gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
         )
         itns_no_rt = search_itineraries(
             rt_stations, StationCode("AAA"), StationCode("AAA"),
@@ -728,7 +728,7 @@ using Dates
             config=SearchConfig(interline=INTERLINE_ALL, allow_roundtrips=true),
             constraints=rt_constraints,
             itn_rules=build_itn_rules(SearchConfig(interline=INTERLINE_ALL)),
-            gc_cache=Dict{UInt64,Float64}(),
+            gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
         )
         itns_rt = search_itineraries(
             rt_stations, StationCode("AAA"), StationCode("AAA"),
@@ -817,7 +817,7 @@ using Dates
             config=SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL),
             constraints=SearchConstraints(defaults=tight_ps),
             itn_rules=build_itn_rules(SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL)),
-            gc_cache=Dict{UInt64,Float64}(),
+            gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
         )
 
         itns_tight = search_itineraries(
@@ -842,7 +842,7 @@ using Dates
             config=SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL),
             constraints=SearchConstraints(defaults=loose_ps),
             itn_rules=build_itn_rules(SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL)),
-            gc_cache=Dict{UInt64,Float64}(),
+            gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
         )
 
         itns_loose = search_itineraries(
@@ -923,7 +923,7 @@ using Dates
             constraints=constraints,
             build_stats=BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
             mct_cache=Dict{UInt64,MCTResult}(),
-            gc_cache=Dict{UInt64,Float64}(),
+            gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
         )
         cnx_rules = build_cnx_rules(SearchConfig(interline=INTERLINE_ALL), constraints, MCTLookup())
 
@@ -938,7 +938,7 @@ using Dates
             config=SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL),
             constraints=constraints,
             itn_rules=build_itn_rules(SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL)),
-            gc_cache=Dict{UInt64,Float64}(),
+            gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(),
         )
 
         itns = search_itineraries(

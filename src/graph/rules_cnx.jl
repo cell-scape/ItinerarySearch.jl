@@ -459,7 +459,7 @@ function (r::CircuityRule)(cp::GraphConnection, ctx)::Int
     (from_org.code == NO_STATION || to_dst.code == NO_STATION) && return PASS
     from_org.code == to_dst.code && return PASS  # same O-D, never circuitous
 
-    gc_key = hash(from_org.code, hash(to_dst.code))
+    gc_key = (from_org.code, to_dst.code)
     gc_dist = get(ctx.gc_cache, gc_key, -1.0)
     if gc_dist < 0.0
         gc_dist = _geodesic_distance(
@@ -477,8 +477,8 @@ end
 """
     `function _haversine_distance(lat1::Float64, lng1::Float64, lat2::Float64, lng2::Float64)::Float64`
 
-Compute the great-circle distance between two points in nautical miles using the
-haversine formula.  Earth radius is taken as 3440.065 NM.
+Compute the great-circle distance between two points in statute miles using the
+haversine formula.  Earth mean radius is taken as 3958.8 statute miles.
 """
 function _haversine_distance(
     lat1::Float64,
@@ -486,7 +486,7 @@ function _haversine_distance(
     lat2::Float64,
     lng2::Float64,
 )::Float64
-    R = 3440.065  # Earth radius in nautical miles
+    R = 3958.8  # Earth mean radius in statute miles
     φ1 = deg2rad(lat1)
     φ2 = deg2rad(lat2)
     Δφ = deg2rad(lat2 - lat1)
@@ -499,13 +499,13 @@ end
 """
     `function _vincenty_distance(lat1::Float64, lng1::Float64, lat2::Float64, lng2::Float64)::Float64`
 
-Compute the geodesic distance between two points in nautical miles using the
+Compute the geodesic distance between two points in statute miles using the
 Vincenty inverse formula on the WGS-84 ellipsoid.  Falls back to
 `_haversine_distance` if the iterative solution does not converge (e.g. for
 nearly-antipodal points).
 
 WGS-84 parameters used:
-- Semi-major axis `a = 3443.918` NM (6 378 137 m / 1852 m NM⁻¹)
+- Semi-major axis `a = 3963.19` statute miles (6 378 137 m / 1609.344 m mi⁻¹)
 - Flattening `f = 1/298.257 223 563`
 - `b = a(1−f)`
 """
@@ -515,8 +515,8 @@ function _vincenty_distance(
     lat2::Float64,
     lng2::Float64,
 )::Float64
-    # WGS-84 ellipsoid parameters in nautical miles
-    a = 3443.918        # semi-major axis (NM)
+    # WGS-84 ellipsoid parameters in statute miles
+    a = 3963.19         # semi-major axis (statute miles)
     f = 1.0 / 298.257223563
     b = a * (1.0 - f)
 

@@ -330,8 +330,8 @@ using Dates
         # Total = 3 rows. The test should reflect the actual implementation.
 
         # The itinerary has 2 connections (nonstop cp for leg1, then connecting cp).
-        # Long format emits: cp1.from_leg (leg1), cp2.from_leg (leg1), cp2.to_leg (leg2 terminal)
-        @test length(rows) == 3
+        # Long format deduplicates: emits leg1 once, then leg2 (terminal to_leg).
+        @test length(rows) == 2
 
         # First row: leg1 JFK→ORD (from cp1), leg_seq=1
         r1 = rows[1]
@@ -342,21 +342,12 @@ using Dates
         @test r1.flt_no == 200
         @test r1.cnx_time == 0   # leg_idx==1 → always 0
 
-        # Second row: leg1 again as from_leg of cp2, leg_seq=2
+        # Second row: leg2 ORD→LHR (terminal to_leg), leg_seq=2
         r2 = rows[2]
         @test r2.leg_seq == 2
-        @test r2.org == "JFK"
-        @test r2.dst == "ORD"
-        @test r2.cnx_time == 120   # cp2.cnx_time
-
-        # Third row: leg2 ORD→LHR (terminal to_leg), leg_seq=3
-        r3 = rows[3]
-        @test r3.leg_seq == 3
-        @test r3.org == "ORD"
-        @test r3.dst == "LHR"
-        @test r3.flt_no == 916
-        @test r3.cnx_time == 0   # terminal row always 0
-        @test r3.is_nonstop == false
+        @test r2.org == "ORD"
+        @test r2.dst == "LHR"
+        @test r2.flt_no == 916
     end
 
     @testset "itinerary_long_format — multiple itineraries" begin
@@ -364,14 +355,13 @@ using Dates
         one = _one_stop_itinerary()
         rows = itinerary_long_format(Itinerary[ns, one])
 
-        # itinerary 1 (nonstop): 1 row; itinerary 2 (1-stop): 3 rows → total 4
-        @test length(rows) == 4
+        # itinerary 1 (nonstop): 1 row; itinerary 2 (1-stop): 2 rows → total 3
+        @test length(rows) == 3
 
         # itinerary_id assignment
         @test rows[1].itinerary_id == 1
         @test rows[2].itinerary_id == 2
         @test rows[3].itinerary_id == 2
-        @test rows[4].itinerary_id == 2
     end
 
     # ── itinerary_wide_format ─────────────────────────────────────────────────

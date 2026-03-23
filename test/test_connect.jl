@@ -104,7 +104,7 @@ using Dates
             constraints = constraints,
             build_stats = BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
             mct_cache = Dict{UInt64, MCTResult}(),
-            gc_cache = Dict{UInt64, Float64}(),
+            gc_cache = Dict{Tuple{StationCode,StationCode}, Float64}(),
         )
     end
 

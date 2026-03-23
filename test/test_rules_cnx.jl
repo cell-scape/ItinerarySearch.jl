@@ -114,7 +114,7 @@ using Dates
         scope=SCOPE_ALL,
         interline=INTERLINE_CODESHARE,
         constraints=SearchConstraints(),
-        gc_cache=Dict{UInt64, Float64}(),
+        gc_cache=Dict{Tuple{StationCode,StationCode}, Float64}(),
     )
         (
             config = SearchConfig(scope=scope, interline=interline),
@@ -473,7 +473,7 @@ using Dates
             # JFK (40.63N, 73.78W) → ORD (41.97N, 87.91W) → LHR (51.47N, 0.45W)
             # GC dist JFK→LHR ≈ 3450 NM; legs ~1100 + 3550 = 4650 NM
             # 4650 <= 2 * 3450 + 500 = 7400 => PASS
-            gc_cache = Dict{UInt64, Float64}()
+            gc_cache = Dict{Tuple{StationCode,StationCode}, Float64}()
             ctx = _mock_ctx(gc_cache=gc_cache)
             from_rec = _test_leg_record(org="JFK", dst="ORD", distance=1100.0f0)
             to_rec   = _test_leg_record(org="ORD", dst="LHR", distance=3550.0f0)
@@ -501,7 +501,7 @@ using Dates
             # Use a very tight factor so even moderate detour fails
             # Set up: org→cnx→dst where route_dist >> factor * gc_dist
             # Use very short gc distance (nearby airports) but long leg distances
-            gc_cache = Dict{UInt64, Float64}()
+            gc_cache = Dict{Tuple{StationCode,StationCode}, Float64}()
             ctx = _mock_ctx(gc_cache=gc_cache)
 
             # LAX→SFO→NYC: SFO is very close to LAX but NYC is the actual destination
@@ -531,7 +531,7 @@ using Dates
         end
 
         @testset "gc_cache is populated on first call" begin
-            gc_cache = Dict{UInt64, Float64}()
+            gc_cache = Dict{Tuple{StationCode,StationCode}, Float64}()
             ctx = _mock_ctx(gc_cache=gc_cache)
 
             from_rec = _test_leg_record(org="JFK", dst="ORD", distance=1100.0f0)
@@ -551,7 +551,7 @@ using Dates
             rule = CircuityRule()
             rule(cp, ctx)
             @test !isempty(gc_cache)
-            gc_key = hash(StationCode("JFK"), hash(StationCode("LHR")))
+            gc_key = (StationCode("JFK"), StationCode("LHR"))
             @test haskey(gc_cache, gc_key)
         end
     end
@@ -622,9 +622,9 @@ using Dates
     @testset "_haversine_distance" begin
         using ItinerarySearch: _haversine_distance
         # JFK (40.63N, 73.78W) to LHR (51.47N, 0.45W)
-        # Expected ≈ 2990 NM; allow 5% tolerance
+        # Expected ≈ 3451 statute miles; allow 5% tolerance
         dist = _haversine_distance(40.63, -73.78, 51.47, -0.45)
-        @test 2800.0 < dist < 3200.0
+        @test 3200.0 < dist < 3700.0
         # Same point => zero distance
         @test _haversine_distance(0.0, 0.0, 0.0, 0.0) ≈ 0.0 atol=1e-6
     end
@@ -634,18 +634,18 @@ using Dates
     @testset "Geodesic Distance" begin
         using ItinerarySearch: _haversine_distance, _vincenty_distance, _geodesic_distance
 
-        # ORD (41.97N, 87.90W) → LHR (51.47N, 0.46W): expect 3400–3500 NM
+        # ORD (41.97N, 87.90W) → LHR (51.47N, 0.46W): expect 3900–4100 statute miles
         ord_lat, ord_lng = 41.97, -87.90
         lhr_lat, lhr_lng = 51.47, -0.46
 
         @testset "haversine ORD→LHR in expected range" begin
             d = _haversine_distance(ord_lat, ord_lng, lhr_lat, lhr_lng)
-            @test 3400.0 < d < 3500.0
+            @test 3900.0 < d < 4100.0
         end
 
         @testset "vincenty ORD→LHR in expected range" begin
             d = _vincenty_distance(ord_lat, ord_lng, lhr_lat, lhr_lng)
-            @test 3400.0 < d < 3500.0
+            @test 3900.0 < d < 4100.0
         end
 
         @testset "haversine and vincenty agree within 0.5% for ORD→LHR" begin
@@ -654,7 +654,7 @@ using Dates
             @test abs(dh - dv) / dv < 0.005
         end
 
-        @testset "near-antipodal SYD→SCL > 5000 NM (both formulas)" begin
+        @testset "near-antipodal SYD→SCL > 5000 statute miles (both formulas)" begin
             # SYD (-33.87, 151.21) → SCL (-33.45, -70.67)
             syd_lat, syd_lng = -33.87, 151.21
             scl_lat, scl_lng = -33.45, -70.67
@@ -701,7 +701,7 @@ using Dates
         @test rules[8] isa CircuityRule
         @test rules[9] === check_cnx_trfrest
         # All elements are callable
-        @test all(r -> applicable(r, GraphConnection(), (config=config, constraints=constraints, gc_cache=Dict{UInt64,Float64}(), mct_cache=Dict{UInt64,MCTResult}(), build_stats=BuildStats())), rules)
+        @test all(r -> applicable(r, GraphConnection(), (config=config, constraints=constraints, gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(), mct_cache=Dict{UInt64,MCTResult}(), build_stats=BuildStats())), rules)
 
         # Verify CircuityRule picks up defaults from constraints
         rule8 = rules[8]::CircuityRule

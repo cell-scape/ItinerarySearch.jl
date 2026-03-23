@@ -23,8 +23,8 @@
 - `constraints::SearchConstraints` — market-level parameter overrides
 - `cnx_rules::Vector{Any}` — connection rule chain (built by `build_cnx_rules`)
 - `itn_rules::Vector{Any}` — itinerary rule chain (built by `build_itn_rules`)
-- `gc_cache::Dict{UInt64, Float64}` — great-circle distance cache keyed by
-  `hash(origin_code, hash(dest_code))`
+- `gc_cache::Dict{Tuple{StationCode,StationCode}, Float64}` — great-circle distance cache
+  keyed by `(origin_code, dest_code)`
 - `target_date::UInt32` — packed YYYYMMDD target search date
 - `target_dow::StatusBits` — single-bit DOW mask for the target date
 - `utc_dep_origin::Int32` — UTC departure of the current origin leg (minutes), set per departure leg in `search_itineraries`
@@ -48,7 +48,7 @@
     itn_rules::Vector{Any} = Any[]
 
     # Caches
-    gc_cache::Dict{UInt64,Float64} = Dict{UInt64,Float64}()
+    gc_cache::Dict{Tuple{StationCode,StationCode},Float64} = Dict{Tuple{StationCode,StationCode},Float64}()
 
     # Search state
     target_date::UInt32 = UInt32(0)         # packed YYYYMMDD
@@ -272,7 +272,7 @@ end
 - `::NTuple{4, Int16}`: `(num_metros, num_states, num_countries, num_regions)`
 """
 function _count_geo_diversity(itn::Itinerary)::NTuple{4,Int16}
-    metros = Set{InlineString31}()
+    metros = Set{InlineString3}()
     states = Set{InlineString3}()
     countries = Set{InlineString3}()
     regions = Set{InlineString3}()
@@ -782,7 +782,7 @@ function search_itineraries(
     ctx._circuity_threshold = ctx.constraints.defaults.itinerary_circuity
 
     # Great-circle market distance (cached)
-    gc_key = hash(origin, hash(dest))
+    gc_key = (origin, dest)
     market_dist = get(ctx.gc_cache, gc_key, -1.0)
     if market_dist < 0.0
         market_dist = _geodesic_distance(
@@ -893,10 +893,20 @@ function score_trip(trip::Trip, weights::TripScoringWeights)::Float64
         end
 
         for cp in itn.connections
-            cp.from_leg === cp.to_leg && continue
+            if cp.from_leg === cp.to_leg
+                # Nonstop self-connection: accumulate first leg's block time + set carrier baseline
+                r = (cp.from_leg::GraphLeg).record
+                utc_dep = Float64(r.pax_dep) - Float64(r.dep_utc_offset)
+                utc_arr = Float64(r.pax_arr) - Float64(r.arr_utc_offset) + Float64(r.arr_date_var) * 1440.0
+                total_block += max(0.0, utc_arr - utc_dep)
+                prev_carrier = r.airline
+                prev_flt = r.flt_no
+                continue
+            end
+
             r = (cp.to_leg::GraphLeg).record
 
-            # Block time (UTC)
+            # Block time (UTC) for the departing leg
             utc_dep = Float64(r.pax_dep) - Float64(r.dep_utc_offset)
             utc_arr = Float64(r.pax_arr) - Float64(r.arr_utc_offset) + Float64(r.arr_date_var) * 1440.0
             total_block += max(0.0, utc_arr - utc_dep)

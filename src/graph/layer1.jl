@@ -507,13 +507,15 @@ julia> export_layer1_parquet!("/tmp/layer1/out", store);
 """
 function export_layer1_parquet!(path::String, store::DuckDBStore)::Nothing
     mkpath(dirname(path))
+    # Sanitize path for SQL (escape single quotes)
+    safe_path = replace(path, "'" => "''")
     DBInterface.execute(
         store.db,
-        "COPY layer1_connections TO '$(path)_connections.parquet' (FORMAT PARQUET)",
+        "COPY layer1_connections TO '$(safe_path)_connections.parquet' (FORMAT PARQUET)",
     )
     DBInterface.execute(
         store.db,
-        "COPY layer1_metadata TO '$(path)_metadata.parquet' (FORMAT PARQUET)",
+        "COPY layer1_metadata TO '$(safe_path)_metadata.parquet' (FORMAT PARQUET)",
     )
     @info "Exported Layer 1 to Parquet" path = path
     return nothing

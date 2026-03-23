@@ -162,45 +162,53 @@ function itinerary_long_format(itineraries::Vector{Itinerary})::Vector{NamedTupl
     rows = NamedTuple[]
     for (itn_idx, itn) in enumerate(itineraries)
         n_cnx = length(itn.connections)
+        last_leg = nothing
+        seq = 0
         for (leg_idx, cp) in enumerate(itn.connections)
             leg = cp.from_leg::GraphLeg
-            rec = leg.record
-
             is_nonstop_cp = cp.from_leg === cp.to_leg
 
-            row = (
-                itinerary_id = itn_idx,
-                leg_seq = leg_idx,
-                airline = String(rec.airline),
-                flt_no = Int(rec.flt_no),
-                flight_id = flight_id(rec),
-                record_serial = Int(rec.record_serial),
-                segment_hash = rec.segment_hash,
-                org = String(rec.org),
-                dst = String(rec.dst),
-                pax_dep = Int(rec.pax_dep),
-                pax_arr = Int(rec.pax_arr),
-                eqp = String(rec.eqp),
-                body_type = rec.body_type,
-                distance = Float64(leg.distance),
-                is_through = cp.is_through,
-                is_nonstop = is_nonstop_cp,
-                cnx_time = leg_idx > 1 ? Int(cp.cnx_time) : 0,
-                mct = leg_idx > 1 ? Int(cp.mct) : 0,
-                dep_term = String(rec.dep_term),
-                arr_term = String(rec.arr_term),
-            )
-            push!(rows, row)
+            # Emit from_leg if not already emitted (dedup self-connection echo)
+            if leg !== last_leg
+                last_leg = leg
+                rec = leg.record
+                seq += 1
+                push!(rows, (
+                    itinerary_id = itn_idx,
+                    leg_seq = seq,
+                    airline = String(rec.airline),
+                    flt_no = Int(rec.flt_no),
+                    flight_id = flight_id(rec),
+                    record_serial = Int(rec.record_serial),
+                    segment_hash = rec.segment_hash,
+                    org = String(rec.org),
+                    dst = String(rec.dst),
+                    pax_dep = Int(rec.pax_dep),
+                    pax_arr = Int(rec.pax_arr),
+                    eqp = String(rec.eqp),
+                    body_type = rec.body_type,
+                    distance = Float64(leg.distance),
+                    is_through = cp.is_through,
+                    is_nonstop = is_nonstop_cp,
+                    cnx_time = seq > 1 ? Int(cp.cnx_time) : 0,
+                    mct = seq > 1 ? Int(cp.mct) : 0,
+                    dep_term = String(rec.dep_term),
+                    arr_term = String(rec.arr_term),
+                ))
+            end
 
             # For the last connection in a connecting itinerary, to_leg is the
-            # final arriving leg and must be emitted as its own row — it is not
-            # the from_leg of any subsequent connection.
+            # final arriving leg and must be emitted as its own row.
             if leg_idx == n_cnx && !is_nonstop_cp
                 to_leg = cp.to_leg::GraphLeg
+                if to_leg !== last_leg
+                    seq += 1
+                    last_leg = to_leg
+                end
                 to_rec = to_leg.record
                 push!(rows, (
                     itinerary_id = itn_idx,
-                    leg_seq = leg_idx + 1,
+                    leg_seq = seq,
                     airline = String(to_rec.airline),
                     flt_no = Int(to_rec.flt_no),
                     flight_id = flight_id(to_rec),
@@ -400,7 +408,7 @@ function write_legs(io::IO, graph::FlightGraph, date::Date)::Int
     ])
 
     n = 0
-    for leg in values(graph.legs)
+    for leg in graph.legs
         r = leg.record
         _operates_on(r, date) || continue
         flags = _resolve_flags(r)
