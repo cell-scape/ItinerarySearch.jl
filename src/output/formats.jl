@@ -644,14 +644,28 @@ function itinerary_legs(
     itineraries = copy(search_itineraries(stations, origin, dest, date, ctx))
     rows = NamedTuple[]
     for (itn_idx, itn) in enumerate(itineraries)
-        n_cnx = length(itn.connections)
+        # Extract unique legs in route order.
+        # connections[1] is the nonstop self-connection (from_leg === to_leg = departure leg).
+        # connections[2+] are real connections where from_leg arrives and to_leg departs.
+        # Each real connection's from_leg is the same object as the previous to_leg,
+        # so we emit: first from_leg, then to_leg of each subsequent connection.
         pos = 0
+        last_leg = nothing
         for (i, cp) in enumerate(itn.connections)
-            pos += 1
-            _push_leg_index!(rows, itn_idx, pos, cp.from_leg::GraphLeg)
-            if i == n_cnx && !(cp.from_leg === cp.to_leg)
+            from_l = cp.from_leg::GraphLeg
+            to_l = cp.to_leg::GraphLeg
+            is_nonstop = from_l === to_l
+
+            if from_l !== last_leg
                 pos += 1
-                _push_leg_index!(rows, itn_idx, pos, cp.to_leg::GraphLeg)
+                _push_leg_index!(rows, itn_idx, pos, from_l)
+                last_leg = from_l
+            end
+
+            if !is_nonstop && to_l !== last_leg
+                pos += 1
+                _push_leg_index!(rows, itn_idx, pos, to_l)
+                last_leg = to_l
             end
         end
     end
