@@ -894,11 +894,40 @@ function _nested_to_json(nested::Dict{Date, Dict{String, Dict{String, Vector{Iti
     return JSON3.write(json_root)
 end
 
+function _nested_to_json_compact(nested::Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}})::String
+    json_root = Dict{String,Any}()
+    for (date, org_dict) in nested
+        json_date = Dict{String,Any}()
+        for (org, dst_dict) in org_dict
+            json_org = Dict{String,Any}()
+            for (dst, itineraries) in dst_dict
+                json_org[dst] = [
+                    Dict{String,Any}(
+                        "flights"     => itn.flights,
+                        "stops"       => itn.stops,
+                        "num_stops"   => itn.num_stops,
+                        "origin"      => itn.origin,
+                        "destination" => itn.destination,
+                    )
+                    for itn in itineraries
+                ]
+            end
+            json_date[org] = json_org
+        end
+        json_root[string(date)] = json_date
+    end
+    return JSON3.write(json_root)
+end
+
 """
-    `function itinerary_legs_json(stations, ctx; origins, destinations=nothing, dates, cross=false)::String`
+    `function itinerary_legs_json(stations, ctx; origins, destinations=nothing, dates, cross=false, compact=false)::String`
 
 Same as `itinerary_legs_multi` but returns a JSON string.
 Accepts the same flexible keyword arguments.
+
+When `compact=true`, returns only the ItineraryRef summary fields (flights, stops,
+num_stops, origin, destination) without the full `legs` array — useful for display
+and debugging.
 """
 function itinerary_legs_json(
     stations::Dict{StationCode,GraphStation},
@@ -907,15 +936,19 @@ function itinerary_legs_json(
     destinations = nothing,
     dates,
     cross::Bool = false,
+    compact::Bool = false,
 )::String
-    _nested_to_json(itinerary_legs_multi(stations, ctx; origins, destinations, dates, cross))
+    nested = itinerary_legs_multi(stations, ctx; origins, destinations, dates, cross)
+    compact ? _nested_to_json_compact(nested) : _nested_to_json(nested)
 end
 
 # Legacy positional method
 function itinerary_legs_json(
     stations::Dict{StationCode,GraphStation},
     od_pairs::Vector{Tuple{StationCode,StationCode,Date}},
-    ctx::RuntimeContext,
+    ctx::RuntimeContext;
+    compact::Bool = false,
 )::String
-    _nested_to_json(itinerary_legs_multi(stations, od_pairs, ctx))
+    nested = itinerary_legs_multi(stations, od_pairs, ctx)
+    compact ? _nested_to_json_compact(nested) : _nested_to_json(nested)
 end

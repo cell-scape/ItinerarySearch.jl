@@ -193,15 +193,21 @@ for day_offset in 0:(n_days - 1)
         end
     end
 
-    # Write JSON for the same search
+    # Write full JSON (with leg keys)
     json_file = joinpath(outdir, "legs_index_$(target).json")
     json = itinerary_legs_json(graph.stations, ctx;
-        origins      = origins,
-        destinations = dests,
-        dates        = target,
+        origins=origins, destinations=dests, dates=target,
     )
     write(json_file, json)
-    println("[$(target)]   JSON: $(round(filesize(json_file) / 1024; digits=0))KB → $(json_file)")
+    println("[$(target)]   JSON (full): $(round(filesize(json_file) / 1024; digits=0))KB → $(json_file)")
+
+    # Write compact JSON (summary only — flights, stops, no leg details)
+    compact_file = joinpath(outdir, "legs_index_$(target)_compact.json")
+    compact_json = itinerary_legs_json(graph.stations, ctx;
+        origins=origins, destinations=dests, dates=target, compact=true,
+    )
+    write(compact_file, compact_json)
+    println("[$(target)]   JSON (compact): $(round(filesize(compact_file) / 1024; digits=0))KB → $(compact_file)")
 
     day_elapsed = round(time() - t_day; digits=1)
     println("[$(target)] Total: $(total_itns) itineraries, $(total_rows) rows → $(itns_file) ($(day_elapsed)s)")
