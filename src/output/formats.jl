@@ -609,3 +609,99 @@ function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date
     end
     return n
 end
+
+# ── Compact itinerary leg index ──────────────────────────────────────────────
+
+"""
+    `function itinerary_legs(stations, origin, dest, date, ctx)::Vector{NamedTuple}`
+---
+
+# Description
+- Search itineraries for an O-D pair on a date and return a compact leg index
+- Each row contains only the identity fields needed to cross-reference legs:
+  itinerary number, leg position, row_number, record_serial, and flight identifier fields
+
+# Arguments
+1. `stations::Dict{StationCode,GraphStation}`: the station graph
+2. `origin::StationCode`: departure airport
+3. `dest::StationCode`: arrival airport
+4. `date::Date`: travel date
+5. `ctx::RuntimeContext`: search context
+
+# Returns
+- `::Vector{NamedTuple}`: one entry per leg per itinerary with fields:
+  `itinerary`, `leg_pos`, `row_number`, `record_serial`,
+  `airline`, `flt_no`, `operational_suffix`, `itin_var`, `leg_seq`, `svc_type`,
+  `org`, `dst`
+"""
+function itinerary_legs(
+    stations::Dict{StationCode,GraphStation},
+    origin::StationCode,
+    dest::StationCode,
+    date::Date,
+    ctx::RuntimeContext,
+)::Vector{NamedTuple}
+    itineraries = copy(search_itineraries(stations, origin, dest, date, ctx))
+    rows = NamedTuple[]
+    for (itn_idx, itn) in enumerate(itineraries)
+        n_cnx = length(itn.connections)
+        pos = 0
+        for (i, cp) in enumerate(itn.connections)
+            pos += 1
+            _push_leg_index!(rows, itn_idx, pos, cp.from_leg::GraphLeg)
+            if i == n_cnx && !(cp.from_leg === cp.to_leg)
+                pos += 1
+                _push_leg_index!(rows, itn_idx, pos, cp.to_leg::GraphLeg)
+            end
+        end
+    end
+    return rows
+end
+
+function _push_leg_index!(rows, itn_idx, pos, leg::GraphLeg)
+    r = leg.record
+    push!(rows, (
+        itinerary           = itn_idx,
+        leg_pos             = pos,
+        row_number          = Int(r.row_number),
+        record_serial       = Int(r.record_serial),
+        airline             = strip(String(r.airline)),
+        flt_no              = Int(r.flt_no),
+        operational_suffix  = r.operational_suffix,
+        itin_var            = Int(r.itin_var),
+        leg_seq             = Int(r.leg_seq),
+        svc_type            = r.svc_type,
+        org                 = strip(String(r.org)),
+        dst                 = strip(String(r.dst)),
+    ))
+end
+
+"""
+    `function itinerary_legs_multi(stations, od_pairs, ctx)::Dict{Tuple{String,String,Date}, Vector{NamedTuple}}`
+---
+
+# Description
+- Search itineraries for multiple O-D pairs and return a dictionary keyed by (origin, dest, date)
+- Each value is the same compact leg index as `itinerary_legs`
+
+# Arguments
+1. `stations::Dict{StationCode,GraphStation}`: the station graph
+2. `od_pairs::Vector{Tuple{StationCode,StationCode,Date}}`: list of (origin, dest, date) tuples
+3. `ctx::RuntimeContext`: search context
+
+# Returns
+- `::Dict{Tuple{String,String,Date}, Vector{NamedTuple}}`
+"""
+function itinerary_legs_multi(
+    stations::Dict{StationCode,GraphStation},
+    od_pairs::Vector{Tuple{StationCode,StationCode,Date}},
+    ctx::RuntimeContext,
+)::Dict{Tuple{String,String,Date}, Vector{NamedTuple}}
+    result = Dict{Tuple{String,String,Date}, Vector{NamedTuple}}()
+    for (org, dst, date) in od_pairs
+        legs = itinerary_legs(stations, org, dst, date, ctx)
+        key = (strip(String(org)), strip(String(dst)), date)
+        result[key] = legs
+    end
+    return result
+end

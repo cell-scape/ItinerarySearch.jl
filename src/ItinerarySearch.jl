@@ -129,6 +129,7 @@ export FlightGraph, build_graph!, search
 # Exports — output formats
 export itinerary_long_format, itinerary_wide_format
 export write_legs, write_itineraries, write_trips
+export itinerary_legs, itinerary_legs_multi
 
 # Exports — visualizations
 export viz_network_map, viz_timeline, viz_trip_comparison
