@@ -662,24 +662,52 @@ function itinerary_legs(
         push!(unique_itns, itn)
     end
 
-    # Extract LegKey sequences and wrap in ItineraryRef
+    # Extract LegKey sequences and wrap in ItineraryRef with metrics from the graph Itinerary
     result = ItineraryRef[]
     for itn in unique_itns
         keys = LegKey[]
+        flight_mins = Int32(0)
         last_leg = nothing
         for cp in itn.connections
             from_l = cp.from_leg::GraphLeg
             to_l = cp.to_leg::GraphLeg
             if from_l !== last_leg
                 push!(keys, LegKey(from_l.record))
+                # Accumulate block time for this leg
+                r = from_l.record
+                bt = Int32(r.pax_arr) - Int32(r.pax_dep) + Int32(r.arr_date_var) * Int32(1440)
+                if bt < 0; bt += Int32(1440); end
+                flight_mins += bt
                 last_leg = from_l
             end
             if !(from_l === to_l) && to_l !== last_leg
                 push!(keys, LegKey(to_l.record))
+                r = to_l.record
+                bt = Int32(r.pax_arr) - Int32(r.pax_dep) + Int32(r.arr_date_var) * Int32(1440)
+                if bt < 0; bt += Int32(1440); end
+                flight_mins += bt
                 last_leg = to_l
             end
         end
-        push!(result, ItineraryRef(keys))
+
+        flights, route, stops, origin, destination, num_stops = _compute_ref_summary(keys)
+        elapsed = itn.elapsed_time
+        layover = max(Int32(0), elapsed - flight_mins)
+
+        push!(result, ItineraryRef(
+            legs            = keys,
+            flights         = flights,
+            route           = route,
+            stops           = stops,
+            num_stops       = num_stops,
+            origin          = origin,
+            destination     = destination,
+            elapsed_minutes = elapsed,
+            flight_minutes  = flight_mins,
+            layover_minutes = layover,
+            distance_miles  = Float32(itn.total_distance),
+            circuity        = Float32(itn.circuity),
+        ))
     end
     return result
 end
@@ -868,6 +896,22 @@ function _legkey_to_dict(k::LegKey)::Dict{String,Any}
     )
 end
 
+function _itnref_summary_dict(itn::ItineraryRef)::Dict{String,Any}
+    Dict{String,Any}(
+        "flights"         => itn.flights,
+        "route"           => itn.route,
+        "stops"           => itn.stops,
+        "num_stops"       => itn.num_stops,
+        "origin"          => itn.origin,
+        "destination"     => itn.destination,
+        "elapsed_minutes" => Int(itn.elapsed_minutes),
+        "flight_minutes"  => Int(itn.flight_minutes),
+        "layover_minutes" => Int(itn.layover_minutes),
+        "distance_miles"  => round(Float64(itn.distance_miles); digits=0),
+        "circuity"        => round(Float64(itn.circuity); digits=2),
+    )
+end
+
 function _nested_to_json(nested::Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}})::String
     json_root = Dict{String,Any}()
     for (date, org_dict) in nested
@@ -876,14 +920,10 @@ function _nested_to_json(nested::Dict{Date, Dict{String, Dict{String, Vector{Iti
             json_org = Dict{String,Any}()
             for (dst, itineraries) in dst_dict
                 json_org[dst] = [
-                    Dict{String,Any}(
-                        "flights"     => itn.flights,
-                        "stops"       => itn.stops,
-                        "num_stops"   => itn.num_stops,
-                        "origin"      => itn.origin,
-                        "destination" => itn.destination,
-                        "legs"        => [_legkey_to_dict(k) for k in itn.legs],
-                    )
+                    let d = _itnref_summary_dict(itn)
+                        d["legs"] = [_legkey_to_dict(k) for k in itn.legs]
+                        d
+                    end
                     for itn in itineraries
                 ]
             end
@@ -901,16 +941,7 @@ function _nested_to_json_compact(nested::Dict{Date, Dict{String, Dict{String, Ve
         for (org, dst_dict) in org_dict
             json_org = Dict{String,Any}()
             for (dst, itineraries) in dst_dict
-                json_org[dst] = [
-                    Dict{String,Any}(
-                        "flights"     => itn.flights,
-                        "stops"       => itn.stops,
-                        "num_stops"   => itn.num_stops,
-                        "origin"      => itn.origin,
-                        "destination" => itn.destination,
-                    )
-                    for itn in itineraries
-                ]
+                json_org[dst] = [_itnref_summary_dict(itn) for itn in itineraries]
             end
             json_date[org] = json_org
         end

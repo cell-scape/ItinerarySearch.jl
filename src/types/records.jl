@@ -167,32 +167,52 @@ of `LegKey` references. Decoupled from the graph — suitable for serialization,
 cross-system handoff, and reaccommodation candidate lists.
 
 # Fields
-- `legs::Vector{LegKey}` — ordered leg references (position = leg position in itinerary)
-- `flights::String` — flight chain (e.g., "UA0774" or "UA4247/UA0284/UA3612")
-- `stops::Vector{String}` — station codes visited in order, including origin and destination
-  (e.g., ["DEN", "LAX"] for nonstop, ["LFT", "IAH", "ORD", "YYZ"] for 2-stop)
+- `legs::Vector{LegKey}` — ordered leg references
+- `flights::String` — flight chain with arrow separator (e.g., "UA 774" or "UA4247 -> UA 284 -> UA3612")
+- `route::String` — station chain with arrow separator (e.g., "DEN -> LAX" or "LFT -> IAH -> ORD -> YYZ")
+- `stops::Vector{String}` — station codes visited in order
 - `num_stops::Int` — number of intermediate stops (0 = nonstop)
 - `origin::String` — first departure station
 - `destination::String` — final arrival station
+- `elapsed_minutes::Int32` — total elapsed time (minutes)
+- `flight_minutes::Int32` — total in-flight block time (minutes)
+- `layover_minutes::Int32` — total ground/connection time (minutes)
+- `distance_miles::Float32` — total flown distance (miles)
+- `circuity::Float32` — ratio of flown distance to great-circle distance
 """
 @kwdef struct ItineraryRef
     legs::Vector{LegKey} = LegKey[]
     flights::String = ""
+    route::String = ""
     stops::Vector{String} = String[]
     num_stops::Int = 0
     origin::String = ""
     destination::String = ""
+    elapsed_minutes::Int32 = Int32(0)
+    flight_minutes::Int32 = Int32(0)
+    layover_minutes::Int32 = Int32(0)
+    distance_miles::Float32 = Float32(0)
+    circuity::Float32 = Float32(0)
 end
 
 """
     `ItineraryRef(legs::Vector{LegKey})::ItineraryRef`
 
-Construct an `ItineraryRef` from a sequence of `LegKey`s, computing the summary fields.
+Construct an `ItineraryRef` from a sequence of `LegKey`s.
+Only computes fields derivable from the keys (flights, stops, origin, destination).
+Time/distance fields remain zero — use the full constructor for those.
 """
 function ItineraryRef(legs::Vector{LegKey})
     isempty(legs) && return ItineraryRef()
+    flights, route, stops, origin, destination, num_stops = _compute_ref_summary(legs)
+    ItineraryRef(
+        legs=legs, flights=flights, route=route, stops=stops,
+        num_stops=num_stops, origin=origin, destination=destination,
+    )
+end
 
-    # Flight chain: unique consecutive flight IDs joined with /
+function _compute_ref_summary(legs::Vector{LegKey})
+    # Flight chain: unique consecutive flight IDs joined with " -> "
     flt_ids = String[]
     prev_flt = ""
     for k in legs
@@ -202,7 +222,7 @@ function ItineraryRef(legs::Vector{LegKey})
             prev_flt = fid
         end
     end
-    flights = join(flt_ids, "/")
+    flights = join(flt_ids, " -> ")
 
     # Stops: origin of each leg + destination of last leg, deduplicated consecutively
     stops = String[]
@@ -211,19 +231,13 @@ function ItineraryRef(legs::Vector{LegKey})
         (isempty(stops) || stops[end] != s) && push!(stops, s)
     end
     push!(stops, strip(String(legs[end].dst)))
+    route = join(stops, " -> ")
 
     origin = stops[1]
     destination = stops[end]
-    num_stops = max(0, length(stops) - 2)  # intermediate stations
+    num_stops = max(0, length(stops) - 2)
 
-    ItineraryRef(
-        legs        = legs,
-        flights     = flights,
-        stops       = stops,
-        num_stops   = num_stops,
-        origin      = origin,
-        destination = destination,
-    )
+    return (flights, route, stops, origin, destination, num_stops)
 end
 
 """
