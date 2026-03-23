@@ -152,6 +152,27 @@ for day_offset in 0:(n_days - 1)
         end
     end
 
+    # Write compact leg index files per OD pair
+    legs_dir = joinpath(outdir, "legs_index")
+    mkpath(legs_dir)
+    for (origin, dest) in od_pairs
+        legs = itinerary_legs(graph.stations, origin, dest, target, ctx)
+        isempty(legs) && continue
+        fname = joinpath(legs_dir, "$(origin)_$(dest)_$(target).psv")
+        open(fname, "w") do io
+            # Header
+            println(io, join(["itinerary", "leg_pos", "row_number", "record_serial",
+                              "airline", "flt_no", "operational_suffix", "itin_var",
+                              "leg_seq", "svc_type", "org", "dst"], "|"))
+            for r in legs
+                println(io, join([r.itinerary, r.leg_pos, r.row_number, r.record_serial,
+                                  r.airline, r.flt_no, r.operational_suffix, r.itin_var,
+                                  r.leg_seq, r.svc_type, r.org, r.dst], "|"))
+            end
+        end
+        println("[$(target)]   Leg index: $(origin)→$(dest) $(length(legs)) rows → $(fname)")
+    end
+
     day_elapsed = round(time() - t_day; digits=1)
     println("[$(target)] Total: $(total_itns) itineraries, $(total_rows) rows → $(itns_file) ($(day_elapsed)s)")
 end
