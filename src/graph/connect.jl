@@ -208,8 +208,15 @@ function build_connections_at_station!(
             for k in 1:length(rules)
                 rc = rules[k](cp, ctx)
                 if rc <= 0
+                    if length(ctx.build_stats.rule_fail) >= k
+                        ctx.build_stats.rule_fail[k] += 1
+                    end
                     passed = false
                     break
+                else
+                    if length(ctx.build_stats.rule_pass) >= k
+                        ctx.build_stats.rule_pass[k] += 1
+                    end
                 end
             end
 
