@@ -145,6 +145,7 @@ config = load_config("config/defaults.json")
 | Network map | `viz_network_map` | Self-contained HTML with Leaflet map |
 | Timeline | `viz_timeline` | Self-contained HTML D3 Gantt-style chart |
 | Trip comparison | `viz_trip_comparison` | Self-contained HTML D3 stacked bar chart |
+| Itinerary table | `viz_itinerary_refs` | Self-contained HTML sortable/filterable itinerary table |
 
 ## Benchmarks
 
@@ -164,15 +165,16 @@ Search times vary by network density. Hub-to-hub international pairs with many 2
 ```julia
 # From the project directory:
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
+```
 
-# Run tests:
-make test
-
-# Run the demo pipeline on data/demo/:
-make demo
-
-# Run benchmarks:
-make bench
+```bash
+make test                                     # run test suite
+make demo                                     # full pipeline on data/demo/
+make bench                                    # benchmarks
+make search ORG=ORD DST=LHR DATE=2026-03-20  # single O-D: PSV, JSON, HTML, map
+make search ORG=ORD DATE=2026-03-20           # all destinations from ORG
+make viz [DATE=2026-03-18]                    # regenerate HTML visualizations only
+make json [DATE=2026-03-18] [DAYS=3]          # write JSON output only
 ```
 
 Requires Julia 1.10+.

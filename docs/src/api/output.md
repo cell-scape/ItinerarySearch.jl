@@ -47,6 +47,7 @@ All three functions write self-contained HTML files that open directly in a brow
 viz_network_map
 viz_timeline
 viz_trip_comparison
+viz_itinerary_refs
 ```
 
 ## Output Format Reference

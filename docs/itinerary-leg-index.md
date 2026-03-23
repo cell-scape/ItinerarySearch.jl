@@ -34,9 +34,10 @@ Each row contains the flight identity fields needed to cross-reference with the 
 
 | Function | Returns | Use Case |
 |----------|---------|----------|
-| `itinerary_legs(stations, org, dst, date, ctx)` | `Vector{NamedTuple}` | Single O-D pair, single date |
-| `itinerary_legs_multi(stations, ctx; origins, destinations, dates)` | Nested `Dict` (origin → dest → date → legs) | Multiple O-Ds, flexible inputs |
-| `itinerary_legs_json(stations, ctx; origins, destinations, dates)` | `String` (JSON) | Same as multi, for external consumption |
+| `itinerary_legs(stations, org, dst, date, ctx)` | `Vector{ItineraryRef}` | Single O-D pair, single date |
+| `itinerary_legs_multi(stations, ctx; origins, destinations, dates)` | Nested `Dict` (date → origin → dest → refs) | Multiple O-Ds, flexible inputs |
+| `itinerary_legs_json(stations, ctx; origins, destinations, dates, compact=false)` | `String` (JSON) | Same as multi, for external consumption |
+| `viz_itinerary_refs(path, data; title="")` | `Nothing` (writes HTML) | Interactive sortable/filterable HTML table |
 
 ---
 
@@ -55,33 +56,42 @@ When `destinations` is omitted or `nothing`, the search finds all reachable dest
 ### Return Structure (Dict)
 
 ```
-Dict{String, Dict{String, Dict{Date, Vector{NamedTuple}}}}
+Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}}
 ```
 
-Nested by origin → destination → date:
+Nested by date → origin → destination:
 
 ```julia
-result["ORD"]["LHR"][Date(2026, 3, 20)]  # → Vector of leg NamedTuples
-result["ORD"]["SFO"][Date(2026, 3, 20)]  # → Vector of leg NamedTuples
-result["DEN"]["LAX"][Date(2026, 3, 20)]  # → ...
+result[Date(2026, 3, 20)]["ORD"]["LHR"]  # → Vector{ItineraryRef}
+result[Date(2026, 3, 20)]["ORD"]["SFO"]  # → Vector{ItineraryRef}
+result[Date(2026, 3, 20)]["DEN"]["LAX"]  # → Vector{ItineraryRef}
 ```
 
 ### Return Structure (JSON)
 
 ```json
 {
-  "ORD": {
-    "LHR": {
-      "2026-03-20": [
-        {"itinerary": 1, "leg_pos": 1, "airline": "UA", "flt_no": 920, "org": "ORD", "dst": "LHR", ...},
-        ...
+  "2026-03-20": {
+    "ORD": {
+      "LHR": [
+        {
+          "flights": "UA 920",
+          "route": "ORD -> LHR",
+          "num_stops": 0,
+          "elapsed_minutes": 480,
+          "distance_miles": 3958.0,
+          "circuity": 1.01,
+          "legs": [
+            {"row_number": 8234, "record_serial": 56789, "airline": "UA", "flt_no": 920, "org": "ORD", "dst": "LHR", ...}
+          ]
+        }
       ]
-    },
-    "SFO": { ... }
-  },
-  "DEN": { ... }
+    }
+  }
 }
 ```
+
+With `compact=true`, the `"legs"` array is omitted from each itinerary entry.
 
 ---
 
@@ -144,27 +154,40 @@ ctx = RuntimeContext(
 #### Single O-D Pair
 
 ```julia
-legs = itinerary_legs(
+refs = itinerary_legs(
     graph.stations,
     StationCode("DEN"),
     StationCode("LAX"),
     target_date,
     ctx,
 )
-# Returns Vector{NamedTuple} — one row per leg per itinerary
+# Returns Vector{ItineraryRef} — sorted by stops → elapsed → distance
+
+for (i, ref) in enumerate(refs)
+    println("$i. $(ref.route) — $(ref.num_stops) stops, $(ref.elapsed_minutes) min, $(ref.distance_miles) mi")
+end
 ```
 
 #### Multiple O-D Pairs (Keyword Interface)
 
 ```julia
-# Specific destinations
+# Paired O-D pairs (default): DEN→LAX and ORD→SFO
 result = itinerary_legs_multi(graph.stations, ctx;
     origins      = ["DEN", "ORD"],
-    destinations = ["LAX", "SFO", "LHR"],
+    destinations = ["LAX", "SFO"],
     dates        = Date(2026, 3, 20),
 )
 
-# Access: result["DEN"]["LAX"][Date(2026, 3, 20)]
+# Access: date → origin → destination
+result[Date(2026, 3, 20)]["DEN"]["LAX"]
+
+# Cross-product: DEN→LAX, DEN→LHR, ORD→LAX, ORD→LHR
+result = itinerary_legs_multi(graph.stations, ctx;
+    origins      = ["DEN", "ORD"],
+    destinations = ["LAX", "LHR"],
+    dates        = Date(2026, 3, 20),
+    cross        = true,
+)
 ```
 
 #### All Destinations from a Station
@@ -175,7 +198,7 @@ result = itinerary_legs_multi(graph.stations, ctx;
     origins = "DEN",
     dates   = Date(2026, 3, 20),
 )
-# result["DEN"] contains all reachable destinations from DEN
+# result[Date(2026, 3, 20)]["DEN"] contains all reachable destinations from DEN
 ```
 
 #### Multiple Dates
@@ -186,21 +209,42 @@ result = itinerary_legs_multi(graph.stations, ctx;
     destinations = "LHR",
     dates        = [Date(2026, 3, 20), Date(2026, 3, 21), Date(2026, 3, 22)],
 )
-# result["ORD"]["LHR"][Date(2026, 3, 20)]  → legs for March 20
-# result["ORD"]["LHR"][Date(2026, 3, 21)]  → legs for March 21
+# result[Date(2026, 3, 20)]["ORD"]["LHR"]  → itineraries for March 20
+# result[Date(2026, 3, 21)]["ORD"]["LHR"]  → itineraries for March 21
 ```
 
 #### JSON Output
 
 ```julia
+# Full JSON with leg arrays
 json = itinerary_legs_json(graph.stations, ctx;
     origins      = ["DEN", "ORD"],
     destinations = ["LAX", "LHR"],
     dates        = Date(2026, 3, 20),
 )
-# Write to file
 write("data/output/itineraries.json", json)
+
+# Compact JSON — summary fields only, no leg arrays (smaller, faster)
+compact = itinerary_legs_json(graph.stations, ctx;
+    origins      = "ORD",
+    destinations = "LHR",
+    dates        = Date(2026, 3, 20),
+    compact      = true,
+)
 ```
+
+#### Interactive HTML Table
+
+```julia
+# From a nested dict (date → origin → dest → refs)
+viz_itinerary_refs("data/viz/itineraries.html", result;
+    title = "ORD→LHR Itineraries 2026-03-20")
+
+# From a flat Vector{ItineraryRef}
+viz_itinerary_refs("data/viz/den_lax.html", refs)
+```
+
+Produces a self-contained HTML file with sortable columns and filters for origin, destination, and stop count.
 
 #### Legacy Positional Interface
 
@@ -226,29 +270,25 @@ result = itinerary_legs_multi(graph.stations, ctx;
     dates        = Date(2026, 3, 20),
 )
 
-header = join([
-    "itinerary", "leg_pos", "row_number", "record_serial",
-    "airline", "flt_no", "operational_suffix", "itin_var",
-    "leg_seq", "svc_type", "codeshare_airline", "codeshare_flt_no",
-    "org", "dst",
-], "|")
-
-for (org, dst_dict) in result
-    for (dst, date_dict) in dst_dict
-        for (date, legs) in date_dict
+# Iterate date → origin → destination
+for (date, org_dict) in result
+    for (org, dst_dict) in org_dict
+        for (dst, itinerary_refs) in dst_dict
             fname = joinpath(outdir, "$(org)_$(dst)_$(date).psv")
             open(fname, "w") do io
-                println(io, header)
-                for r in legs
-                    println(io, join([
-                        r.itinerary, r.leg_pos, r.row_number, r.record_serial,
-                        r.airline, r.flt_no, r.operational_suffix, r.itin_var,
-                        r.leg_seq, r.svc_type, r.codeshare_airline, r.codeshare_flt_no,
-                        r.org, r.dst,
-                    ], "|"))
+                println(io, "itinerary|leg_pos|row_number|record_serial|airline|flt_no|org|dst")
+                for (itn_idx, ref) in enumerate(itinerary_refs)
+                    for (leg_pos, key) in enumerate(ref.legs)
+                        println(io, join([
+                            itn_idx, leg_pos,
+                            key.row_number, key.record_serial,
+                            strip(String(key.airline)), key.flt_no,
+                            strip(String(key.org)), strip(String(key.dst)),
+                        ], "|"))
+                    end
                 end
             end
-            println("$(org)→$(dst) $(date): $(length(legs)) rows → $(fname)")
+            println("$(org)→$(dst) $(date): $(length(itinerary_refs)) itineraries → $(fname)")
         end
     end
 end
@@ -293,18 +333,30 @@ close(store)
 ## Example Output
 
 ```
-itinerary|leg_pos|row_number|record_serial|airline|flt_no|operational_suffix|itin_var|leg_seq|svc_type|codeshare_airline|codeshare_flt_no|org|dst
-1|1|8234|56789|UA|774| |2|1|J|UA|774|DEN|LAX
-2|1|8301|56812|UA|2240| |5|1|J|UA|2240|DEN|LAX
-3|1|8156|56734|UA|1013| |3|1|J|UA|1013|DEN|LAX
+itinerary|leg_pos|row_number|record_serial|airline|flt_no|org|dst
+1|1|8234|56789|UA|774|DEN|LAX
+2|1|8301|56812|UA|2240|DEN|LAX
+3|1|8156|56734|UA|1013|DEN|LAX
 ...
-9|1|9102|61234|UA|526| |4|1|J|UA|526|DEN|LAS
-9|2|12456|78901|UA|1892| |1|1|J|UA|1892|LAS|LAX
+9|1|9102|61234|UA|526|DEN|LAS
+9|2|12456|78901|UA|1892|LAS|LAX
 ```
 
-- Itineraries 1-8: nonstops (1 leg each) — DEN→LAX direct
+- Itineraries 1–8: nonstops (1 leg each) — DEN→LAX direct
 - Itinerary 9+: 1-stop (2 legs) — DEN→LAS→LAX via Las Vegas
 - Later itineraries: 2-stop (3 legs) — e.g., DEN→ORD→SFO→LAX
+
+---
+
+## Make Commands
+
+| Command | Description |
+|---------|-------------|
+| `make search ORG=ORD DST=LHR DATE=2026-03-20` | Single O-D search: PSV, JSON, HTML table, network map |
+| `make search ORG=ORD DATE=2026-03-20` | All destinations from ORG |
+| `make viz [DATE=2026-03-18]` | Regenerate HTML visualizations only |
+| `make json [DATE=2026-03-18] [DAYS=3]` | Write JSON output only (full + compact) |
+| `make demo` | Full end-to-end pipeline on demo dataset |
 
 ---
 

@@ -53,7 +53,8 @@ Each `LegKey` contains the fields needed to cross-reference with the full schedu
 |----------|---------|----------|
 | `itinerary_legs(stations, org, dst, date, ctx)` | `Vector{ItineraryRef}` | Single O-D pair, single date |
 | `itinerary_legs_multi(stations, ctx; origins, destinations, dates)` | Nested Dict (date → origin → dest → refs) | Multiple O-Ds, flexible inputs |
-| `itinerary_legs_json(stations, ctx; origins, destinations, dates)` | `String` (JSON) | Same as multi, for external consumption |
+| `itinerary_legs_json(stations, ctx; origins, destinations, dates, compact=false)` | `String` (JSON) | Same as multi, for external consumption |
+| `viz_itinerary_refs(path, data; title="")` | `Nothing` (writes HTML) | Interactive sortable/filterable HTML table |
 
 ## Flexible Input Arguments
 
@@ -309,6 +310,16 @@ itinerary|leg_pos|row_number|record_serial|airline|flt_no|org|dst
 - Itineraries 1–8: nonstops (1 leg each) — DEN→LAX direct
 - Itinerary 9+: 1-stop (2 legs) — DEN→LAS→LAX via Las Vegas
 - Later itineraries: 2-stop (3 legs) — e.g., DEN→ORD→SFO→LAX
+
+## Make Commands
+
+| Command | Description |
+|---------|-------------|
+| `make search ORG=ORD DST=LHR DATE=2026-03-20` | Single O-D: PSV, JSON, HTML table, network map |
+| `make search ORG=ORD DATE=2026-03-20` | All destinations from ORG |
+| `make viz [DATE=2026-03-18]` | Regenerate HTML visualizations only |
+| `make json [DATE=2026-03-18] [DAYS=3]` | Write JSON output only (full + compact) |
+| `make demo` | Full end-to-end pipeline on demo dataset |
 
 ## Key Parameters
 
