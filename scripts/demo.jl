@@ -209,6 +209,13 @@ for day_offset in 0:(n_days - 1)
     write(compact_file, compact_json)
     println("[$(target)]   JSON (compact): $(round(filesize(compact_file) / 1024; digits=0))KB → $(compact_file)")
 
+    # Interactive HTML table of ItineraryRefs
+    ref_table_file = joinpath("data", "viz", "itinerary_refs_$(target).html")
+    viz_itinerary_refs(ref_table_file, result;
+        title = "Itinerary References — $(target)",
+    )
+    println("[$(target)]   Ref table → $(ref_table_file)")
+
     day_elapsed = round(time() - t_day; digits=1)
     println("[$(target)] Total: $(total_itns) itineraries, $(total_rows) rows → $(itns_file) ($(day_elapsed)s)")
 end

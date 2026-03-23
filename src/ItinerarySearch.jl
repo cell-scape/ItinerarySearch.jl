@@ -133,6 +133,6 @@ export itinerary_legs, itinerary_legs_multi, itinerary_legs_json
 export resolve_leg, resolve_segment, resolve_legs
 
 # Exports — visualizations
-export viz_network_map, viz_timeline, viz_trip_comparison
+export viz_network_map, viz_timeline, viz_trip_comparison, viz_itinerary_refs
 
 end # module

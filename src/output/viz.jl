@@ -959,3 +959,203 @@ function viz_trip_comparison(
     write(path, html)
     return nothing
 end
+
+# ── ItineraryRef Table Visualization ─────────────────────────────────────────
+
+"""
+    `function viz_itinerary_refs(path, data; title="")`
+
+Generate a self-contained interactive HTML table of ItineraryRefs.
+
+Accepts either:
+- `Vector{ItineraryRef}` — flat list
+- `Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}}` — nested dict from `itinerary_legs_multi`
+
+Features: sortable columns, filterable by origin/destination/stops, expandable rows showing LegKeys.
+"""
+function viz_itinerary_refs(
+    path::AbstractString,
+    data::Vector{ItineraryRef};
+    title::String = "",
+)::Nothing
+    _write_itinref_html(path, _itinrefs_to_json(data), title)
+end
+
+function viz_itinerary_refs(
+    path::AbstractString,
+    data::Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}};
+    title::String = "",
+)::Nothing
+    entries = Dict{String,Any}[]
+    for (date, org_dict) in data
+        for (org, dst_dict) in org_dict
+            for (dst, itins) in dst_dict
+                for (i, itn) in enumerate(itins)
+                    push!(entries, _itinref_entry(itn, i; date=string(date)))
+                end
+            end
+        end
+    end
+    _write_itinref_html(path, JSON3.write(entries), title)
+end
+
+function _itinref_entry(itn::ItineraryRef, idx::Int; date::String="")
+    Dict{String,Any}(
+        "date"            => date,
+        "idx"             => idx,
+        "flights"         => itn.flights,
+        "route"           => itn.route,
+        "origin"          => itn.origin,
+        "destination"     => itn.destination,
+        "num_stops"       => itn.num_stops,
+        "elapsed_minutes" => Int(itn.elapsed_minutes),
+        "flight_minutes"  => Int(itn.flight_minutes),
+        "layover_minutes" => Int(itn.layover_minutes),
+        "distance_miles"  => round(Float64(itn.distance_miles); digits=0),
+        "circuity"        => round(Float64(itn.circuity); digits=2),
+        "legs"            => [Dict{String,Any}(
+            "airline" => strip(String(k.airline)),
+            "flt_no"  => Int(k.flt_no),
+            "org"     => strip(String(k.org)),
+            "dst"     => strip(String(k.dst)),
+            "cs_al"   => strip(String(k.codeshare_airline)),
+            "cs_flt"  => Int(k.codeshare_flt_no),
+            "row_number" => Int(k.row_number),
+            "record_serial" => Int(k.record_serial),
+        ) for k in itn.legs],
+    )
+end
+
+function _itinrefs_to_json(itins::Vector{ItineraryRef})::String
+    JSON3.write([_itinref_entry(itn, i) for (i, itn) in enumerate(itins)])
+end
+
+function _write_itinref_html(path::String, json_data::String, title::String)
+    page_title = isempty(title) ? "Itinerary Reference Table" : title
+    esc_title = _viz_escape_title(page_title)
+
+    html = string(
+    "<!DOCTYPE html>\n<html lang=\"en\">\n<head>\n",
+    "  <meta charset=\"UTF-8\">\n",
+    "  <meta name=\"viewport\" content=\"width=device-width, initial-scale=1.0\">\n",
+    "  <title>", esc_title, "</title>\n",
+    "  <style>\n",
+    "    * { box-sizing: border-box; margin: 0; padding: 0; }\n",
+    "    body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', monospace; font-size: 13px; }\n",
+    "    #header { background: #161b22; padding: 12px 20px; border-bottom: 1px solid #30363d; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }\n",
+    "    #header h1 { font-size: 16px; font-weight: 600; white-space: nowrap; }\n",
+    "    .filter-group { display: flex; gap: 8px; align-items: center; }\n",
+    "    .filter-group label { font-size: 11px; color: #8b949e; text-transform: uppercase; }\n",
+    "    .filter-group input, .filter-group select { background: #0d1117; border: 1px solid #30363d; color: #c9d1d9; padding: 4px 8px; border-radius: 4px; font-size: 12px; }\n",
+    "    #stats { margin-left: auto; font-size: 11px; color: #8b949e; }\n",
+    "    #container { overflow-x: auto; padding: 8px; }\n",
+    "    table { width: 100%; border-collapse: collapse; }\n",
+    "    th { background: #161b22; color: #8b949e; font-size: 11px; text-transform: uppercase; padding: 8px 10px; text-align: left; cursor: pointer; user-select: none; border-bottom: 1px solid #30363d; position: sticky; top: 0; white-space: nowrap; }\n",
+    "    th:hover { color: #c9d1d9; }\n",
+    "    th .arrow { font-size: 10px; margin-left: 4px; }\n",
+    "    td { padding: 6px 10px; border-bottom: 1px solid #21262d; white-space: nowrap; }\n",
+    "    tr:hover { background: #161b22; }\n",
+    "    tr.expanded { background: #1c2333; }\n",
+    "    .stops-0 td:first-child { border-left: 3px solid #4ef17a; }\n",
+    "    .stops-1 td:first-child { border-left: 3px solid #f1e14e; }\n",
+    "    .stops-2 td:first-child { border-left: 3px solid #f1a14e; }\n",
+    "    .stops-3 td:first-child { border-left: 3px solid #f14e4e; }\n",
+    "    .leg-detail { background: #0d1117; }\n",
+    "    .leg-detail td { padding: 4px 10px 4px 30px; color: #8b949e; font-size: 12px; border-bottom: 1px solid #161b22; }\n",
+    "    .leg-detail td:first-child { border-left: 3px solid #30363d; }\n",
+    "    .route { color: #58a6ff; } .flights { color: #d2a8ff; } .time { color: #79c0ff; } .dist { color: #7ee787; } .circ { color: #ffa657; }\n",
+    "    .clickable { cursor: pointer; }\n",
+    "    .expand-icon { display: inline-block; width: 16px; text-align: center; color: #484f58; }\n",
+    "  </style>\n</head>\n<body>\n",
+    "  <div id=\"header\">\n",
+    "    <h1>", page_title, "</h1>\n",
+    "    <div class=\"filter-group\">\n",
+    "      <label>Origin</label><input id=\"f-org\" placeholder=\"e.g. ORD\" size=\"5\">\n",
+    "      <label>Dest</label><input id=\"f-dst\" placeholder=\"e.g. LHR\" size=\"5\">\n",
+    "      <label>Stops</label><select id=\"f-stops\"><option value=\"\">All</option><option value=\"0\">Nonstop</option><option value=\"1\">1-stop</option><option value=\"2\">2-stop</option></select>\n",
+    "    </div>\n",
+    "    <div id=\"stats\"></div>\n",
+    "  </div>\n",
+    "  <div id=\"container\">\n",
+    "    <table><thead><tr>\n",
+    "      <th data-col=\"idx\">#<span class=\"arrow\"></span></th>\n",
+    "      <th data-col=\"origin\">Origin<span class=\"arrow\"></span></th>\n",
+    "      <th data-col=\"destination\">Dest<span class=\"arrow\"></span></th>\n",
+    "      <th data-col=\"flights\">Flights<span class=\"arrow\"></span></th>\n",
+    "      <th data-col=\"route\">Route<span class=\"arrow\"></span></th>\n",
+    "      <th data-col=\"num_stops\">Stops<span class=\"arrow\"></span></th>\n",
+    "      <th data-col=\"elapsed_minutes\">Elapsed<span class=\"arrow\"></span></th>\n",
+    "      <th data-col=\"flight_minutes\">Flight<span class=\"arrow\"></span></th>\n",
+    "      <th data-col=\"layover_minutes\">Layover<span class=\"arrow\"></span></th>\n",
+    "      <th data-col=\"distance_miles\">Distance<span class=\"arrow\"></span></th>\n",
+    "      <th data-col=\"circuity\">Circuity<span class=\"arrow\"></span></th>\n",
+    "    </tr></thead><tbody id=\"tbody\"></tbody></table>\n",
+    "  </div>\n",
+    "  <script>\n",
+    "    const DATA = ", json_data, ";\n",
+    "    let sortCol = 'num_stops', sortAsc = true;\n",
+    "    let expanded = new Set();\n",
+    "    function fmtTime(m) { const h = Math.floor(m/60), mm = m%60; return h+'h'+(mm<10?'0':'')+mm; }\n",
+    "    function render() {\n",
+    "      const fOrg = document.getElementById('f-org').value.toUpperCase().trim();\n",
+    "      const fDst = document.getElementById('f-dst').value.toUpperCase().trim();\n",
+    "      const fStops = document.getElementById('f-stops').value;\n",
+    "      let filtered = DATA.filter(d => {\n",
+    "        if (fOrg && d.origin !== fOrg) return false;\n",
+    "        if (fDst && d.destination !== fDst) return false;\n",
+    "        if (fStops !== '' && d.num_stops !== parseInt(fStops)) return false;\n",
+    "        return true;\n",
+    "      });\n",
+    "      filtered.sort((a,b) => {\n",
+    "        let va=a[sortCol], vb=b[sortCol];\n",
+    "        if (typeof va==='string') { va=va.toLowerCase(); vb=vb.toLowerCase(); }\n",
+    "        if (va<vb) return sortAsc?-1:1; if (va>vb) return sortAsc?1:-1; return 0;\n",
+    "      });\n",
+    "      const tbody = document.getElementById('tbody');\n",
+    "      tbody.innerHTML = '';\n",
+    "      filtered.forEach((d,fi) => {\n",
+    "        const key = d.origin+d.destination+d.idx+(d.date||'');\n",
+    "        const tr = document.createElement('tr');\n",
+    "        tr.className = 'clickable stops-'+Math.min(d.num_stops,3)+(expanded.has(key)?' expanded':'');\n",
+    "        tr.innerHTML = '<td><span class=\"expand-icon\">'+(expanded.has(key)?'&#9660;':'&#9654;')+'</span> '+(fi+1)+'</td>'+\n",
+    "          '<td>'+d.origin+'</td><td>'+d.destination+'</td>'+\n",
+    "          '<td class=\"flights\">'+d.flights+'</td><td class=\"route\">'+d.route+'</td>'+\n",
+    "          '<td>'+d.num_stops+'</td>'+\n",
+    "          '<td class=\"time\">'+fmtTime(d.elapsed_minutes)+'</td>'+\n",
+    "          '<td class=\"time\">'+fmtTime(d.flight_minutes)+'</td>'+\n",
+    "          '<td class=\"time\">'+fmtTime(d.layover_minutes)+'</td>'+\n",
+    "          '<td class=\"dist\">'+d.distance_miles.toLocaleString()+' mi</td>'+\n",
+    "          '<td class=\"circ\">'+d.circuity.toFixed(2)+'</td>';\n",
+    "        tr.onclick = () => { expanded.has(key)?expanded.delete(key):expanded.add(key); render(); };\n",
+    "        tbody.appendChild(tr);\n",
+    "        if (expanded.has(key) && d.legs) {\n",
+    "          d.legs.forEach(leg => {\n",
+    "            const lr = document.createElement('tr'); lr.className='leg-detail';\n",
+    "            const isCS = leg.airline!==leg.cs_al||leg.flt_no!==leg.cs_flt;\n",
+    "            lr.innerHTML = '<td></td><td>'+leg.org+'</td><td>'+leg.dst+'</td>'+\n",
+    "              '<td>'+leg.airline+' '+leg.flt_no+(isCS?' (opr: '+leg.cs_al+' '+leg.cs_flt+')':'')+'</td>'+\n",
+    "              '<td colspan=\"2\">row='+leg.row_number+' serial='+leg.record_serial+'</td><td colspan=\"5\"></td>';\n",
+    "            tbody.appendChild(lr);\n",
+    "          });\n",
+    "        }\n",
+    "      });\n",
+    "      document.getElementById('stats').textContent = filtered.length+' of '+DATA.length+' itineraries';\n",
+    "    }\n",
+    "    document.querySelectorAll('th[data-col]').forEach(th => {\n",
+    "      th.onclick = () => {\n",
+    "        const col=th.dataset.col;\n",
+    "        if (sortCol===col) sortAsc=!sortAsc; else { sortCol=col; sortAsc=true; }\n",
+    "        document.querySelectorAll('th .arrow').forEach(a => a.textContent='');\n",
+    "        th.querySelector('.arrow').textContent = sortAsc?' \\u25B2':' \\u25BC';\n",
+    "        render();\n",
+    "      };\n",
+    "    });\n",
+    "    document.querySelectorAll('.filter-group input, .filter-group select').forEach(el => { el.oninput=render; });\n",
+    "    render();\n",
+    "  </script>\n",
+    "</body>\n</html>")
+
+    mkpath(dirname(abspath(path)))
+    write(path, html)
+    return nothing
+end
