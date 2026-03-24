@@ -2,7 +2,7 @@
 # All types are isbits (stack-allocated, no GC pressure).
 # Changing a type here propagates everywhere.
 
-const StationCode   = InlineString7     # 3-char IATA airport (ORD, LAX)
+const StationCode   = InlineString3     # 3-char IATA airport (ORD, LAX)
 const AirlineCode   = InlineString3     # 2-char IATA carrier (UA, NH)
 const FlightNumber  = Int16             # 4-digit flight number
 const Minutes       = Int16             # time in minutes (departure, arrival, MCT)

@@ -12,7 +12,7 @@ include("test_helpers.jl")
 
     @testset "Type Aliases" begin
         # Aliases are concrete types, not abstract
-        @test StationCode === InlineString7
+        @test StationCode === InlineString3
         @test AirlineCode === InlineString3
         @test FlightNumber === Int16
         @test Minutes === Int16
@@ -26,7 +26,7 @@ include("test_helpers.jl")
         # Construction and comparison
         stn = StationCode("ORD")
         @test stn == InlineString7("ORD")
-        @test sizeof(StationCode) == 8  # InlineString7 is 8 bytes (7 chars + length byte)
+        @test sizeof(StationCode) == 4  # InlineString3 is 4 bytes (3 chars + length byte)
     end
 
     @testset "Enums" begin
