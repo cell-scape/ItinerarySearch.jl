@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "30d1bb935c2dc1bae0a199e02f7e47198758cf78"
+project_hash = "a45bdf7b7e2c385c4456d1cf2aeb398d99b353c8"
 
 [[deps.Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -133,7 +133,7 @@ uuid = "82899510-4779-5014-852e-03e436cf321d"
 version = "1.0.0"
 
 [[deps.ItinerarySearch]]
-deps = ["CEnum", "CodecBzip2", "CodecXz", "CodecZlib", "CodecZstd", "DBInterface", "Dates", "DuckDB", "InlineStrings", "JSON3", "TranscodingStreams", "UUIDs"]
+deps = ["CEnum", "CodecBzip2", "CodecXz", "CodecZlib", "CodecZstd", "DBInterface", "Dates", "DuckDB", "FixedWidthParsers", "InlineStrings", "JSON3", "LoggingExtras", "TranscodingStreams", "UUIDs"]
 path = "."
 uuid = "abb1f9ea-3061-4222-98a1-0c043039d694"
 version = "0.1.0"
@@ -159,6 +159,16 @@ version = "1.14.3"
 [[deps.Libdl]]
 uuid = "8f399da3-3557-5675-b5ff-fb832c97cbdb"
 version = "1.11.0"
+
+[[deps.Logging]]
+uuid = "56ddb016-857b-54e1-b83d-db4d58db5568"
+version = "1.11.0"
+
+[[deps.LoggingExtras]]
+deps = ["Dates", "Logging"]
+git-tree-sha1 = "f00544d95982ea270145636c181ceda21c4e2575"
+uuid = "e6f89c97-d47a-5376-807f-9c37f3926c36"
+version = "1.2.0"
 
 [[deps.Mmap]]
 uuid = "a63ad114-7e13-5084-954f-fe012c677804"

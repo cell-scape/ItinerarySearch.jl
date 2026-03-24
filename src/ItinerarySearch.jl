@@ -5,6 +5,8 @@ using InlineStrings
 using CEnum
 using UUIDs
 using JSON3
+using Logging
+using LoggingExtras
 
 # Type system (dependency order matters)
 include("types/aliases.jl")
