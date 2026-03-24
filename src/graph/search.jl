@@ -834,7 +834,7 @@ function search_itineraries(
 
         # Retrieve the nonstop self-connection (direct field, set during build_connections!)
         ns_cp = dep_leg.nonstop_cp
-        ns_cp === nothing && continue
+        ns_cp === _NO_NONSTOP_CP && continue
 
         # Record UTC departure of this origin leg for downstream use
         ctx.utc_dep_origin =

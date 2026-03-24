@@ -211,6 +211,9 @@ mutable struct GraphConnection <: AbstractGraphEdge
     end
 end
 
+# Sentinel: empty nonstop connection (used as default for GraphLeg.nonstop_cp)
+const _NO_NONSTOP_CP = GraphConnection()
+
 # ── GraphLeg ──────────────────────────────────────────────────────────────────
 
 const _ZERO_LEG_RECORD = LegRecord(
@@ -287,7 +290,7 @@ const _ZERO_LEG_RECORD = LegRecord(
     connect_to::Vector{GraphConnection} = GraphConnection[]
     connect_from::Vector{GraphConnection} = GraphConnection[]
     distance::Distance = Distance(0)
-    nonstop_cp::Union{GraphConnection, Nothing} = nothing  # set during build_connections_at_station!
+    nonstop_cp::GraphConnection = _NO_NONSTOP_CP  # set during build_connections_at_station!
 end
 
 # Sentinel used as the default for OneStopConnection.via_leg
