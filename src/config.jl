@@ -278,6 +278,15 @@ function load_config(path::String)::SearchConfig
         s !== nothing && (kwargs[:event_log_path] = s)
         b = _json_bool(output, :event_log_enabled)
         b !== nothing && (kwargs[:event_log_enabled] = b)
+        s = _json_str(output, :log_level)
+        if s !== nothing
+            sym = Symbol(lowercase(s))
+            sym in (:debug, :info, :warn, :error) && (kwargs[:log_level] = sym)
+        end
+        s = _json_str(output, :log_json_path)
+        s !== nothing && (kwargs[:log_json_path] = s)
+        b = _json_bool(output, :log_stdout_json)
+        b !== nothing && (kwargs[:log_stdout_json] = b)
         if haskey(output, :output_formats)
             fmts_val = output[:output_formats]
             if fmts_val isa JSON3.Array
