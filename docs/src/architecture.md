@@ -84,7 +84,6 @@ Rules return positive on pass, zero or negative on fail. A passing pair produces
    - Elapsed-time pruning (1.5 × `max_elapsed` threshold)
    - Cumulative circuity pruning
    - Direction pruning (bearing divergence from destination)
-   - Layer 1 shortcut (optional): substitutes pre-computed `OneStopConnection` paths for two-hop tails
 
 When a complete path reaches the destination, `_validate_and_commit!` runs the itinerary rule chain, computes elapsed time via UTC conversion, counts geographic diversity, and deep-copies the result into `ctx.results`.
 

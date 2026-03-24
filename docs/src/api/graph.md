@@ -95,13 +95,3 @@ search_trip
 score_trip
 ```
 
-## Layer 1 (One-Stop Pre-computation)
-
-Layer 1 is optional. It pre-computes all two-stop (one-via) paths indexed by `(origin, destination)`, accelerating DFS for repeated searches over the same network.
-
-```@docs
-build_layer1!
-export_layer1!
-import_layer1!
-export_layer1_parquet!
-```

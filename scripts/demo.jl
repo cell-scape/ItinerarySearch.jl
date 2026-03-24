@@ -113,12 +113,6 @@ for day_offset in 0:(n_days - 1)
     graph = build_graph!(store, config, target)
     build_ms = round(graph.build_stats.build_time_ns / 1.0e6; digits=0)
 
-    # Layer 1 is disabled by default (experimental — may help in distributed scenarios)
-    # if !import_layer1!(store, graph)
-    #     build_layer1!(graph)
-    #     export_layer1!(store, graph)
-    # end
-
     println("[$(target)] $(length(graph.stations)) stations, $(length(graph.legs)) legs, built in $(build_ms)ms")
 
     # Write legs operating on this date
@@ -133,8 +127,6 @@ for day_offset in 0:(n_days - 1)
         config = config,
         constraints = SearchConstraints(),
         itn_rules = build_itn_rules(config),
-        layer1_built = graph.layer1_built,
-        layer1 = graph.layer1,
     )
 
     itns_file = joinpath(outdir, "itineraries_$(target).psv")
@@ -265,8 +257,6 @@ ctx_viz = RuntimeContext(
     config      = config,
     constraints = SearchConstraints(),
     itn_rules   = build_itn_rules(config),
-    layer1_built = graph.layer1_built,
-    layer1      = graph.layer1,
 )
 
 # Collect sample itineraries from all OD pairs on first day

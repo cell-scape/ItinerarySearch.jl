@@ -310,36 +310,6 @@ function _create_tables!(store::DuckDBStore)
         )
     """)
 
-    # ── Layer 1 connection cache tables ───────────────────────────────────────
-
-    _exec(store, """
-        CREATE TABLE IF NOT EXISTS layer1_metadata (
-            schedule_hash    BIGINT,
-            mct_hash         BIGINT,
-            config_hash      BIGINT,
-            window_start     DATE,
-            window_end       DATE,
-            build_timestamp  TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-            num_connections  INT
-        )
-    """)
-
-    _exec(store, """
-        CREATE TABLE IF NOT EXISTS layer1_connections (
-            via_station        CHAR(3),
-            destination        CHAR(3),
-            via_leg_row_id     BIGINT,
-            first_from_row_id  BIGINT,
-            first_to_row_id    BIGINT,
-            second_from_row_id BIGINT,
-            second_to_row_id   BIGINT,
-            total_distance     FLOAT,
-            valid_from         DATE,
-            valid_to           DATE,
-            valid_days         TINYINT
-        )
-    """)
-
     return store
 end
 
@@ -357,7 +327,7 @@ end
 
 # Returns
 - `::NamedTuple`: row counts with keys `legs`, `dei`, `stations`, `mct`,
-  `expanded_legs`, `segments`, `markets`, `layer1_meta`, `layer1_connections`
+  `expanded_legs`, `segments`, `markets`
 
 # Examples
 ```julia
@@ -385,8 +355,6 @@ function table_stats(store::DuckDBStore)
         expanded_legs     = _count("expanded_legs"),
         segments          = _count("segments"),
         markets           = _count("markets"),
-        layer1_meta       = _count("layer1_metadata"),
-        layer1_connections = _count("layer1_connections"),
     )
 end
 

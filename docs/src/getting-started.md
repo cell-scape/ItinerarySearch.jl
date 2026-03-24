@@ -380,30 +380,7 @@ viz_trip_comparison(
 )
 ```
 
-## Step 9: Layer 1 (Optional)
-
-For repeated searches over the same network, the Layer 1 pre-computation caches all two-stop (one-via) paths indexed by `(origin, destination)`. The DFS can then skip most two-stop recursive traversal and instead look up pre-computed paths.
-
-```julia
-build_layer1!(graph)
-# graph.layer1_built is now true
-
-# Pass the Layer 1 index to the search context
-ctx = RuntimeContext(
-    config        = config,
-    constraints   = SearchConstraints(),
-    itn_rules     = build_itn_rules(config),
-    layer1_built  = graph.layer1_built,
-    layer1        = graph.layer1,
-)
-
-# Search now uses Layer 1 for two-stop tails
-refs = itinerary_legs(graph.stations, StationCode("ORD"), StationCode("LHR"), target_date, ctx)
-```
-
-Layer 1 adds ~2.5 s of build time and significant memory pressure. It is most beneficial in distributed or server scenarios where the build cost is amortized across thousands of search requests.
-
-## Step 10: Observability
+## Step 9: Observability
 
 ### Structured JSON Logging (DynaTrace-Compatible)
 

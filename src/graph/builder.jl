@@ -110,8 +110,6 @@ end
 - `build_id::UUID` — unique identifier for this build instance
 - `build_stats::BuildStats` — per-build instrumentation accumulator
 - `config::SearchConfig` — snapshot of the config used to build this graph
-- `layer1_built::Bool` — `true` once the Layer 1 one-stop index has been built
-- `layer1::OneStopIndex` — pre-computed `(org, dst) → Vector{OneStopConnection}` index
 - `geo_stats::GeoStats` — station stats aggregated by metro, state, country, and IATA region
 """
 @kwdef mutable struct FlightGraph
@@ -132,10 +130,6 @@ end
 
     # Configuration snapshot
     config::SearchConfig = SearchConfig()
-
-    # Layer 1 (one-stop pre-computed index)
-    layer1_built::Bool = false
-    layer1::OneStopIndex = OneStopIndex()
 
     # Geographic stats aggregation
     geo_stats::GeoStats = (
@@ -501,11 +495,6 @@ function search(
         constraints = SearchConstraints(),
         itn_rules = build_itn_rules(config),
     )
-
-    if graph.layer1_built
-        ctx.layer1_built = true
-        ctx.layer1 = graph.layer1
-    end
 
     results = search_itineraries(graph.stations, origin, dest, target_date, ctx)
     # Return a copy — ctx.results is reused on subsequent searches

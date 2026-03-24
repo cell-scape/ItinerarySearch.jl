@@ -24,7 +24,6 @@ using InlineStrings
         s = SearchStats()
         @test s.paths_found == 0
         @test length(s.paths_by_stops) == 4
-        @test s.layer1_hits == 0
     end
 
     @testset "MCTSelectionRow is isbits" begin

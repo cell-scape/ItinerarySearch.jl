@@ -28,7 +28,6 @@ Itinerary
 Trip
 TripLeg
 TripScoringWeights
-OneStopConnection
 FlightGraph
 ```
 

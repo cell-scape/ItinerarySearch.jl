@@ -37,7 +37,6 @@ include("graph/rules_itn.jl")
 include("graph/connect.jl")
 include("graph/search.jl")
 include("graph/builder.jl")
-include("graph/layer1.jl")
 include("output/formats.jl")
 include("output/viz.jl")
 
@@ -80,7 +79,6 @@ export resolve_params
 export AbstractGraphNode, AbstractGraphEdge
 export GraphStation, GraphLeg, GraphSegment, GraphConnection, Itinerary, Trip
 export TripLeg, TripScoringWeights
-export OneStopConnection, OneStopIndex
 export nonstop_connection
 
 # Exports — config
@@ -143,9 +141,6 @@ export FAIL_ITN_SUPPCODE, FAIL_ITN_MAFT
 
 # Exports — graph: connection builder
 export build_connections_at_station!, build_connections!
-
-# Exports — graph: Layer 1 one-via pre-computation
-export build_layer1!, export_layer1!, import_layer1!, export_layer1_parquet!
 
 # Exports — graph: DFS search
 export RuntimeContext, search_itineraries, search_trip, score_trip

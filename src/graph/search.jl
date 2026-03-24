@@ -33,8 +33,6 @@
 - `results::Vector{Itinerary}` — committed itineraries from the current search
 - `build_stats::BuildStats` — connection-build instrumentation accumulator
 - `search_stats::SearchStats` — search instrumentation accumulator
-- `layer1_built::Bool` — `true` once the Layer 1 one-stop index has been populated
-- `layer1::OneStopIndex` — pre-computed `(org, dst) → Vector{OneStopConnection}` index
 - `mct_selections::Vector{MCTSelectionRow}` — MCT cascade audit log (Tier 1)
 - `event_log::EventLog` — structured event log (Tier 3; disabled by default)
 """
@@ -62,10 +60,6 @@
     utc_dep_origin::Int32 = Int32(0)        # UTC dep of first leg (minutes), set per departure
     _max_elapsed_threshold::Int32 = Int32(2160)  # 1.5 * max_elapsed, pre-computed
     _circuity_threshold::Float64 = 2.5           # itinerary_circuity, pre-computed
-
-    # Layer 1 (one-stop pre-computed index; populated externally)
-    layer1_built::Bool = false
-    layer1::OneStopIndex = OneStopIndex()
 
     results::Vector{Itinerary} = Itinerary[]
 
@@ -507,71 +501,6 @@ end
 
 # ── Layer 1 path helper ─────────────────────────────────────────────────────────
 
-"""
-    `function _try_layer1_path!(itn::Itinerary, osc::OneStopConnection, ctx::RuntimeContext)::Nothing`
----
-
-# Description
-- Pushes both connections of a pre-computed `OneStopConnection` onto the working
-  itinerary, calls `_validate_and_commit!`, then restores all mutable fields
-- Used as a fast-path from the DFS loop when a Layer 1 entry covers the
-  remaining two hops to the destination
-- Saves and restores `status`, `num_stops`, `num_eqp_changes`, `elapsed_time`,
-  and `total_distance`
-
-# Arguments
-1. `itn::Itinerary`: working itinerary (mutated then restored)
-2. `osc::OneStopConnection`: the pre-computed two-hop path
-3. `ctx::RuntimeContext`: search context (results and stats may be updated)
-"""
-function _try_layer1_path!(
-    itn::Itinerary,
-    osc::OneStopConnection,
-    ctx::RuntimeContext,
-)::Nothing
-    # Save state
-    old_status = itn.status
-    old_stops = itn.num_stops
-    old_eqp = itn.num_eqp_changes
-    old_elapsed = itn.elapsed_time
-    old_distance = itn.total_distance
-
-    # Push first connection
-    push!(itn.connections, osc.first)
-    itn.status |= osc.first.status
-    itn.num_stops += Int16(1)
-    itn.total_distance += (osc.first.to_leg::GraphLeg).distance
-    itn.elapsed_time += Int32(osc.first.cnx_time)
-    if !osc.first.is_through && (osc.first.from_leg::GraphLeg).record.eqp != (osc.first.to_leg::GraphLeg).record.eqp
-        itn.num_eqp_changes += Int16(1)
-    end
-
-    # Push second connection
-    push!(itn.connections, osc.second)
-    itn.status |= osc.second.status
-    itn.num_stops += Int16(1)
-    itn.total_distance += (osc.second.to_leg::GraphLeg).distance
-    itn.elapsed_time += Int32(osc.second.cnx_time)
-    if !osc.second.is_through &&
-       (osc.second.from_leg::GraphLeg).record.eqp != (osc.second.to_leg::GraphLeg).record.eqp
-        itn.num_eqp_changes += Int16(1)
-    end
-
-    # Validate and commit
-    _validate_and_commit!(itn, ctx)
-
-    # Restore state
-    pop!(itn.connections)
-    pop!(itn.connections)
-    itn.status = old_status
-    itn.num_stops = old_stops
-    itn.num_eqp_changes = old_eqp
-    itn.elapsed_time = old_elapsed
-    itn.total_distance = old_distance
-
-    return nothing
-end
-
 # ── DFS core ────────────────────────────────────────────────────────────────────
 
 """
@@ -616,30 +545,6 @@ function _dfs!(
     max_res = Int(ctx.constraints.defaults.max_results)
     max_res > 0 && length(ctx.results) >= max_res && return
 
-    # Layer 1 shortcut: look up pre-computed two-hop paths to the destination.
-    # Requires depth + 1 < max_stops so the two hops fit within the stop budget.
-    # When Layer 1 has entries for this (station, dest) pair, skip the Layer 0
-    # traversal at this depth to avoid duplicate 2-stop paths.
-    layer1_hit = false
-    if ctx.layer1_built && depth + 1 < max_stops
-        key = ((current_leg.dst::GraphStation).code, dest.code)
-        oscs = get(ctx.layer1, key, nothing)
-        if oscs !== nothing
-            layer1_hit = true
-            ctx.search_stats.layer1_hits += Int64(1)
-            packed = ctx.target_date
-            dow = ctx.target_dow
-            @inbounds for osc_idx in 1:length(oscs)
-                max_res > 0 && length(ctx.results) >= max_res && break
-                osc = oscs[osc_idx]
-                _is_valid_on_date(osc, packed, dow) || continue
-                _try_layer1_path!(itn, osc, ctx)
-            end
-        else
-            ctx.search_stats.layer1_misses += Int64(1)
-        end
-    end
-
     connect_to = current_leg.connect_to
     @inbounds for i in 1:length(connect_to)
         cp = connect_to[i]
@@ -651,13 +556,6 @@ function _dfs!(
         cp.from_leg === cp.to_leg && continue
 
         next_leg = cp.to_leg::GraphLeg  # to_leg is AbstractGraphNode
-
-        # Layer 1 dedup: if Layer 1 covered this (station, dest) pair,
-        # skip connections that would recurse deeper (they produce duplicates).
-        # Keep connections that reach dest directly (1-stop paths Layer 1 doesn't cover).
-        if layer1_hit && next_leg.dst !== dest
-            continue
-        end
 
         # Elapsed-time pruning (UTC-based)
         next_utc_arr = Int32(next_leg.record.pax_arr) - Int32(next_leg.record.arr_utc_offset) +

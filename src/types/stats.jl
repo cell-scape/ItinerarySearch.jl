@@ -112,8 +112,6 @@ end
 - `paths_by_stops::Vector{Int32}` — [nonstop, 1-stop, 2-stop, 3-stop] path counts
 - `paths_rejected::Int32` — candidate paths eliminated by post-search filters
 - `max_depth_reached::Int32` — deepest DFS level hit during any search
-- `layer1_hits::Int64` — L1 cache hits during connection traversal
-- `layer1_misses::Int64` — L1 cache misses during connection traversal
 - `elapsed_time_hist::Vector{Int32}` — 48-bucket histogram of itinerary elapsed time in 30-min steps (0–1440 min)
 - `total_distance_hist::Vector{Int32}` — 40-bucket histogram of itinerary total distance
 - `search_time_ns::UInt64` — total wall-clock nanoseconds spent in search
@@ -124,8 +122,6 @@ end
     paths_by_stops::Vector{Int32} = Int32[0, 0, 0, 0]  # [nonstop, 1-stop, 2-stop, 3-stop]
     paths_rejected::Int32 = 0
     max_depth_reached::Int32 = 0
-    layer1_hits::Int64 = 0
-    layer1_misses::Int64 = 0
     elapsed_time_hist::Vector{Int32} = zeros(Int32, 48)
     total_distance_hist::Vector{Int32} = zeros(Int32, 40)
     search_time_ns::UInt64 = 0
