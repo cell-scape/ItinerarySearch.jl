@@ -15,6 +15,8 @@ include("types/constraints.jl")
 include("types/graph.jl")
 include("config.jl")
 include("observe/events.jl")
+include("observe/metrics.jl")
+include("observe/event_log.jl")
 include("compression.jl")
 include("ingest/schemas.jl")
 include("store/interface.jl")
@@ -81,6 +83,9 @@ export SearchConfig, load_config
 
 # Exports — observe: event types
 export SystemMetricsEvent, PhaseEvent, BuildSnapshotEvent, SearchSnapshotEvent, CustomEvent
+
+# Exports — observe: event log
+export EventLog, emit!, checkpoint!, with_phase, collect_system_metrics
 
 # Exports — ingest
 export ingest_ssim!
