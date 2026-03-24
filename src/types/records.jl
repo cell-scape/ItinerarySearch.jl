@@ -127,6 +127,10 @@ Codeshare fields default to self when the leg is operating.
     # ── Station Pair ──
     org::StationCode = StationCode("")
     dst::StationCode = StationCode("")
+
+    # ── Schedule Context ──
+    operating_date::UInt32 = UInt32(0)  # packed YYYYMMDD — which day this leg operates
+    dep_time::Minutes = Minutes(0)      # scheduled departure (minutes since midnight, local)
 end
 
 """
@@ -152,6 +156,8 @@ function LegKey(r::LegRecord)
         codeshare_flt_no    = (cs_al == "" || cs_al == airline_s) ? r.flt_no : r.codeshare_flt_no,
         org                 = r.org,
         dst                 = r.dst,
+        operating_date      = r.operating_date,
+        dep_time            = r.pax_dep,
     )
 end
 

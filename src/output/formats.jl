@@ -677,15 +677,20 @@ function itinerary_legs(
 )::Vector{ItineraryRef}
     itineraries = copy(search_itineraries(stations, origin, dest, date, ctx))
 
-    # Filter to itineraries whose first leg operates on the requested date
+    # Filter to itineraries whose first leg operates on the requested date.
+    # The graph may contain legs from leading_days before through trailing_days after;
+    # all itineraries with a valid first-leg departure within the window are included.
     filter!(itineraries) do itn
         isempty(itn.connections) && return false
         first_leg = (itn.connections[1].from_leg::GraphLeg).record
         _operates_on(first_leg, date)
     end
 
-    # Sort by stops (ascending), then elapsed time, then total distance
-    sort!(itineraries; by=itn -> (itn.num_stops, itn.elapsed_time, itn.total_distance))
+    # Sort by operating date (ascending), departure time, stops, elapsed, distance
+    sort!(itineraries; by=itn -> begin
+        first_rec = (itn.connections[1].from_leg::GraphLeg).record
+        (first_rec.operating_date, first_rec.pax_dep, itn.num_stops, itn.elapsed_time, itn.total_distance)
+    end)
 
     # Deduplicate: two itineraries are identical if they use the same legs in the same order.
     seen = Set{UInt64}()
@@ -1036,6 +1041,8 @@ function _legkey_to_dict(k::LegKey)::Dict{String,Any}
 end
 
 function _itnref_summary_dict(itn::ItineraryRef)::Dict{String,Any}
+    first_key = isempty(itn.legs) ? LegKey() : itn.legs[1]
+    d = unpack_date(first_key.operating_date)
     Dict{String,Any}(
         "flights"         => flights_str(itn),
         "route"           => route_str(itn),
@@ -1043,6 +1050,8 @@ function _itnref_summary_dict(itn::ItineraryRef)::Dict{String,Any}
         "num_stops"       => itn.num_stops,
         "origin"          => String(origin(itn)),
         "destination"     => String(destination(itn)),
+        "operating_date"  => Dates.format(d, "yyyy-mm-dd"),
+        "dep_time"        => _format_time(first_key.dep_time),
         "elapsed_minutes" => Int(itn.elapsed_minutes),
         "flight_minutes"  => Int(itn.flight_minutes),
         "layover_minutes" => Int(itn.layover_minutes),
@@ -1066,7 +1075,9 @@ function _write_legkey_json(io::IOBuffer, k::LegKey)
               ",\"codeshare_airline\":\"", strip(String(k.codeshare_airline)), "\"",
               ",\"codeshare_flt_no\":", Int(k.codeshare_flt_no),
               ",\"org\":\"", strip(String(k.org)), "\"",
-              ",\"dst\":\"", strip(String(k.dst)), "\"}")
+              ",\"dst\":\"", strip(String(k.dst)), "\"",
+              ",\"operating_date\":", Int(k.operating_date),
+              ",\"dep_time\":", Int(k.dep_time), "}")
 end
 
 function _write_itnref_summary_json(io::IOBuffer, itn::ItineraryRef)
@@ -1078,9 +1089,13 @@ function _write_itnref_summary_json(io::IOBuffer, itn::ItineraryRef)
         i > 1 && print(io, ",")
         print(io, "\"", s, "\"")
     end
+    first_key = isempty(itn.legs) ? LegKey() : itn.legs[1]
+    d = unpack_date(first_key.operating_date)
     print(io, "],\"num_stops\":", itn.num_stops,
               ",\"origin\":\"", origin(itn), "\"",
               ",\"destination\":\"", destination(itn), "\"",
+              ",\"operating_date\":\"", Dates.format(d, "yyyy-mm-dd"), "\"",
+              ",\"dep_time\":\"", _format_time(first_key.dep_time), "\"",
               ",\"elapsed_minutes\":", Int(itn.elapsed_minutes),
               ",\"flight_minutes\":", Int(itn.flight_minutes),
               ",\"layover_minutes\":", Int(itn.layover_minutes),
