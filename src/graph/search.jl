@@ -21,8 +21,8 @@
 # Fields
 - `config::SearchConfig` — search configuration (scope, interline, stop limits)
 - `constraints::SearchConstraints` — market-level parameter overrides
-- `cnx_rules::Vector{Any}` — connection rule chain (built by `build_cnx_rules`)
-- `itn_rules::Vector{Any}` — itinerary rule chain (built by `build_itn_rules`)
+- `cnx_rules::Tuple` — connection rule chain (built by `build_cnx_rules`); Tuple for fully specialized dispatch
+- `itn_rules::Tuple` — itinerary rule chain (built by `build_itn_rules`); Tuple for fully specialized dispatch
 - `gc_cache::Dict{Tuple{StationCode,StationCode}, Float64}` — great-circle distance cache
   keyed by `(origin_code, dest_code)`
 - `target_date::UInt32` — packed YYYYMMDD target search date
@@ -43,9 +43,9 @@
     config::SearchConfig = SearchConfig()
     constraints::SearchConstraints = SearchConstraints()
 
-    # Rule chains
-    cnx_rules::Vector{Any} = Any[]
-    itn_rules::Vector{Any} = Any[]
+    # Rule chains (Tuples for fully specialized dispatch in hot loops)
+    cnx_rules::Tuple = ()
+    itn_rules::Tuple = ()
 
     # Caches
     gc_cache::Dict{Tuple{StationCode,StationCode},Float64} = Dict{Tuple{StationCode,StationCode},Float64}()

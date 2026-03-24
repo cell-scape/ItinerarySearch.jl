@@ -141,7 +141,7 @@ end
 """
 function build_connections_at_station!(
     station::GraphStation,
-    rules::Vector{Any},
+    rules,
     ctx,
 )::Nothing
     arrivals   = station.arrivals
@@ -303,7 +303,7 @@ julia> build_connections!(stations, rules, ctx);
 """
 function build_connections!(
     stations::Dict{StationCode, GraphStation},
-    rules::Vector{Any},
+    rules,
     ctx,
 )::Nothing
     for (_, station) in stations

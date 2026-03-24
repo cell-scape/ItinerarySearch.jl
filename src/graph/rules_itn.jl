@@ -190,14 +190,14 @@ end
 # ── Rule chain assembly ────────────────────────────────────────────────────────
 
 """
-    `function build_itn_rules(config::SearchConfig)::Vector{Any}`
+    `function build_itn_rules(config::SearchConfig)`
 ---
 
 # Description
 - Assembles and returns the canonical 5-rule itinerary rule chain
 - Rules are ordered from structural checks (scope, opdays) to geometric
   checks (circuity, MAFT) with the suppression code check in between
-- The returned vector contains plain functions; all rules share the same
+- The returned tuple contains plain functions; all rules share the same
   `(itn::Itinerary, ctx) -> Int` signature
 
 # Arguments
@@ -205,7 +205,7 @@ end
    future rule-enable/disable toggles)
 
 # Returns
-- `::Vector{Any}`: 5-element vector of callables, in chain order
+- `::Tuple`: 5-element tuple of callables, in chain order
 
 # Examples
 ```julia
@@ -214,12 +214,12 @@ julia> length(rules)
 5
 ```
 """
-function build_itn_rules(config::SearchConfig)::Vector{Any}
-    rules = Any[]
-    push!(rules, check_itn_scope)
-    push!(rules, check_itn_opdays)
-    push!(rules, check_itn_circuity)
-    push!(rules, check_itn_suppcodes)
-    push!(rules, check_itn_maft)
-    return rules
+function build_itn_rules(config::SearchConfig)
+    return (
+        check_itn_scope,
+        check_itn_opdays,
+        check_itn_circuity,
+        check_itn_suppcodes,
+        check_itn_maft,
+    )
 end

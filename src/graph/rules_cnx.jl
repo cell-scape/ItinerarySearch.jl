@@ -202,10 +202,12 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
     from_leg = cp.from_leg::GraphLeg
     to_leg = cp.to_leg::GraphLeg
 
-    # Connection time = departure time - arrival time (both in minutes-since-midnight)
-    dep = Int32(to_leg.record.pax_dep)
-    arr = Int32(from_leg.record.pax_arr) + Int32(from_leg.record.arr_date_var) * Int32(1440)
-    cnx_time = dep - arr
+    # Connection time in UTC — accounts for timezone differences at inter-station connections
+    # dep_utc = local_dep - dep_utc_offset; arr_utc = local_arr - arr_utc_offset
+    dep_utc = Int32(to_leg.record.pax_dep) - Int32(to_leg.record.dep_utc_offset)
+    arr_utc = Int32(from_leg.record.pax_arr) - Int32(from_leg.record.arr_utc_offset) +
+              Int32(from_leg.record.arr_date_var) * Int32(1440)
+    cnx_time = dep_utc - arr_utc
     if cnx_time < 0
         cnx_time += Int32(1440)  # overnight wrap
     end
@@ -215,17 +217,16 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
                                        to_leg.record.mct_status_dep)
 
     # ── Codeshare: resolve operating carrier and codeshare indicator ──────────
+    # Direct InlineString comparison — no String allocation
     from_rec = from_leg.record
     to_rec = to_leg.record
 
-    arr_cs_al = strip(String(from_rec.codeshare_airline))
-    arr_airline = strip(String(from_rec.airline))
-    arr_is_codeshare = arr_cs_al != "" && arr_cs_al != arr_airline
+    arr_is_codeshare = from_rec.codeshare_airline != NO_AIRLINE &&
+                       from_rec.codeshare_airline != from_rec.airline
     arr_op_carrier = arr_is_codeshare ? from_rec.codeshare_airline : from_rec.airline
 
-    dep_cs_al = strip(String(to_rec.codeshare_airline))
-    dep_airline = strip(String(to_rec.airline))
-    dep_is_codeshare = dep_cs_al != "" && dep_cs_al != dep_airline
+    dep_is_codeshare = to_rec.codeshare_airline != NO_AIRLINE &&
+                       to_rec.codeshare_airline != to_rec.airline
     dep_op_carrier = dep_is_codeshare ? to_rec.codeshare_airline : to_rec.airline
 
     # ── Geographic context from origin/destination station records ────────────
@@ -731,7 +732,7 @@ end
 # ── Rule chain assembly ────────────────────────────────────────────────────────
 
 """
-    `function build_cnx_rules(config::SearchConfig, constraints::SearchConstraints, mct_lookup::MCTLookup)::Vector{Any}`
+    `function build_cnx_rules(config::SearchConfig, constraints::SearchConstraints, mct_lookup::MCTLookup)`
 ---
 
 # Description
@@ -747,7 +748,7 @@ end
 3. `mct_lookup::MCTLookup`: pre-materialised in-memory MCT lookup structure
 
 # Returns
-- `::Vector{Function}`: 9-element vector of callables, in chain order
+- `::Tuple`: 9-element tuple of callables, in chain order (Tuple enables full specialization in the O(n²) loop)
 
 # Examples
 ```julia
@@ -760,19 +761,19 @@ function build_cnx_rules(
     config::SearchConfig,
     constraints::SearchConstraints,
     mct_lookup::MCTLookup,
-)::Vector{Any}
-    rules = Any[]
-    push!(rules, check_cnx_roundtrip)
-    push!(rules, check_cnx_scope)
-    push!(rules, check_cnx_interline)
-    push!(rules, MCTRule(mct_lookup))
-    push!(rules, check_cnx_opdays)
-    push!(rules, check_cnx_suppcodes)
-    push!(rules, MAFTRule())
-    push!(rules, CircuityRule(
-        constraints.defaults.circuity_factor,
-        constraints.defaults.circuity_extra_miles,
-    ))
-    push!(rules, check_cnx_trfrest)
-    return rules
+)
+    return (
+        check_cnx_roundtrip,
+        check_cnx_scope,
+        check_cnx_interline,
+        MCTRule(mct_lookup),
+        check_cnx_opdays,
+        check_cnx_suppcodes,
+        MAFTRule(),
+        CircuityRule(
+            constraints.defaults.circuity_factor,
+            constraints.defaults.circuity_extra_miles,
+        ),
+        check_cnx_trfrest,
+    )
 end

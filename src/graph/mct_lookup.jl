@@ -536,17 +536,16 @@ function lookup_mct(
             prv_region, nxt_region,
         ) || continue
         # Suppression geography scope — only suppress if connection matches scope
-        _supp_rgn = strip(String(rec.supp_region))
-        _supp_ctry = strip(String(rec.supp_country))
-        _supp_st = strip(String(rec.supp_state))
-        if !isempty(_supp_rgn)
-            _supp_rgn != strip(String(prv_region)) && _supp_rgn != strip(String(nxt_region)) && continue
+        # Direct InlineString comparison — no String allocation
+        _empty = InlineString3("")
+        if rec.supp_region != _empty
+            rec.supp_region != prv_region && rec.supp_region != nxt_region && continue
         end
-        if !isempty(_supp_ctry)
-            _supp_ctry != strip(String(prv_country)) && _supp_ctry != strip(String(nxt_country)) && continue
+        if rec.supp_country != _empty
+            rec.supp_country != prv_country && rec.supp_country != nxt_country && continue
         end
-        if !isempty(_supp_st)
-            _supp_st != strip(String(prv_state)) && _supp_st != strip(String(nxt_state)) && continue
+        if rec.supp_state != _empty
+            rec.supp_state != prv_state && rec.supp_state != nxt_state && continue
         end
         return MCTResult(
             time           = Minutes(0),
