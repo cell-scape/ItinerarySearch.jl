@@ -5,6 +5,7 @@ using Chairmarks
 using Dates
 using Logging
 using LoggingExtras
+using InlineStrings
 
 function bench_graph_build(store::DuckDBStore, config::SearchConfig)
     target = Date(2026, 3, 20)
