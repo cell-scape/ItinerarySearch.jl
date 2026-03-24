@@ -1,5 +1,46 @@
 # src/graph/mct_lookup.jl — In-memory hierarchical MCT lookup (SSIM8 cascade)
 
+# ── MCT cache key (full SSIM8 field set) ─────────────────────────────────────
+
+"""
+    struct MCTCacheKey
+
+Isbits cache key for MCT lookup results, covering the full SSIM8 matching
+field set. Used by MCTRule to avoid redundant cascade lookups for identical
+connection parameter combinations during the O(n²) connection build.
+"""
+struct MCTCacheKey
+    arr_carrier::AirlineCode
+    dep_carrier::AirlineCode
+    arr_station::StationCode
+    dep_station::StationCode
+    status::MCTStatus
+    arr_body::Char
+    dep_body::Char
+    prv_stn::StationCode
+    nxt_stn::StationCode
+    arr_term::InlineString3
+    dep_term::InlineString3
+    arr_op_carrier::AirlineCode
+    dep_op_carrier::AirlineCode
+    arr_is_codeshare::Bool
+    dep_is_codeshare::Bool
+    arr_acft_type::InlineString7
+    dep_acft_type::InlineString7
+    # Flight numbers and target_date excluded from key — they vary
+    # per-leg/per-day but rarely affect MCT. On cache hit, the result's
+    # matched_fields and specificity are checked: if the matched record
+    # used flight-number ranges or date validity, the cache hit is
+    # discarded and a full lookup is performed instead.
+    prv_country::InlineString3
+    nxt_country::InlineString3
+    prv_state::InlineString3
+    nxt_state::InlineString3
+    prv_region::InlineString3
+    nxt_region::InlineString3
+end
+
+
 # ── Bit-position constants for the MCTRecord.specified bitmask ────────────────
 
 """
@@ -32,6 +73,11 @@ const MCT_BIT_ARR_FLT_RNG   = UInt32(1 << 18)
 const MCT_BIT_DEP_FLT_RNG   = UInt32(1 << 19)
 const MCT_BIT_PRV_STATE     = UInt32(1 << 20)
 const MCT_BIT_NXT_STATE     = UInt32(1 << 21)
+
+# Cache revalidation: fields excluded from MCTCacheKey that require a full
+# lookup when the cached result matched on them.
+const _MCT_CACHE_REVALIDATE_MASK = MCT_BIT_ARR_FLT_RNG | MCT_BIT_DEP_FLT_RNG
+const _MCT_CACHE_DATE_BIT = UInt32(1) << 7  # specificity bit for date-bounded records
 
 # ── MCTRecord ─────────────────────────────────────────────────────────────────
 

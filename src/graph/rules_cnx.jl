@@ -235,35 +235,62 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
 
     # Cascade lookup — same station for both arr and dep (intra-station connection)
     stn_code = (cp.station::GraphStation).code
-    result = lookup_mct(
-        r.lookup,
-        from_rec.airline,
-        to_rec.airline,
-        stn_code,
-        stn_code,
-        mct_status;
-        arr_body = from_rec.body_type,
-        dep_body = to_rec.body_type,
-        arr_term = from_rec.arr_term,
-        dep_term = to_rec.dep_term,
-        prv_stn = from_rec.org,
-        nxt_stn = to_rec.dst,
-        arr_op_carrier = arr_op_carrier,
-        dep_op_carrier = dep_op_carrier,
-        arr_is_codeshare = arr_is_codeshare,
-        dep_is_codeshare = dep_is_codeshare,
-        arr_acft_type = from_rec.eqp,
-        dep_acft_type = to_rec.eqp,
-        arr_flt_no = from_rec.flt_no,
-        dep_flt_no = to_rec.flt_no,
-        prv_country = prv_stn_rec.country,
-        nxt_country = nxt_stn_rec.country,
-        prv_state = prv_stn_rec.state,
-        nxt_state = nxt_stn_rec.state,
-        prv_region = prv_stn_rec.region,
-        nxt_region = nxt_stn_rec.region,
-        target_date = ctx.target_date,
+    cache_key = MCTCacheKey(
+        from_rec.airline, to_rec.airline,
+        stn_code, stn_code, mct_status,
+        from_rec.body_type, to_rec.body_type,
+        from_rec.org, to_rec.dst,
+        from_rec.arr_term, to_rec.dep_term,
+        arr_op_carrier, dep_op_carrier,
+        arr_is_codeshare, dep_is_codeshare,
+        from_rec.eqp, to_rec.eqp,
+        prv_stn_rec.country, nxt_stn_rec.country,
+        prv_stn_rec.state, nxt_stn_rec.state,
+        prv_stn_rec.region, nxt_stn_rec.region,
     )
+
+    # Cache lookup with revalidation: if the cached result matched on
+    # flight-number ranges or date validity, discard the hit and do a
+    # full lookup (these fields vary per-leg/per-day but are rare).
+    cached = get(ctx.mct_cache, cache_key, nothing)
+    if cached !== nothing &&
+       (cached.matched_fields & _MCT_CACHE_REVALIDATE_MASK) == 0 &&
+       (cached.specificity & _MCT_CACHE_DATE_BIT) == 0
+        result = cached
+    else
+        result = lookup_mct(
+            r.lookup,
+            from_rec.airline,
+            to_rec.airline,
+            stn_code,
+            stn_code,
+            mct_status;
+            arr_body = from_rec.body_type,
+            dep_body = to_rec.body_type,
+            arr_term = from_rec.arr_term,
+            dep_term = to_rec.dep_term,
+            prv_stn = from_rec.org,
+            nxt_stn = to_rec.dst,
+            arr_op_carrier = arr_op_carrier,
+            dep_op_carrier = dep_op_carrier,
+            arr_is_codeshare = arr_is_codeshare,
+            dep_is_codeshare = dep_is_codeshare,
+            arr_acft_type = from_rec.eqp,
+            dep_acft_type = to_rec.eqp,
+            arr_flt_no = from_rec.flt_no,
+            dep_flt_no = to_rec.flt_no,
+            prv_country = prv_stn_rec.country,
+            nxt_country = nxt_stn_rec.country,
+            prv_state = prv_stn_rec.state,
+            nxt_state = nxt_stn_rec.state,
+            prv_region = prv_stn_rec.region,
+            nxt_region = nxt_stn_rec.region,
+            target_date = ctx.target_date,
+        )
+        if cached === nothing
+            ctx.mct_cache[cache_key] = result
+        end
+    end
 
     cp.mct_result = result
     cp.mct = result.time

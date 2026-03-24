@@ -110,7 +110,7 @@ export post_ingest_sql!
 export query_schedule_legs, query_schedule_segments
 
 # Exports — graph: MCT lookup
-export MCTRecord, MCTLookup, lookup_mct, materialize_mct_lookup
+export MCTRecord, MCTLookup, MCTCacheKey, lookup_mct, materialize_mct_lookup
 export MCT_BIT_ARR_CARRIER, MCT_BIT_DEP_CARRIER
 export MCT_BIT_ARR_TERM, MCT_BIT_DEP_TERM
 export MCT_BIT_PRV_STN, MCT_BIT_NXT_STN

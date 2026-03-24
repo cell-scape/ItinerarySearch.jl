@@ -47,6 +47,7 @@
 
     # Caches
     gc_cache::Dict{Tuple{StationCode,StationCode},Float64} = Dict{Tuple{StationCode,StationCode},Float64}()
+    mct_cache::Dict{MCTCacheKey,MCTResult} = Dict{MCTCacheKey,MCTResult}()
 
     # Pre-allocated buffers for geo diversity (avoids Set allocation per committed itinerary)
     _geo_metros::Set{InlineString3} = Set{InlineString3}()
