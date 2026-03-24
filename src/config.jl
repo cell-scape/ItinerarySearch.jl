@@ -100,6 +100,7 @@ the reference — no locking, no mutation.
     output_formats::Vector{Symbol} = [:json, :yaml, :csv]
     distance_formula::Symbol = :haversine  # :haversine or :vincenty
     allow_roundtrips::Bool = false
+    mct_cache_enabled::Bool = true         # cache MCT lookup results during connection build
 end
 
 # ── JSON3 field extraction helpers ────────────────────────────────────────────
@@ -220,6 +221,8 @@ function load_config(path::String)::SearchConfig
             val = search[:allow_roundtrips]
             val isa Bool && (kwargs[:allow_roundtrips] = val)
         end
+        b = _json_bool(search, :mct_cache_enabled)
+        b !== nothing && (kwargs[:mct_cache_enabled] = b)
     end
 
     data = _json_obj(raw, :data)
