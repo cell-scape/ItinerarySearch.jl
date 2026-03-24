@@ -23,7 +23,11 @@ function setup_environment(; target_date::Date = Date(2026, 3, 18))
 
     graph = build_graph!(store, config, target_date)
     build_ms = round(graph.build_stats.build_time_ns / 1.0e6; digits=0)
+    bs = graph.build_stats
     println("Graph: $(length(graph.stations)) stations, $(length(graph.legs)) legs, built in $(build_ms)ms")
+    println("  Connections: $(bs.total_connections), Pairs: $(bs.total_pairs_evaluated), MCT lookups: $(bs.mct_lookups)")
+    geo = graph.geo_stats
+    println("  Geo: $(length(geo.by_metro)) metros, $(length(geo.by_country)) countries, $(length(geo.by_region)) regions")
 
     ctx = RuntimeContext(
         config = config,

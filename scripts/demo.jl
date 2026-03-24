@@ -10,8 +10,17 @@ println("ItinerarySearch.jl — Demo")
 println("="^50)
 
 # Create store with all defaults (loads demo data)
+# Enable structured JSON logging and event log for the demo
 println("\nLoading demo data...")
-config = SearchConfig()
+outdir_base = "data/output"
+mkpath(outdir_base)
+
+config = SearchConfig(
+    log_json_path     = joinpath(outdir_base, "demo.log"),
+    log_level         = :info,
+    event_log_enabled = true,
+    event_log_path    = joinpath(outdir_base, "demo_events.jsonl"),
+)
 store = DuckDBStore()
 
 try
@@ -216,6 +225,30 @@ for day_offset in 0:(n_days - 1)
     )
     println("[$(target)]   Ref table → $(ref_table_file)")
 
+    # ── Tier 1 Instrumentation Summary ──────────────────────────────────────
+    bs = graph.build_stats
+    println("[$(target)] ── Build Stats ──")
+    println("[$(target)]   Pairs evaluated: $(bs.total_pairs_evaluated)")
+    println("[$(target)]   MCT lookups: $(bs.mct_lookups) (exc=$(bs.mct_exceptions) std=$(bs.mct_standards) def=$(bs.mct_defaults) supp=$(bs.mct_suppressions))")
+    if bs.mct_lookups > 0
+        println("[$(target)]   MCT avg time: $(round(bs.mct_avg_time; digits=1)) min")
+    end
+    if !isempty(bs.rule_pass)
+        println("[$(target)]   Rules: $(sum(bs.rule_pass)) pass, $(sum(bs.rule_fail)) fail")
+    end
+
+    # Geographic stats
+    geo = graph.geo_stats
+    println("[$(target)]   Geo: $(length(geo.by_metro)) metros, $(length(geo.by_state)) states, $(length(geo.by_country)) countries, $(length(geo.by_region)) regions")
+
+    # Search stats
+    ss = ctx.search_stats
+    println("[$(target)] ── Search Stats ──")
+    println("[$(target)]   Queries: $(ss.queries), Paths found: $(ss.paths_found), Rejected: $(ss.paths_rejected)")
+    println("[$(target)]   Max depth: $(ss.max_depth_reached)")
+    println("[$(target)]   By stops: nonstop=$(ss.paths_by_stops[1]) 1-stop=$(ss.paths_by_stops[2]) 2-stop=$(ss.paths_by_stops[3]) 3+=$(ss.paths_by_stops[4])")
+    println("[$(target)]   Search time: $(round(ss.search_time_ns / 1e6; digits=1)) ms")
+
     day_elapsed = round(time() - t_day; digits=1)
     println("[$(target)] Total: $(total_itns) itineraries, $(total_rows) rows → $(itns_file) ($(day_elapsed)s)")
 end
@@ -274,4 +307,28 @@ viz_trip_comparison(trips_file, trips;
 println("  Trip chart   → $(trips_file) ($(length(trips)) trips)")
 
 close(store)
+
+# ── Observability output summary ─────────────────────────────────────────────
+println("\n" * "="^50)
+println("Observability Output")
+println("="^50)
+
+log_path = config.log_json_path
+if isfile(log_path)
+    n_log = countlines(log_path)
+    sz_log = round(filesize(log_path) / 1024; digits=0)
+    println("  JSON log:   $(n_log) lines, $(sz_log)KB → $(log_path)")
+else
+    println("  JSON log:   (not generated)")
+end
+
+evt_path = config.event_log_path
+if isfile(evt_path)
+    n_evt = countlines(evt_path)
+    sz_evt = round(filesize(evt_path) / 1024; digits=0)
+    println("  Event log:  $(n_evt) events, $(sz_evt)KB → $(evt_path)")
+else
+    println("  Event log:  (not generated)")
+end
+
 println("\nDone!")
