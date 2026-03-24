@@ -8,6 +8,7 @@ using UUIDs
 using JSON3
 using Logging
 using LoggingExtras
+using HTTP
 
 # Type system (dependency order matters)
 include("types/aliases.jl")
@@ -40,6 +41,7 @@ include("graph/search.jl")
 include("graph/builder.jl")
 include("output/formats.jl")
 include("output/viz.jl")
+include("server.jl")
 include("cli.jl")
 
 # Exports — type aliases
