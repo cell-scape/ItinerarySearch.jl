@@ -7,3 +7,6 @@ docs/build/
 data/input/*
 data/output/*
 data/viz/*
+build/*.so
+build/*.dylib
+build/app/

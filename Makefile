@@ -1,4 +1,4 @@
-.PHONY: test demo bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info
+.PHONY: test demo bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info sysimage app
 
 # Run full test suite
 test:
@@ -47,5 +47,12 @@ cli-ingest:
 
 cli-info:
 	julia --project=. bin/itinsearch.jl info $(EXTRA)
+
+# PackageCompiler builds (uses test suite as precompile workload)
+sysimage:
+	julia --project=. build/build.jl sysimage
+
+app:
+	julia --project=. build/build.jl app
 
 all: test bench demo
