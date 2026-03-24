@@ -107,6 +107,16 @@ Two parallel observability systems operate independently:
 
 Both systems are configured via `SearchConfig` and can run simultaneously to different file paths.
 
+### CLI
+
+The `CLI` submodule (`src/cli.jl`) wraps the pipeline in an ArgParse.jl command interface with 5 commands: `search`, `trip`, `build`, `ingest`, `info`. Each command follows the same pattern: open store → ingest (if needed) → build graph (if needed) → execute → write JSON to stdout or file → close. Global flags provide per-invocation overrides for SearchConfig and ParameterSet fields. The `main(args)::Int` entry point returns exit codes and is PackageCompiler-ready.
+
+### Compilation
+
+**PrecompileTools** — A `@compile_workload` block in the module exercises core code paths (type construction, MCT lookup, rule chains, DuckDB store, JSON serialization, CLI parser) during `Pkg.precompile()`, caching native code for ~400ms load / ~100ms first-call.
+
+**PackageCompiler** — `build/build.jl` supports sysimage mode (0ms module load, ~236MB `.so`) and standalone app mode. A dedicated `build/precompile_workload.jl` runs the full pipeline (ingest, graph build, search, JSON output) with synthetic data, capturing all method specializations without requiring test-only dependencies.
+
 ---
 
 ## Type Hierarchy

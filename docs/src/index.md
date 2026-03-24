@@ -14,6 +14,8 @@ ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Ti
 - **Multiple output formats** — PSV files, JSON (full and compact), `itinerary_long_format` / `itinerary_wide_format` tables
 - **Interactive visualizations** — self-contained HTML network map (Leaflet), timeline (D3 Gantt), and trip comparison chart
 - **Observability** — structured event log with typed events and JSONL sink, DynaTrace-compatible JSON logging via LoggingExtras TeeLogger, cooperative system metrics polling, Tier 1 instrumentation (rule counters, MCT cascade stats, geographic aggregation)
+- **CLI** — `itinsearch search ORD LHR 2026-03-20` with 5 commands (search, trip, build, ingest, info), global flags, per-invocation parameter overrides, JSON output to stdout or file
+- **Compilation** — PrecompileTools workload for fast first-use; PackageCompiler sysimage (0ms load) and standalone app builds
 
 ## Installation
 

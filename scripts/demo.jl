@@ -16,10 +16,10 @@ outdir_base = "data/output"
 mkpath(outdir_base)
 
 config = SearchConfig(
-    log_json_path     = joinpath(outdir_base, "demo.log"),
-    log_level         = :info,
-    event_log_enabled = true,
-    event_log_path    = joinpath(outdir_base, "demo_events.jsonl"),
+    log_json_path=joinpath(outdir_base, "demo.log"),
+    log_level=:info,
+    event_log_enabled=true,
+    event_log_path=joinpath(outdir_base, "demo_events.jsonl"),
 )
 store = DuckDBStore()
 
@@ -104,7 +104,7 @@ for (o, d) in od_pairs
     println("  $(o) → $(d)")
 end
 
-for day_offset in 0:(n_days - 1)
+for day_offset in 0:(n_days-1)
     target = start_date + Day(day_offset)
     t_day = time()
     println("\n" * "="^50)
@@ -124,9 +124,9 @@ for day_offset in 0:(n_days - 1)
 
     # Search selected OD pairs
     ctx = RuntimeContext(
-        config = config,
-        constraints = SearchConstraints(),
-        itn_rules = build_itn_rules(config),
+        config=config,
+        constraints=SearchConstraints(),
+        itn_rules=build_itn_rules(config),
     )
 
     itns_file = joinpath(outdir, "itineraries_$(target).psv")
@@ -153,22 +153,22 @@ for day_offset in 0:(n_days - 1)
 
     # Write compact leg index — use flexible multi-search interface
     origins = [o for (o, _) in od_pairs]
-    dests   = [d for (_, d) in od_pairs]
+    dests = [d for (_, d) in od_pairs]
 
     result = itinerary_legs_multi(graph.stations, ctx;
-        origins      = origins,
-        destinations = dests,
-        dates        = target,
+        origins=origins,
+        destinations=dests,
+        dates=target,
     )
 
     # Write per-OD PSV files
     legs_dir = joinpath(outdir, "legs_index")
     mkpath(legs_dir)
     psv_header = join(["itinerary", "leg_pos", "row_number", "record_serial",
-                        "airline", "flt_no", "operational_suffix", "itin_var",
-                        "itin_var_overflow", "leg_seq", "svc_type",
-                        "codeshare_airline", "codeshare_flt_no",
-                        "org", "dst"], "|")
+            "airline", "flt_no", "operational_suffix", "itin_var",
+            "itin_var_overflow", "leg_seq", "svc_type",
+            "codeshare_airline", "codeshare_flt_no",
+            "org", "dst"], "|")
     for (dt, org_dict) in result
         for (org_s, dst_dict) in org_dict
             for (dst_s, itineraries) in dst_dict
@@ -179,12 +179,12 @@ for day_offset in 0:(n_days - 1)
                     for (itn_idx, itn_ref) in enumerate(itineraries)
                         for (leg_pos, k) in enumerate(itn_ref.legs)
                             println(io, join([itn_idx, leg_pos,
-                                              Int(k.row_number), Int(k.record_serial),
-                                              strip(String(k.airline)), Int(k.flt_no),
-                                              k.operational_suffix, Int(k.itin_var),
-                                              k.itin_var_overflow, Int(k.leg_seq), k.svc_type,
-                                              strip(String(k.codeshare_airline)), Int(k.codeshare_flt_no),
-                                              strip(String(k.org)), strip(String(k.dst))], "|"))
+                                    Int(k.row_number), Int(k.record_serial),
+                                    strip(String(k.airline)), Int(k.flt_no),
+                                    k.operational_suffix, Int(k.itin_var),
+                                    k.itin_var_overflow, Int(k.leg_seq), k.svc_type,
+                                    strip(String(k.codeshare_airline)), Int(k.codeshare_flt_no),
+                                    strip(String(k.org)), strip(String(k.dst))], "|"))
                             n_rows += 1
                         end
                     end
@@ -213,7 +213,7 @@ for day_offset in 0:(n_days - 1)
     # Interactive HTML table of ItineraryRefs
     ref_table_file = joinpath("data", "viz", "itinerary_refs_$(target).html")
     viz_itinerary_refs(ref_table_file, result;
-        title = "Itinerary References — $(target)",
+        title="Itinerary References — $(target)",
     )
     println("[$(target)]   Ref table → $(ref_table_file)")
 
@@ -256,12 +256,12 @@ println("\n" * "="^50)
 println("Generating visualizations → $(viz_dir)/")
 
 target = start_date
-graph  = build_graph!(store, config, target)
+graph = build_graph!(store, config, target)
 
 ctx_viz = RuntimeContext(
-    config      = config,
-    constraints = SearchConstraints(),
-    itn_rules   = build_itn_rules(config),
+    config=config,
+    constraints=SearchConstraints(),
+    itn_rules=build_itn_rules(config),
 )
 
 # Collect sample itineraries from all OD pairs on first day
@@ -275,15 +275,15 @@ end
 # Network map with highlighted sample itineraries
 net_map_file = joinpath(viz_dir, "network_$(target).html")
 viz_network_map(net_map_file, graph, target;
-    itineraries = sample_itns,
-    title       = "Flight Network — $(target)",
+    itineraries=sample_itns,
+    title="Flight Network — $(target)",
 )
 println("  Network map  → $(net_map_file)")
 
 # Timeline for sample itineraries
 timeline_file = joinpath(viz_dir, "timeline_$(target).html")
 viz_timeline(timeline_file, sample_itns;
-    title = "Itinerary Timeline — $(target)",
+    title="Itinerary Timeline — $(target)",
 )
 println("  Timeline     → $(timeline_file)")
 
@@ -291,13 +291,13 @@ println("  Timeline     → $(timeline_file)")
 trip_od = (StationCode("ORD"), StationCode("SFO"))
 trip_legs = [
     TripLeg(origin=trip_od[1], destination=trip_od[2], date=target),
-    TripLeg(origin=trip_od[2], destination=trip_od[1], date=target + Day(3), min_stay=60*12),
+    TripLeg(origin=trip_od[2], destination=trip_od[1], date=target + Day(3), min_stay=60 * 12),
 ]
 trips = search_trip(store, graph, trip_legs, ctx_viz; max_trips=20)
 trips_file = joinpath(viz_dir, "trips_$(target).html")
 viz_trip_comparison(trips_file, trips;
-    title  = "Trip Comparison: $(trip_od[1])↔$(trip_od[2]) — $(target)",
-    top_n  = 10,
+    title="Trip Comparison: $(trip_od[1])↔$(trip_od[2]) — $(target)",
+    top_n=10,
 )
 println("  Trip chart   → $(trips_file) ($(length(trips)) trips)")
 
@@ -325,5 +325,15 @@ if isfile(evt_path)
 else
     println("  Event log:  (not generated)")
 end
+
+println("\n" * "="^50)
+println("CLI Quick Reference")
+println("="^50)
+println("  Search:   julia --project=. bin/itinsearch.jl search ORD LHR 2026-03-20")
+println("  Trip:     julia --project=. bin/itinsearch.jl trip ORD LHR 2026-03-20 LHR ORD 2026-03-27")
+println("  Build:    julia --project=. bin/itinsearch.jl build --date 2026-03-20")
+println("  Ingest:   julia --project=. bin/itinsearch.jl ingest")
+println("  Info:     julia --project=. bin/itinsearch.jl info")
+println("  Sysimage: make sysimage  (then use --sysimage=build/ItinerarySearch.so)")
 
 println("\nDone!")

@@ -1,5 +1,19 @@
 # ItinerarySearch Development Diary
 
+## 2026-03-24 — CLI, PrecompileTools, PackageCompiler
+- **Scope**: Command-line interface, precompilation workloads, sysimage/app builds
+- **Changes**:
+  - CLI with 5 commands: search, trip, build, ingest, info (ArgParse.jl)
+  - Global flags: --config, --log-level, --log-json, --quiet, --compact, --output
+  - Parameter overrides: --max-stops, --max-elapsed, --max-connection, --circuity-factor, --scope, --interline, etc.
+  - `bin/itinsearch.jl` entry point, PackageCompiler-ready `main(args)::Int`
+  - PrecompileTools `@compile_workload` for 741ms load, 110ms first-call
+  - PackageCompiler sysimage build: 236MB, 0ms module load (`make sysimage`)
+  - PackageCompiler app build: standalone distributable (`make app`)
+  - juliac entry point ready (blocked by DuckDB JLL artifact loading)
+  - Dedicated `build/precompile_workload.jl` exercises full pipeline without test deps
+- **Tests**: 1393 total (102 new CLI tests)
+
 ## 2026-03-24 — MCT Cache, LegKey Date/Time, StationCode Sizing
 - **Scope**: MCT lookup cache with revalidation, LegKey schedule context, StationCode type optimization
 - **Changes**:

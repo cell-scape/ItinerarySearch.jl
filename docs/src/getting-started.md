@@ -426,6 +426,53 @@ graph = build_graph!(store, config, target_date)
 
 The event log captures `PhaseEvent` (start/end of ingest, MCT materialization, connection build), `SystemMetricsEvent` (memory, GC stats), and `BuildSnapshotEvent` (connection build stats) as typed JSONL records.
 
+## Step 10: CLI
+
+The CLI wraps the entire pipeline in a single command:
+
+```bash
+# Search itineraries
+julia --project=. bin/itinsearch.jl search ORD LHR 2026-03-20
+
+# Multiple ODs, multiple dates
+julia --project=. bin/itinsearch.jl search ORD,DEN LHR,LAX 2026-03-20 2026-03-21
+
+# Round-trip search with scoring
+julia --project=. bin/itinsearch.jl trip ORD LHR 2026-03-20 LHR ORD 2026-03-27 --min-stay 720
+
+# Build graph only (warmup/validation)
+julia --project=. bin/itinsearch.jl build --date 2026-03-20
+
+# Show table stats
+julia --project=. bin/itinsearch.jl info
+
+# With parameter overrides
+julia --project=. bin/itinsearch.jl search ORD LHR 2026-03-20 \
+    --max-stops 3 --scope intl --compact --output results.json
+```
+
+Global flags: `--config`, `--log-level`, `--log-json`, `--quiet`, `--compact`, `--output`.
+
+## Step 11: Compilation
+
+### Sysimage (fast startup, ~0ms load)
+
+```bash
+make sysimage
+julia --sysimage=build/ItinerarySearch.so --project=. bin/itinsearch.jl search ORD LHR 2026-03-20
+```
+
+The sysimage exercises the full pipeline during build, compiling all code paths to native code. Module load drops from ~400ms to 0ms.
+
+### Standalone App
+
+```bash
+make app
+build/app/bin/itinsearch search ORD LHR 2026-03-20
+```
+
+Produces a distributable directory with all dependencies bundled. No Julia installation required on the target machine.
+
 ## Complete Example Script
 
 ```julia

@@ -54,6 +54,22 @@ if isfile(config.ssim_path)
     bench_logging_overhead(store, config)
 
     close(store)
+
+    # Phase 11: Startup / load time
+    println("\n── Startup Time ──")
+    t_load = @elapsed using ItinerarySearch  # already loaded, measures re-import overhead
+    println("  Module already loaded (re-import): $(round(t_load * 1000; digits=1))ms")
+    sysimage_path = joinpath(@__DIR__, "..", "build", "ItinerarySearch.so")
+    if Sys.isapple()
+        sysimage_path = joinpath(@__DIR__, "..", "build", "ItinerarySearch.dylib")
+    end
+    if isfile(sysimage_path)
+        sz = round(filesize(sysimage_path) / 1024^2; digits=1)
+        println("  Sysimage: $sysimage_path ($sz MB)")
+    else
+        println("  Sysimage: not built (run `make sysimage` to create)")
+    end
+    println("  PrecompileTools: enabled (exercises core paths at precompile time)")
 else
     println("Demo data not found. Run extract_demo_data.jl first.")
     println("Skipping benchmarks.")
