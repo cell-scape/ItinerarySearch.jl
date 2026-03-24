@@ -2,7 +2,13 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "a45bdf7b7e2c385c4456d1cf2aeb398d99b353c8"
+project_hash = "1ee8bf537b30888734fcf02e5495581690b1e5d3"
+
+[[deps.ArgParse]]
+deps = ["Logging", "TextWrap"]
+git-tree-sha1 = "22cf435ac22956a7b45b0168abbc871176e7eecc"
+uuid = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
+version = "1.2.0"
 
 [[deps.Artifacts]]
 uuid = "56f22d72-fd6d-98f1-02f0-08ddc0907c33"
@@ -133,7 +139,7 @@ uuid = "82899510-4779-5014-852e-03e436cf321d"
 version = "1.0.0"
 
 [[deps.ItinerarySearch]]
-deps = ["CEnum", "CodecBzip2", "CodecXz", "CodecZlib", "CodecZstd", "DBInterface", "Dates", "DuckDB", "FixedWidthParsers", "InlineStrings", "JSON3", "LoggingExtras", "TranscodingStreams", "UUIDs"]
+deps = ["CEnum", "CodecBzip2", "CodecXz", "CodecZlib", "CodecZstd", "DBInterface", "Dates", "DuckDB", "FixedWidthParsers", "InlineStrings", "JSON3", "Logging", "LoggingExtras", "TranscodingStreams", "UUIDs"]
 path = "."
 uuid = "abb1f9ea-3061-4222-98a1-0c043039d694"
 version = "0.1.0"
@@ -259,6 +265,11 @@ deps = ["DataAPI", "DataValueInterfaces", "IteratorInterfaceExtensions", "Ordere
 git-tree-sha1 = "f2c1efbc8f3a609aadf318094f8fc5204bdaf344"
 uuid = "bd369af6-aec1-5ad0-b16a-f7cc5008161c"
 version = "1.12.1"
+
+[[deps.TextWrap]]
+git-tree-sha1 = "43044b737fa70bc12f6105061d3da38f881a3e3c"
+uuid = "b718987f-49a8-5099-9789-dcd902bef87d"
+version = "1.0.2"
 
 [[deps.TranscodingStreams]]
 git-tree-sha1 = "0c45878dcfdcfa8480052b6ab162cdd138781742"

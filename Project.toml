@@ -4,6 +4,7 @@ version = "0.1.0"
 authors = ["Bradley Dowling <bradley.dowling@united.com> and contributors"]
 
 [deps]
+ArgParse = "c7e460c6-2fb9-53a9-8c5b-16f535851c63"
 CEnum = "fa961155-64e5-5f13-b03f-caf6b980ea82"
 CodecBzip2 = "523fee87-0ab8-5b00-afb7-3ecf72e48cfd"
 CodecXz = "ba30903b-d9e8-5048-a5ec-d1f5b0d4b47b"
@@ -22,6 +23,7 @@ UUIDs = "cf7118a7-6976-5b1a-9a39-7adc72f591a4"
 
 [compat]
 Aqua = "0.8"
+ArgParse = "1.2.0"
 CEnum = "0.5"
 Chairmarks = "1"
 CodecBzip2 = "0.8"

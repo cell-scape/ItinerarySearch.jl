@@ -1,5 +1,6 @@
 module ItinerarySearch
 
+using ArgParse
 using Dates
 using InlineStrings
 using CEnum
@@ -39,6 +40,7 @@ include("graph/search.jl")
 include("graph/builder.jl")
 include("output/formats.jl")
 include("output/viz.jl")
+include("cli.jl")
 
 # Exports — type aliases
 export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
