@@ -90,7 +90,8 @@ using InlineStrings
         @test cfg.metrics_level == :full
         @test cfg.graph_export_path == "data/output"
         @test cfg.constraints_path == "data/output"
-        @test cfg.event_log_path == "data/output"
+        @test cfg.event_log_enabled == false
+        @test cfg.event_log_path == "data/output/events.jsonl"
         @test cfg.output_formats == [:json, :yaml, :csv]
     end
 

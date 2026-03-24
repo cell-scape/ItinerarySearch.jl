@@ -92,7 +92,8 @@ the reference — no locking, no mutation.
     graph_export_path::String = "data/output"
     graph_import_path::String = "data/output"
     constraints_path::String = "data/output"
-    event_log_path::String = "data/output"
+    event_log_enabled::Bool = false
+    event_log_path::String = "data/output/events.jsonl"
     output_formats::Vector{Symbol} = [:json, :yaml, :csv]
     distance_formula::Symbol = :haversine  # :haversine or :vincenty
     allow_roundtrips::Bool = false
@@ -148,6 +149,18 @@ function _json_obj(raw::JSON3.Object, key::Symbol)::Union{JSON3.Object,Nothing}
     haskey(raw, key) || return nothing
     val = raw[key]
     val isa JSON3.Object ? val : nothing
+end
+
+"""
+    `_json_bool(obj::JSON3.Object, key::Symbol)::Union{Bool, Nothing}`
+
+Extract a boolean field from a JSON3 Object, returning `nothing` if the key
+is absent or the value is not a `Bool`.
+"""
+function _json_bool(obj::JSON3.Object, key::Symbol)::Union{Bool,Nothing}
+    haskey(obj, key) || return nothing
+    v = obj[key]
+    v isa Bool ? v : nothing
 end
 
 """
@@ -260,6 +273,8 @@ function load_config(path::String)::SearchConfig
         end
         s = _json_str(output, :event_log_path)
         s !== nothing && (kwargs[:event_log_path] = s)
+        b = _json_bool(output, :event_log_enabled)
+        b !== nothing && (kwargs[:event_log_enabled] = b)
         if haskey(output, :output_formats)
             fmts_val = output[:output_formats]
             if fmts_val isa JSON3.Array

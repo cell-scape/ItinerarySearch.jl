@@ -36,7 +36,7 @@
 - `layer1_built::Bool` — `true` once the Layer 1 one-stop index has been populated
 - `layer1::OneStopIndex` — pre-computed `(org, dst) → Vector{OneStopConnection}` index
 - `mct_selections::Vector{MCTSelectionRow}` — MCT cascade audit log (Tier 1)
-- `event_log::Vector{Any}` — structured event log (Tier 3; empty when disabled)
+- `event_log::EventLog` — structured event log (Tier 3; disabled by default)
 """
 @kwdef mutable struct RuntimeContext
     # Shared immutable references
@@ -76,8 +76,8 @@
     # MCT selection tracking
     mct_selections::Vector{MCTSelectionRow} = MCTSelectionRow[]
 
-    # Event log (tier 3, empty when disabled)
-    event_log::Vector{Any} = Any[]
+    # Event log (tier 3, disabled by default)
+    event_log::EventLog = EventLog()
 end
 
 # ── Date validity helper ────────────────────────────────────────────────────────
