@@ -1,5 +1,12 @@
 # ItinerarySearch Development Diary
 
+## 2026-03-23 — Remove Layer 1 (Experimental, Unused)
+- **Scope**: Remove the experimental Layer 1 one-stop pre-computation feature
+- **Rationale**: Disabled by default, 2.5s build overhead, caused result explosion (216k vs 1.8k), no value for single-session use
+- **Removed**: `src/graph/layer1.jl` (520 lines), `test/test_layer1.jl` (1123 lines), `OneStopConnection`/`OneStopIndex` types, `layer1_built`/`layer1` fields from FlightGraph and RuntimeContext, `layer1_hits`/`layer1_misses` from SearchStats, L1 DuckDB tables, L1 branching in `_dfs!`
+- **Impact**: -1,930 lines, cleaner DFS search path, simpler type system
+- **Tests**: 1291 total (66 L1 tests removed)
+
 ## 2026-03-23 — Performance and Simplification (Code Review Fixes)
 - **Scope**: Address code review findings — performance tuning, dead code removal, simplification
 - **Changes**:
