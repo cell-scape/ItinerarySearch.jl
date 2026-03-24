@@ -2,73 +2,109 @@
 
 High-performance itinerary building and search for airline schedules.
 
-ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Time) tables, builds an in-memory flight connection graph, and serves multi-stop itinerary search queries. It is designed as a reusable, performance-optimized Julia library implementing the Module D itinerary-building responsibility.
+ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Time) tables, builds an in-memory flight connection graph, and serves multi-stop itinerary search queries — as a library, CLI tool, or REST API service. Designed as a reusable, performance-optimized Julia package for the Module D itinerary-building responsibility.
 
 ## Features
 
 - **SSIM ingest** — streaming fixed-width parser for OAG/SSIM Type 1-5 records, with EDF expansion, codeshare (DEI 50) resolution, and segment building
-- **MCT lookup** — SSIM8 specificity cascade with station-standard, exception, and global-default fallback tiers
-- **Graph-based connection building** — O(n²) rule-chain pass producing `GraphConnection` edges at every station
-- **DFS search with pruning** — depth-first traversal with elapsed-time, circuity, direction, and stop-count pruning; optional Layer 1 one-stop pre-computation for repeated searches
+- **MCT lookup** — full SSIM8 Chapter 8 matching with 29-level specificity cascade, codeshare indicators, aircraft type, flight number ranges, state geography, date validity, suppression geography, and inter-station (multi-airport city) support; result cache with revalidation (~77% hit rate)
+- **Graph-based connection building** — O(n²) rule-chain pass producing `GraphConnection` edges at every station; Tuple-dispatched rules for fully specialized compilation
+- **DFS search with pruning** — depth-first traversal with elapsed-time, circuity, direction, and stop-count pruning
 - **Trip search with scoring** — multi-leg trip pairing with configurable weighted scoring (`TripScoringWeights`)
 - **Multiple output formats** — PSV files, JSON (full and compact with `ItineraryRef` summary), `itinerary_long_format` / `itinerary_wide_format` tables
 - **Interactive visualizations** — self-contained HTML network map (Leaflet), timeline (D3 Gantt), and trip comparison (D3 stacked bar)
-- **DuckDB singleton store** — all tabular data flows through a single `DuckDBStore`; SQL post-ingest pipeline handles joins, enrichment, and filtering
+- **Observability** — structured event log with typed events and JSONL sink, DynaTrace-compatible JSON logging via LoggingExtras TeeLogger, cooperative system metrics polling, Tier 1 instrumentation (rule counters, MCT cascade stats, geographic aggregation)
+- **CLI** — `itinsearch` with 6 commands (search, trip, build, ingest, info, serve), global flags, per-invocation parameter overrides
+- **REST API** — HTTP service with search, trip, station, health, and rebuild endpoints; concurrent request handling; lock-protected graph refresh; per-request constraint overrides
+- **Compilation** — PrecompileTools workload for fast first-use; PackageCompiler sysimage (0ms load) and standalone app builds
+- **DuckDB store** — all tabular data flows through a single `DuckDBStore`; SQL post-ingest pipeline handles joins, enrichment, and filtering
 
 ## Quick Start
+
+### Library Usage
 
 ```julia
 using ItinerarySearch
 using Dates
 
-# 1. Load the schedule (SSIM + MCT + reference tables → DuckDB)
-config = SearchConfig()         # defaults point to data/input/
+config = SearchConfig()
 store  = DuckDBStore()
 load_schedule!(store, config)
 
-# 2. Build the flight graph for a target date
 target = Date(2026, 3, 20)
 graph  = build_graph!(store, config, target)
 
-# 3. Create a search context
 ctx = RuntimeContext(
     config      = config,
     constraints = SearchConstraints(),
     itn_rules   = build_itn_rules(config),
 )
 
-# 4. Search a single O-D pair
-refs = itinerary_legs(
-    graph.stations,
-    StationCode("ORD"),
-    StationCode("LHR"),
-    target,
-    ctx,
-)
-# refs is a Vector{ItineraryRef}, sorted by stops → elapsed → distance
+refs = itinerary_legs(graph.stations, StationCode("ORD"), StationCode("LHR"), target, ctx)
+println("Found $(length(refs)) itineraries")
 
-# 5. Write JSON for multiple O-D pairs
 json = itinerary_legs_json(graph.stations, ctx;
-    origins      = ["ORD", "DEN"],
-    destinations = ["LHR", "SFO"],
-    dates        = target,
-)
+    origins = ["ORD", "DEN"], destinations = ["LHR", "SFO"], dates = target)
 write("data/output/itineraries.json", json)
 
 close(store)
 ```
 
-## Architecture
+### CLI
 
-The pipeline flows from raw files through DuckDB into an in-memory graph, then into search and output:
+```bash
+# Search
+julia --project=. bin/itinsearch.jl search ORD LHR 2026-03-20
+julia --project=. bin/itinsearch.jl search ORD,DEN LHR,LAX 2026-03-20 --compact
+
+# Trip (round-trip with min stay)
+julia --project=. bin/itinsearch.jl trip ORD LHR 2026-03-20 LHR ORD 2026-03-27 --min-stay 720
+
+# Build graph only
+julia --project=. bin/itinsearch.jl build --date 2026-03-20
+
+# Info / Ingest
+julia --project=. bin/itinsearch.jl info
+julia --project=. bin/itinsearch.jl ingest
+
+# With overrides
+julia --project=. bin/itinsearch.jl search ORD LHR 2026-03-20 \
+    --max-stops 3 --scope intl --output results.json --log-level debug
+```
+
+### REST API
+
+```bash
+# Start the server
+julia --project=. bin/itinsearch.jl serve --date 2026-03-20 --port 8080
+
+# Search
+curl -X POST http://localhost:8080/search \
+  -H "Content-Type: application/json" \
+  -d '{"origins":["ORD"],"destinations":["LHR"],"dates":["2026-03-20"]}'
+
+# Trip search
+curl -X POST http://localhost:8080/trip \
+  -H "Content-Type: application/json" \
+  -d '{"legs":[{"origin":"ORD","destination":"LHR","date":"2026-03-20"}]}'
+
+# Station info / Health / Rebuild
+curl http://localhost:8080/station/ORD
+curl http://localhost:8080/health
+curl -X POST http://localhost:8080/rebuild
+```
+
+## Architecture
 
 ```
 SSIM file ──┐
 MCT file  ──┼──► DuckDB Store ──► FlightGraph ──► DFS Search ──► Output
-Ref tables ─┘
+Ref tables ─┘                                                     ├── JSON / PSV
+                                                                  ├── CLI (stdout)
+                                                                  └── REST API (HTTP)
 ```
 
-See [docs/src/architecture.md](docs/src/architecture.md) for the full Mermaid diagram, type hierarchy, and design-decision rationale.
+See [docs/src/architecture.md](docs/src/architecture.md) for the full Mermaid diagram, type hierarchy, and design rationale.
 
 ## Key Types
 
@@ -79,8 +115,8 @@ See [docs/src/architecture.md](docs/src/architecture.md) for the full Mermaid di
 | `LegRecord` | Full 41-field flight leg from SSIM ingest |
 | `StationRecord` | Airport reference data (coordinates, timezone, region) |
 | `SegmentRecord` | Precomputed segment-level aggregates |
-| `MCTResult` | MCT cascade result with source and specificity |
-| `LegKey` | Compact cross-reference to a leg (row_number + flight identity) |
+| `MCTResult` | MCT cascade result with source, specificity, and matched_fields |
+| `LegKey` | Compact cross-reference to a leg (row_number + flight identity + operating_date + dep_time) |
 | `ItineraryRef` | Serializable itinerary summary with ordered `Vector{LegKey}` |
 
 **Graph layer** (mutable, pointer-linked):
@@ -88,23 +124,12 @@ See [docs/src/architecture.md](docs/src/architecture.md) for the full Mermaid di
 | Type | Purpose |
 |------|---------|
 | `GraphStation` | Airport node; holds `departures`, `arrivals`, `connections` |
-| `GraphLeg` | Flight leg node; holds `connect_to` / `connect_from` edges |
+| `GraphLeg` | Flight leg node; holds `connect_to` / `connect_from` edges + `nonstop_cp` |
 | `GraphSegment` | Segment node grouping legs sharing the same flight identity |
 | `GraphConnection` | Connection edge between two legs at a station, with MCT and status |
 | `Itinerary` | Ordered sequence of `GraphConnection` edges |
 | `Trip` | Multi-leg booking container grouping one or more `Itinerary` objects |
-| `TripLeg` | One segment of a multi-leg trip search request |
-| `TripScoringWeights` | Configurable weights for trip scoring |
-| `FlightGraph` | Top-level container for the entire materialized network |
-
-**Search context**:
-
-| Type | Purpose |
-|------|---------|
-| `RuntimeContext` | Per-thread mutable search state (rule chains, caches, results) |
-| `SearchConstraints` | Global defaults plus per-market `ParameterSet` overrides |
-| `MarketOverride` | Per-market parameter override with specificity cascade |
-| `ParameterSet` | All tunable parameters for connection and itinerary validation |
+| `FlightGraph` | Top-level container with `geo_stats` geographic aggregation |
 
 ## Configuration
 
@@ -112,72 +137,67 @@ See [docs/src/architecture.md](docs/src/architecture.md) for the full Mermaid di
 
 | Parameter | Default | Description |
 |-----------|---------|-------------|
-| `max_stops` | `2` | Maximum intermediate stops (0 = nonstop only) |
-| `leading_days` | `2` | Days before target date included in schedule window |
-| `trailing_days` | `0` | Days after target date included in schedule window |
+| `max_stops` | `2` | Maximum intermediate stops |
+| `leading_days` | `2` | Days before target date in schedule window |
+| `trailing_days` | `0` | Days after target date in schedule window |
 | `max_connection_minutes` | `480` | Maximum connection time (8 hours) |
-| `max_elapsed_minutes` | `1440` | Maximum total elapsed time (24 hours) |
-| `circuity_factor` | `2.5` | Maximum ratio of flown distance to great-circle distance |
-| `circuity_extra_miles` | `500.0` | Flat mileage tolerance added to circuity threshold |
+| `circuity_factor` | `2.5` | Maximum ratio of flown to great-circle distance |
 | `scope` | `SCOPE_ALL` | `SCOPE_DOM`, `SCOPE_INTL`, or `SCOPE_ALL` |
 | `interline` | `INTERLINE_CODESHARE` | `INTERLINE_ONLINE`, `INTERLINE_CODESHARE`, or `INTERLINE_ALL` |
 | `distance_formula` | `:haversine` | `:haversine` or `:vincenty` |
-| `allow_roundtrips` | `false` | When `true`, round-trip paths are split at the farthest point |
-
-Load from JSON:
-
-```julia
-config = load_config("config/defaults.json")
-```
-
-## Output Formats
-
-| Format | Function | Description |
-|--------|----------|-------------|
-| `Vector{ItineraryRef}` | `itinerary_legs` | Single O-D, sorted/deduped compact index |
-| Nested Dict | `itinerary_legs_multi` | Multiple O-D pairs, keyed by date → origin → dest |
-| JSON string | `itinerary_legs_json` | Same as multi, full or compact, for external consumers |
-| PSV (legs) | `write_legs` | All valid legs for a date, pipe-delimited |
-| PSV (itineraries) | `write_itineraries` | One row per leg per itinerary |
-| PSV (trips) | `write_trips` | One row per leg per itinerary per trip |
-| Long format | `itinerary_long_format` | `Vector{NamedTuple}`, one row per leg |
-| Wide format | `itinerary_wide_format` | `Vector{NamedTuple}`, one row per itinerary |
-| Network map | `viz_network_map` | Self-contained HTML with Leaflet map |
-| Timeline | `viz_timeline` | Self-contained HTML D3 Gantt-style chart |
-| Trip comparison | `viz_trip_comparison` | Self-contained HTML D3 stacked bar chart |
-| Itinerary table | `viz_itinerary_refs` | Self-contained HTML sortable/filterable itinerary table |
+| `mct_cache_enabled` | `true` | Cache MCT lookup results during connection build |
+| `log_level` | `:info` | Log level (`:debug`, `:info`, `:warn`, `:error`) |
+| `log_json_path` | `""` | DynaTrace-compatible JSON log file (empty = disabled) |
+| `event_log_enabled` | `false` | Structured event log with JSONL sink |
 
 ## Benchmarks
 
-Measured on the full United Airlines / OA carrier schedule (demo dataset):
+Measured on the full United Airlines / OA carrier schedule:
 
-| Phase | Time |
-|-------|------|
-| Graph build (`build_graph!`) | ~5 s |
-| DFS search per O-D (e.g. ORD→LHR) | 9–31 ms |
-| Layer 1 build (optional, multi-threaded) | ~2.5 s |
-| Test suite | 1000+ assertions, instant feedback |
-
-Search times vary by network density. Hub-to-hub international pairs with many 2-stop paths take longer than short domestic pairs.
+| Phase | Time | Notes |
+|-------|------|-------|
+| Graph build | ~5.6s | 823 stations, 25K legs, 1.9M connections |
+| Connection pairs | 493 ns/pair | 11.4M pairs, Tuple-dispatched rules |
+| MCT lookup | 105 ns | 77% cache hit rate |
+| DFS search (ORD→LHR) | 43 ms | 1,903 itineraries |
+| DFS search (DEN→LAX) | 14 ms | 798 itineraries |
+| JSON output (5 ODs) | 125 ms | 8,610 itineraries |
+| Test suite | 1,413 tests | ~1 min |
 
 ## Installation
 
-```julia
-# From the project directory:
+```bash
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
-```bash
-make test                                     # run test suite
-make demo                                     # full pipeline on data/demo/
-make bench                                    # benchmarks
-make search ORG=ORD DST=LHR DATE=2026-03-20  # single O-D: PSV, JSON, HTML, map
-make search ORG=ORD DATE=2026-03-20           # all destinations from ORG
-make viz [DATE=2026-03-18]                    # regenerate HTML visualizations only
-make json [DATE=2026-03-18] [DAYS=3]          # write JSON output only
-```
-
 Requires Julia 1.10+.
+
+## Make Targets
+
+```bash
+make test           # run full test suite (1413 tests)
+make demo           # full pipeline on demo data (3 days, 5 OD pairs, all outputs)
+make bench          # benchmarks
+
+# CLI
+make cli-search ORG=ORD DST=LHR DATE=2026-03-20
+make cli-trip LEGS="ORD LHR 2026-03-20 LHR ORD 2026-03-27"
+make cli-build DATE=2026-03-20
+make cli-ingest
+make cli-info
+
+# REST API
+make serve DATE=2026-03-20 PORT=8080
+
+# Compilation
+make sysimage       # PackageCompiler sysimage (236MB, 0ms load)
+make app            # standalone distributable app
+
+# Visualizations and JSON
+make search ORG=ORD DST=LHR DATE=2026-03-20
+make viz DATE=2026-03-18
+make json DATE=2026-03-18 DAYS=3
+```
 
 ## Input Files
 
@@ -191,6 +211,13 @@ Place in `data/input/`:
 | `REGIMFILUA.DAT` | Region-to-airport mapping |
 | `aircraft.txt` | Aircraft type reference |
 | `oa_control_table.csv` | OA carrier control table |
+
+## Documentation
+
+- [Architecture](docs/src/architecture.md) — pipeline, type hierarchy, design principles
+- [Getting Started](docs/src/getting-started.md) — end-to-end tutorial with all major features
+- [API Reference](docs/src/api/types.md) — types, functions, and configuration
+- [Development Diary](docs/dev-diary.md) — session-by-session changelog
 
 ## License
 
