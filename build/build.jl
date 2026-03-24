@@ -59,7 +59,7 @@ end
 function main(args)
     opts = parse_build_args(args)
     project_dir = dirname(@__DIR__)
-    test_file = joinpath(project_dir, "test", "runtests.jl")
+    test_file = joinpath(project_dir, "build", "precompile_workload.jl")
     build_dir = joinpath(project_dir, "build")
     mkpath(build_dir)
 
