@@ -77,7 +77,7 @@ Rules return positive on pass, zero or negative on fail. A passing pair produces
 
 `search_itineraries` iterates every departing leg at the origin station that is valid on the target date. For each departure leg it:
 
-1. Pushes the nonstop self-connection as the first edge of the working `Itinerary`
+1. Retrieves the nonstop self-connection via `dep_leg.nonstop_cp` (direct field access, set during connection build) and pushes it as the first edge of the working `Itinerary`
 2. If the departure leg reaches the destination directly, calls `_validate_and_commit!`
 3. Otherwise calls `_dfs!` which recursively follows `GraphConnection` edges, applying:
    - Date / DOW validity check on each connection
@@ -249,7 +249,7 @@ This eliminates dynamic dispatch in the O(n²) connection builder and the DFS in
 
 ### Rule chains
 
-Connection rules and itinerary rules are `Vector{Function}`. Each rule takes a connection or itinerary plus the `RuntimeContext` and returns an `Int` (positive = pass, zero or negative = fail with reason code). Rules are enabled or disabled by including or excluding them from the chain, making policy changes purely compositional.
+Connection rules and itinerary rules are stored as `Tuple`s (not `Vector{Any}`). Each rule takes a connection or itinerary plus the `RuntimeContext` and returns an `Int` (positive = pass, zero or negative = fail with reason code). Using Tuples enables the compiler to fully specialize the rule chain loop — each rule's concrete type is known at compile time, eliminating dynamic dispatch in the O(n²) connection builder. Rules are enabled or disabled by including or excluding them from the chain, making policy changes purely compositional.
 
 ### Push/pop DFS pattern
 

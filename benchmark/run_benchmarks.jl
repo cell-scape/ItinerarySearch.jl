@@ -29,6 +29,7 @@ if isfile(config.ssim_path)
     # Phase 3: Graph build + connection stats
     graph = bench_graph_build(store, config)
     bench_connection_build(store, config)
+    bench_rule_chain(store, config)
 
     # Phase 4: DFS search
     bench_search(graph, store)

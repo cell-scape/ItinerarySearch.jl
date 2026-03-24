@@ -1,5 +1,17 @@
 # ItinerarySearch Development Diary
 
+## 2026-03-23 — Performance and Simplification (Code Review Fixes)
+- **Scope**: Address code review findings — performance tuning, dead code removal, simplification
+- **Changes**:
+  - Rule chains changed from `Vector{Any}` to `Tuple` — eliminates dynamic dispatch in O(n²) connection builder
+  - InlineString direct comparison in MCTRule codeshare resolution — eliminates 4 String allocations per connection pair
+  - MCT suppression geography uses direct InlineString3 comparison — no more `strip(String(...))`
+  - MCTRule connection time now uses UTC offsets (`dep_utc_offset`, `arr_utc_offset`) — correct for inter-station
+  - `nonstop_cp` field added to `GraphLeg` — replaces O(n) scan with direct field access in search
+  - `_compute_specificity` refactored to accept `(specified, eff_date)` — eliminates double MCTRecord construction
+  - Removed dead `mct_cache_hits` and `mct_dual_pass` from BuildStats
+- **Tests**: 1356 total (all passing)
+
 ## 2026-03-23 — Structured Logging with DynaTrace Compatibility
 - **Scope**: Add structured JSON logging compatible with DynaTrace, verbose @debug logging, configurable log levels
 - **Changes**:

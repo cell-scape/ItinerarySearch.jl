@@ -321,6 +321,28 @@ function bench_logging_overhead(store::DuckDBStore, config::SearchConfig)
     rm(config_events.event_log_path; force=true)
 end
 
+function bench_rule_chain(store::DuckDBStore, config::SearchConfig)
+    target = Date(2026, 3, 20)
+    graph = build_graph!(store, config, target)
+
+    println("\n── Rule Chain (Tuple dispatch) ──")
+
+    # Verify rule chains are Tuples
+    cnx_rules = build_cnx_rules(config, SearchConstraints(), graph.mct_lookup)
+    itn_rules = build_itn_rules(config)
+    println("  cnx_rules type: $(typeof(cnx_rules)) ($(length(cnx_rules)) rules)")
+    println("  itn_rules type: $(typeof(itn_rules)) ($(length(itn_rules)) rules)")
+
+    # Benchmark connection build (this is where Tuple dispatch matters most)
+    println("  Connection build time: $(round(graph.build_stats.build_time_ns / 1e6; digits=1)) ms")
+    println("  Connections: $(graph.build_stats.total_connections)")
+    println("  Pairs evaluated: $(graph.build_stats.total_pairs_evaluated)")
+    if graph.build_stats.total_pairs_evaluated > 0
+        ns_per_pair = graph.build_stats.build_time_ns / graph.build_stats.total_pairs_evaluated
+        println("  Time per pair: $(round(ns_per_pair; digits=0)) ns")
+    end
+end
+
 function bench_mct_lookup(graph)
     println("\n── MCT Lookup ──")
     lookup = graph.mct_lookup
