@@ -159,4 +159,67 @@ export resolve_leg, resolve_segment, resolve_legs
 # Exports — visualizations
 export viz_network_map, viz_timeline, viz_trip_comparison, viz_itinerary_refs
 
+# ── Precompilation workload ────────────────────────────────────────────────────
+
+using PrecompileTools
+
+@setup_workload begin
+    # Types and configs used in the workload
+    @compile_workload begin
+        # Config and constraints
+        config = SearchConfig()
+        constraints = SearchConstraints()
+        ps = ParameterSet()
+
+        # Core type construction
+        stn_rec = StationRecord(
+            code=StationCode("ORD"), country=InlineString3("US"),
+            state=InlineString3("IL"), metro_area=InlineString3("CHI"),
+            region=InlineString3("NOA"), lat=41.97, lng=-87.91, utc_offset=Int16(-300))
+        mct_result = MCTResult(
+            time=Minutes(60), queried_status=MCT_DD, matched_status=MCT_DD,
+            suppressed=false, source=SOURCE_GLOBAL_DEFAULT, specificity=UInt32(0))
+        leg_key = LegKey(
+            row_number=UInt64(1), record_serial=UInt32(1),
+            airline=AirlineCode("UA"), flt_no=FlightNumber(1234),
+            org=StationCode("ORD"), dst=StationCode("LHR"),
+            operating_date=UInt32(20260315), dep_time=Minutes(540))
+        itn_ref = ItineraryRef(
+            legs=[leg_key], num_stops=0, elapsed_minutes=Int32(480),
+            flight_minutes=Int32(465), layover_minutes=Int32(0),
+            distance_miles=Float32(3941), circuity=Float32(1.0))
+
+        # Derived accessors
+        origin(itn_ref)
+        destination(itn_ref)
+        flights_str(itn_ref)
+        route_str(itn_ref)
+
+        # MCT lookup (in-memory, no DuckDB)
+        lookup = MCTLookup()
+        lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"),
+                   StationCode("ORD"), StationCode("ORD"), MCT_DD)
+
+        # Rule chain construction
+        cnx_rules = build_cnx_rules(config, constraints, lookup)
+        itn_rules = build_itn_rules(config)
+
+        # JSON serialization
+        JSON3.write(mct_result)
+        JSON3.write(stn_rec)
+
+        # Observability
+        EventLog()
+        collect_system_metrics()
+
+        # DuckDB store (in-memory, no data files)
+        store = DuckDBStore()
+        table_stats(store)
+        close(store)
+
+        # CLI parser construction
+        CLI._build_parser()
+    end
+end
+
 end # module

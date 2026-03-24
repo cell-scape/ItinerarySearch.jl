@@ -2,7 +2,7 @@
 
 julia_version = "1.12.5"
 manifest_format = "2.0"
-project_hash = "1ee8bf537b30888734fcf02e5495581690b1e5d3"
+project_hash = "10cbd443152f98f344ef464fb44423cef9a735b7"
 
 [[deps.ArgParse]]
 deps = ["Logging", "TextWrap"]
@@ -139,7 +139,7 @@ uuid = "82899510-4779-5014-852e-03e436cf321d"
 version = "1.0.0"
 
 [[deps.ItinerarySearch]]
-deps = ["CEnum", "CodecBzip2", "CodecXz", "CodecZlib", "CodecZstd", "DBInterface", "Dates", "DuckDB", "FixedWidthParsers", "InlineStrings", "JSON3", "Logging", "LoggingExtras", "TranscodingStreams", "UUIDs"]
+deps = ["ArgParse", "CEnum", "CodecBzip2", "CodecXz", "CodecZlib", "CodecZstd", "DBInterface", "Dates", "DuckDB", "FixedWidthParsers", "InlineStrings", "JSON3", "Logging", "LoggingExtras", "TranscodingStreams", "UUIDs"]
 path = "."
 uuid = "abb1f9ea-3061-4222-98a1-0c043039d694"
 version = "0.1.0"
