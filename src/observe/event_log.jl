@@ -15,11 +15,13 @@ Designed for single-threaded use within a RuntimeContext.
 - `events::Vector{Any}`: accumulated events in emission order
 - `sinks::Vector{Any}`: callable sinks (functions or callable structs)
 - `enabled::Bool`: master on/off switch
+- `store_events::Bool`: when false, events are written to sinks only (write-through mode, no memory accumulation)
 """
 @kwdef mutable struct EventLog
     events::Vector{Any} = Any[]
     sinks::Vector{Any} = Any[]
     enabled::Bool = false
+    store_events::Bool = true  # when false, events are only sent to sinks (write-through)
 end
 
 """
@@ -48,7 +50,7 @@ julia> length(log.events)
 """
 function emit!(log::EventLog, event)::Nothing
     log.enabled || return nothing
-    push!(log.events, event)
+    log.store_events && push!(log.events, event)
     for sink in log.sinks
         sink(event)
     end

@@ -35,13 +35,14 @@
     max_mct_override::Minutes = Minutes(480)
     circuity_factor::Float64 = 2.0
     circuity_extra_miles::Float64 = 500.0
+    # Forward-declared — not yet consumed by rules (planned for reaccommodation scenario engine)
     valid_codeshare_partners::Set{Tuple{AirlineCode,AirlineCode}} = Set{Tuple{AirlineCode,AirlineCode}}()
     valid_jv_groups::Set{InlineString7} = Set{InlineString7}()
     valid_wet_leases::Set{AirlineCode} = Set{AirlineCode}()
     min_leg_distance::Distance = Distance(0.0)
     max_leg_distance::Distance = Distance(Inf32)
 
-    # Itinerary-level
+    # Itinerary-level (min_stops, min_elapsed, min/max_total_distance: forward-declared, not yet enforced)
     min_stops::Int16 = Int16(0)
     max_stops::Int16 = Int16(2)
     min_elapsed::Int32 = Int32(0)
@@ -113,6 +114,7 @@ end
 @kwdef struct SearchConstraints
     defaults::ParameterSet = ParameterSet()
     overrides::Vector{MarketOverride} = MarketOverride[]    # sorted by descending specificity
+    # Forward-declared — not yet consumed by builder/search (planned for reaccommodation scenario engine)
     closed_stations::Set{StationCode} = Set{StationCode}()
     closed_markets::Set{Tuple{StationCode,StationCode}} = Set{Tuple{StationCode,StationCode}}()
     delays::Dict{StationCode,Minutes} = Dict{StationCode,Minutes}()

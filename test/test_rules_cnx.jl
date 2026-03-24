@@ -712,4 +712,22 @@ using Dates
         @test rule8.extra_miles == constraints.defaults.circuity_extra_miles
     end
 
+    # ── Allocation regression test ────────────────────────────────────────────
+
+    @testset "MCTRule zero-allocation hot path" begin
+        lookup = MCTLookup()
+        rule = MCTRule(lookup)
+        cp = _test_connection(
+            from_rec = _test_leg_record(org="JFK", dst="ORD", pax_dep=Int16(420), pax_arr=Int16(720)),
+            to_rec = _test_leg_record(org="ORD", dst="LHR", pax_dep=Int16(900), pax_arr=Int16(1380)),
+        )
+        ctx = _mock_ctx()
+
+        # Warmup
+        rule(cp, ctx)
+
+        allocs = @allocated rule(cp, ctx)
+        @test allocs == 0
+    end
+
 end

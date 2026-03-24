@@ -69,10 +69,11 @@ function _set_connection_status!(
         cp.status |= STATUS_WETLEASE
     end
 
-    # DOW intersection: AND of the two 7-bit frequency bitmasks, stored in
-    # the low 7 bits of cp.status (same positions as DOW_MON..DOW_SUN)
-    dow_intersection = StatusBits(arr_leg.record.frequency & dep_leg.record.frequency) & DOW_MASK
-    cp.status |= dow_intersection
+    # DOW intersection: AND of the two 7-bit frequency bitmasks
+    # Stored in cp.valid_days (canonical source) and ORed into cp.status for fast checks
+    dow_intersection = arr_leg.record.frequency & dep_leg.record.frequency
+    cp.valid_days = dow_intersection
+    cp.status |= StatusBits(dow_intersection) & DOW_MASK
 
     return nothing
 end
@@ -102,7 +103,7 @@ function _set_validity_window!(
 )::Nothing
     cp.valid_from = max(arr_leg.record.eff_date, dep_leg.record.eff_date)
     cp.valid_to   = min(arr_leg.record.disc_date, dep_leg.record.disc_date)
-    cp.valid_days = arr_leg.record.frequency & dep_leg.record.frequency
+    # cp.valid_days is already set by _set_connection_status! (single source of truth)
     if cp.valid_from <= cp.valid_to
         cp.num_valid_dates = Int16(max(1, count_ones(cp.valid_days)))
     else

@@ -3,6 +3,8 @@ using ItinerarySearch
 using InlineStrings
 using Dates
 
+include("test_helpers.jl")
+
 @testset "ItinerarySearch" begin
     @testset "Module loads" begin
         @test true  # Module loaded successfully

@@ -225,12 +225,10 @@ function build_graph!(
 )::FlightGraph
     t0 = time_ns()
 
-    # Set up structured logging
-    prev_logger = global_logger()
+    # Set up structured logging (task-local — no global state mutation)
     logger = setup_logger(config)
-    global_logger(logger)
 
-    try
+    return Logging.with_logger(logger) do
 
     # Set up event log
     event_log = EventLog(enabled = config.event_log_enabled)
@@ -358,27 +356,14 @@ function build_graph!(
 
     # 6. Resolve codeshare per segment and update num_legs
     for (_, seg) in segments
+        r = seg.record
         seg.record = SegmentRecord(
-            segment_hash = seg.record.segment_hash,
-            airline = seg.record.airline,
-            flt_no = seg.record.flt_no,
-            op_suffix = seg.record.op_suffix,
-            itin_var = seg.record.itin_var,
-            itin_var_overflow = seg.record.itin_var_overflow,
-            svc_type = seg.record.svc_type,
-            operating_date = seg.record.operating_date,
-            num_legs = UInt8(length(seg.legs)),
-            first_leg_seq = seg.record.first_leg_seq,
-            last_leg_seq = seg.record.last_leg_seq,
-            segment_org = seg.record.segment_org,
-            segment_dst = seg.record.segment_dst,
-            flown_distance = seg.record.flown_distance,
-            market_distance = seg.record.market_distance,
-            segment_circuity = seg.record.segment_circuity,
-            segment_pax_dep = seg.record.segment_pax_dep,
-            segment_pax_arr = seg.record.segment_pax_arr,
-            segment_ac_dep = seg.record.segment_ac_dep,
-            segment_ac_arr = seg.record.segment_ac_arr,
+            r.segment_hash, r.airline, r.flt_no, r.op_suffix,
+            r.itin_var, r.itin_var_overflow, r.svc_type, r.operating_date,
+            UInt8(length(seg.legs)),  # num_legs — the only changed field
+            r.first_leg_seq, r.last_leg_seq, r.segment_org, r.segment_dst,
+            r.flown_distance, r.market_distance, r.segment_circuity,
+            r.segment_pax_dep, r.segment_pax_arr, r.segment_ac_dep, r.segment_ac_arr,
         )
         _resolve_codeshare!(seg)
         @debug "Segment resolved" hash=seg.record.segment_hash legs=length(seg.legs) codeshare=seg.is_codeshare
@@ -462,13 +447,10 @@ function build_graph!(
     @info "Graph built" build_time_ms = round(build_time / 1.0e6; digits = 1)
 
     close(event_log)
+    _close_logger(logger)
 
     return graph
-
-    finally
-        _close_logger(logger)
-        global_logger(prev_logger)
-    end
+    end  # Logging.with_logger
 end
 
 # ── Convenience search ─────────────────────────────────────────────────────────
