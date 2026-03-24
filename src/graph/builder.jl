@@ -225,11 +225,19 @@ function build_graph!(
 )::FlightGraph
     t0 = time_ns()
 
+    # Set up event log
+    event_log = EventLog(enabled = config.event_log_enabled)
+    if event_log.enabled && !isempty(config.event_log_path)
+        push!(event_log.sinks, JsonlSink(config.event_log_path))
+    end
+    checkpoint!(event_log)  # baseline metrics
+
     # 1. Schedule window
     window_start = target_date - Day(config.leading_days)
     window_end = target_date + Day(config.trailing_days)
 
     @info "Building graph" window_start window_end target_date
+    emit!(event_log, PhaseEvent(phase = :schedule_load, action = :start))
 
     # 2. Query schedule-level legs
     leg_records = query_schedule_legs(store, window_start, window_end)
@@ -367,14 +375,22 @@ function build_graph!(
         _resolve_codeshare!(seg)
     end
     @info "Created segments" count = length(segments)
+    emit!(event_log, PhaseEvent(phase = :schedule_load, action = :end, elapsed_ns = time_ns() - t0))
+    checkpoint!(event_log)
 
     # 7. Materialise MCT lookup
+    emit!(event_log, PhaseEvent(phase = :mct_materialize, action = :start))
+    t_mct = time_ns()
     active_stations = Set{StationCode}(keys(stations))
     constraints = SearchConstraints()
     mct_lookup = materialize_mct_lookup(store, active_stations; constraints = constraints)
     @info "Materialised MCT lookup" stations_with_mct = length(mct_lookup.stations)
+    emit!(event_log, PhaseEvent(phase = :mct_materialize, action = :end, elapsed_ns = time_ns() - t_mct))
+    checkpoint!(event_log)
 
     # 8. Build connections
+    emit!(event_log, PhaseEvent(phase = :connection_build, action = :start))
+    t_cnx = time_ns()
     cnx_rules = build_cnx_rules(config, constraints, mct_lookup)
     itn_rules = build_itn_rules(config)
 
@@ -388,6 +404,7 @@ function build_graph!(
             rule_pass = zeros(Int64, n_rules),
             rule_fail = zeros(Int64, n_rules),
         ),
+        event_log = event_log,
     )
 
     build_connections!(stations, cnx_rules, ctx)
@@ -401,6 +418,16 @@ function build_graph!(
 
     geo = aggregate_geo_stats(stations)
     @info "Geographic stats" metros = length(geo.by_metro) states = length(geo.by_state) countries = length(geo.by_country) regions = length(geo.by_region)
+    emit!(event_log, PhaseEvent(phase = :connection_build, action = :end, elapsed_ns = time_ns() - t_cnx))
+    checkpoint!(event_log)
+    emit!(
+        event_log,
+        BuildSnapshotEvent(
+            stations_processed = Int32(length(stations)),
+            total_stations = Int32(length(stations)),
+            stats = ctx.build_stats,
+        ),
+    )
 
     # 9. Assemble FlightGraph
     build_time = time_ns() - t0
@@ -424,6 +451,8 @@ function build_graph!(
     )
 
     @info "Graph built" build_time_ms = round(build_time / 1.0e6; digits = 1)
+
+    close(event_log)
 
     return graph
 end
