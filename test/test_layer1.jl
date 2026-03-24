@@ -484,6 +484,9 @@ using Dates
         ns_ab = nonstop_connection(leg_ab, stn_a)
         ns_bc = nonstop_connection(leg_bc, stn_b)
         ns_cd = nonstop_connection(leg_cd, stn_c)
+        leg_ab.nonstop_cp = ns_ab
+        leg_bc.nonstop_cp = ns_bc
+        leg_cd.nonstop_cp = ns_cd
         push!(stn_a.connections, ns_ab)
         push!(stn_b.connections, ns_bc)
         push!(stn_c.connections, ns_cd)
@@ -536,6 +539,7 @@ using Dates
         push!(stn_b.arrivals,   leg_ab)
 
         ns_ab = nonstop_connection(leg_ab, stn_a)
+        leg_ab.nonstop_cp = ns_ab
         push!(stn_a.connections, ns_ab)
 
         # Build an empty Layer 1 (no entries) and attach to ctx

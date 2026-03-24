@@ -832,8 +832,8 @@ function search_itineraries(
         valid_dow = (freq & dow) != StatusBits(0)
         (!valid_date || !valid_dow) && continue
 
-        # Retrieve the nonstop self-connection created during build_connections!
-        ns_cp = _find_nonstop_connection(org_stn, dep_leg)
+        # Retrieve the nonstop self-connection (direct field, set during build_connections!)
+        ns_cp = dep_leg.nonstop_cp
         ns_cp === nothing && continue
 
         # Record UTC departure of this origin leg for downstream use

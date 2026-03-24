@@ -68,11 +68,11 @@ using InlineStrings
     end
 
     @testset "merge_build_stats! mct counters" begin
-        a = BuildStats(mct_lookups=100, mct_cache_hits=80)
-        b = BuildStats(mct_lookups=50, mct_cache_hits=40)
+        a = BuildStats(mct_lookups=100, mct_exceptions=30)
+        b = BuildStats(mct_lookups=50, mct_exceptions=20)
         merge_build_stats!(a, b)
         @test a.mct_lookups == 150
-        @test a.mct_cache_hits == 120
+        @test a.mct_exceptions == 50
     end
 
     @testset "mct_avg_time weighted merge" begin

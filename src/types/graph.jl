@@ -287,6 +287,7 @@ const _ZERO_LEG_RECORD = LegRecord(
     connect_to::Vector{GraphConnection} = GraphConnection[]
     connect_from::Vector{GraphConnection} = GraphConnection[]
     distance::Distance = Distance(0)
+    nonstop_cp::Union{GraphConnection, Nothing} = nothing  # set during build_connections_at_station!
 end
 
 # Sentinel used as the default for OneStopConnection.via_leg

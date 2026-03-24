@@ -159,6 +159,7 @@ function build_connections_at_station!(
     for i in 1:n_dep
         dep_leg = departures[i]
         ns_cp = nonstop_connection(dep_leg, station)
+        dep_leg.nonstop_cp = ns_cp  # direct field access avoids O(n) scan in search
         push!(station.connections, ns_cp)
         stats.num_nonstops += Int32(1)
         # Track distance and equipment for departures

@@ -69,12 +69,10 @@ end
 - `rule_pass::Vector{Int64}` — per-rule pass counts (indexed by rule position)
 - `rule_fail::Vector{Int64}` — per-rule fail counts (indexed by rule position)
 - `mct_lookups::Int64` — total MCT table lookups performed
-- `mct_cache_hits::Int64` — MCT lookups satisfied from the L1 LRU cache
 - `mct_exceptions::Int64` — lookups matched by a carrier/equipment exception row
 - `mct_standards::Int64` — lookups matched by a station standard row
 - `mct_defaults::Int64` — lookups that fell back to global MCT_DEFAULTS
 - `mct_suppressions::Int64` — connections suppressed by an MCT suppression record
-- `mct_dual_pass::Int64` — connections that passed both inbound and outbound MCT
 - `mct_avg_time::Float64` — running average of matched MCT times (minutes)
 - `mct_time_hist::Vector{Int64}` — 48-bucket histogram of matched MCT in 10-min steps (0–480 min)
 - `build_time_ns::UInt64` — wall-clock nanoseconds for the build pass
@@ -88,12 +86,10 @@ end
     rule_pass::Vector{Int64} = Int64[]
     rule_fail::Vector{Int64} = Int64[]
     mct_lookups::Int64 = 0
-    mct_cache_hits::Int64 = 0
     mct_exceptions::Int64 = 0
     mct_standards::Int64 = 0
     mct_defaults::Int64 = 0
     mct_suppressions::Int64 = 0
-    mct_dual_pass::Int64 = 0
     mct_avg_time::Float64 = 0.0
     mct_time_hist::Vector{Int64} = zeros(Int64, 48)  # 10-min buckets 0–480
     build_time_ns::UInt64 = 0
@@ -213,12 +209,10 @@ function merge_build_stats!(target::BuildStats, source::BuildStats)
         ) / total_nonsup
     end
     target.mct_lookups += source.mct_lookups
-    target.mct_cache_hits += source.mct_cache_hits
     target.mct_exceptions += source.mct_exceptions
     target.mct_standards += source.mct_standards
     target.mct_defaults += source.mct_defaults
     target.mct_suppressions += source.mct_suppressions
-    target.mct_dual_pass += source.mct_dual_pass
     target.rule_pass .+= source.rule_pass
     target.rule_fail .+= source.rule_fail
     target.mct_time_hist .+= source.mct_time_hist

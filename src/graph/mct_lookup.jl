@@ -200,8 +200,8 @@ end
 # Returns
 - `::UInt32`: specificity weight (0 = completely generic, larger = more specific)
 """
-function _compute_specificity(rec::MCTRecord)::UInt32
-    sp = rec.specified
+function _compute_specificity(specified::UInt32, eff_date::UInt32)::UInt32
+    sp = specified
     s = UInt32(0)
     # Priority 2-4: Dep codeshare + carrier
     (sp & MCT_BIT_DEP_CS_IND)    != 0 && (s += UInt32(1) << 29)
@@ -236,9 +236,12 @@ function _compute_specificity(rec::MCTRecord)::UInt32
     (sp & MCT_BIT_DEP_BODY)      != 0 && (s += UInt32(1) << 9)
     (sp & MCT_BIT_ARR_BODY)      != 0 && (s += UInt32(1) << 8)
     # Priority 26-27: Effective dates
-    (rec.eff_date != UInt32(0))          && (s += UInt32(1) << 7)
+    (eff_date != UInt32(0))              && (s += UInt32(1) << 7)
     return s
 end
+
+# Convenience overload for backward compatibility (tests use MCTRecord directly)
+_compute_specificity(rec::MCTRecord)::UInt32 = _compute_specificity(rec.specified, rec.eff_date)
 
 # ── Field matching ────────────────────────────────────────────────────────────
 
@@ -706,7 +709,10 @@ function _build_mct_record(r)::Tuple{Tuple{StationCode,StationCode}, MCTStatus, 
 
     mct_id_val = Int32(_safe_missing(r.mct_id, 0))
 
-    rec_partial = MCTRecord(
+    # Compute specificity from bitmask and eff_date directly — avoids double MCTRecord construction
+    spec = _compute_specificity(sp, eff_packed)
+
+    rec = MCTRecord(
         arr_carrier    = isempty(arr_carrier_str) ? NO_AIRLINE : AirlineCode(arr_carrier_str),
         dep_carrier    = isempty(dep_carrier_str) ? NO_AIRLINE : AirlineCode(dep_carrier_str),
         arr_term       = InlineString3(isempty(arr_term_str) ? "" : arr_term_str),
@@ -740,46 +746,6 @@ function _build_mct_record(r)::Tuple{Tuple{StationCode,StationCode}, MCTStatus, 
         time           = Int16(_safe_missing(r.time_minutes, 0)),
         suppressed     = Bool(_safe_missing(r.suppress, false)),
         station_standard = Bool(_safe_missing(r.station_standard, false)),
-        specificity    = UInt32(0),   # recomputed below
-        mct_id         = mct_id_val,
-    )
-
-    # Recompute specificity now that specified bitmask is set
-    spec = _compute_specificity(rec_partial)
-    rec = MCTRecord(
-        arr_carrier    = rec_partial.arr_carrier,
-        dep_carrier    = rec_partial.dep_carrier,
-        arr_term       = rec_partial.arr_term,
-        dep_term       = rec_partial.dep_term,
-        prv_stn        = rec_partial.prv_stn,
-        nxt_stn        = rec_partial.nxt_stn,
-        prv_country    = rec_partial.prv_country,
-        nxt_country    = rec_partial.nxt_country,
-        prv_region     = rec_partial.prv_region,
-        nxt_region     = rec_partial.nxt_region,
-        arr_body       = rec_partial.arr_body,
-        dep_body       = rec_partial.dep_body,
-        arr_cs_ind        = rec_partial.arr_cs_ind,
-        arr_cs_op_carrier = rec_partial.arr_cs_op_carrier,
-        dep_cs_ind        = rec_partial.dep_cs_ind,
-        dep_cs_op_carrier = rec_partial.dep_cs_op_carrier,
-        arr_acft_type  = rec_partial.arr_acft_type,
-        dep_acft_type  = rec_partial.dep_acft_type,
-        arr_flt_rng_start = rec_partial.arr_flt_rng_start,
-        arr_flt_rng_end   = rec_partial.arr_flt_rng_end,
-        dep_flt_rng_start = rec_partial.dep_flt_rng_start,
-        dep_flt_rng_end   = rec_partial.dep_flt_rng_end,
-        prv_state      = rec_partial.prv_state,
-        nxt_state      = rec_partial.nxt_state,
-        eff_date       = rec_partial.eff_date,
-        dis_date       = rec_partial.dis_date,
-        supp_region    = rec_partial.supp_region,
-        supp_country   = rec_partial.supp_country,
-        supp_state     = rec_partial.supp_state,
-        specified      = sp,
-        time           = rec_partial.time,
-        suppressed     = rec_partial.suppressed,
-        station_standard = rec_partial.station_standard,
         specificity    = spec,
         mct_id         = mct_id_val,
     )
