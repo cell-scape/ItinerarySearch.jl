@@ -1,7 +1,5 @@
 # src/config.jl — SearchConfig and JSON loading
 
-using JSON3
-
 """
     `_default_path(filename::String)::String`
 ---

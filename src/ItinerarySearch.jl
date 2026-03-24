@@ -4,6 +4,7 @@ using Dates
 using InlineStrings
 using CEnum
 using UUIDs
+using JSON3
 
 # Type system (dependency order matters)
 include("types/aliases.jl")
@@ -17,6 +18,7 @@ include("config.jl")
 include("observe/events.jl")
 include("observe/metrics.jl")
 include("observe/event_log.jl")
+include("observe/sinks.jl")
 include("compression.jl")
 include("ingest/schemas.jl")
 include("store/interface.jl")
@@ -86,6 +88,9 @@ export SystemMetricsEvent, PhaseEvent, BuildSnapshotEvent, SearchSnapshotEvent, 
 
 # Exports — observe: event log
 export EventLog, emit!, checkpoint!, with_phase, collect_system_metrics
+
+# Exports — observe: sinks
+export JsonlSink, stdout_sink
 
 # Exports — ingest
 export ingest_ssim!
