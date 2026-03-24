@@ -402,8 +402,10 @@ end
 function _write_output(data::AbstractString, args::Dict)::Nothing
     path = args["output"]
     if path !== nothing
-        write(path, data)
-        write(path, "\n")
+        open(path, "w") do io
+            write(io, data)
+            write(io, "\n")
+        end
     else
         println(data)
     end
