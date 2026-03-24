@@ -1,11 +1,12 @@
 # src/cli.jl — Command-line interface for ItinerarySearch
 #
-# Provides five commands:
+# Provides six commands:
 #   search   — one-way itinerary search (one or more O-D pairs / dates)
 #   trip     — multi-leg trip search with pairing and scoring
 #   build    — materialise the flight graph and report build stats
 #   ingest   — load schedule data into DuckDB and report table stats
 #   info     — report store and config state without ingesting
+#   serve    — start the REST API server
 #
 # Entry point: ItinerarySearch.CLI.main(ARGS)
 
@@ -25,6 +26,7 @@ import ..StationCode, ..Minutes
 import ..SCOPE_ALL, ..SCOPE_DOM, ..SCOPE_INTL
 import ..INTERLINE_ONLINE, ..INTERLINE_CODESHARE, ..INTERLINE_ALL
 import .._parse_scope, .._parse_interline
+import ..Server
 
 # ── Parser construction ────────────────────────────────────────────────────────
 
@@ -149,6 +151,10 @@ function _build_parser()::ArgParseSettings
         "info"
         action = :command
         help = "Report store state and config without ingesting"
+
+        "serve"
+        action = :command
+        help = "Start the REST API server"
     end
 
     # ── search sub-args ───────────────────────────────────────────────────────
@@ -207,6 +213,24 @@ function _build_parser()::ArgParseSettings
     end
 
     # ingest and info have no extra args; sub-tables already default to empty
+
+    # ── serve sub-args ────────────────────────────────────────────────────────
+    @add_arg_table! s["serve"] begin
+        "--port"
+        help = "HTTP listen port"
+        arg_type = Int
+        default = 8080
+
+        "--host"
+        help = "HTTP bind address"
+        arg_type = String
+        default = "0.0.0.0"
+
+        "--date"
+        help = "Target date for graph build (YYYY-MM-DD)"
+        arg_type = String
+        required = true
+    end
 
     return s
 end
@@ -756,6 +780,58 @@ function _cmd_info(config::SearchConfig, _args::Dict, global_args::Dict)::Int
     return 0
 end
 
+"""
+    `function _cmd_serve(config::SearchConfig, constraints::SearchConstraints, sub_args::Dict, globals::Dict)::Int`
+---
+
+# Description
+- Execute the `serve` command: load schedule, build graph, construct `ServerState`,
+  and start the HTTP server in blocking mode
+- Handles `InterruptException` (Ctrl-C) gracefully by printing a shutdown notice
+- Always closes the `DuckDBStore` on exit
+
+# Arguments
+1. `config::SearchConfig`: effective search configuration
+2. `constraints::SearchConstraints`: effective search constraints
+3. `sub_args::Dict`: `serve` sub-command args (`--port`, `--host`, `--date`)
+4. `globals::Dict`: top-level parsed args (unused; present for handler uniformity)
+
+# Returns
+- `::Int`: 0 on success
+"""
+function _cmd_serve(
+    config::SearchConfig, constraints::SearchConstraints, sub_args::Dict, globals::Dict
+)::Int
+    date_str = sub_args["date"]
+    target = Date(date_str)
+    port = sub_args["port"]
+    host = sub_args["host"]
+
+    store = DuckDBStore()
+    try
+        load_schedule!(store, config)
+        graph = build_graph!(store, config, target)
+
+        state = Server.ServerState(
+            config, constraints, store, graph,
+            ReentrantLock(), target, time(),
+            Threads.Atomic{Bool}(false), time(),
+        )
+
+        @info "Server ready" host port target_date=target stations=length(graph.stations) legs=length(graph.legs)
+        Server.start(state; host=host, port=port)
+    catch e
+        if e isa InterruptException
+            @info "Server shutting down"
+        else
+            rethrow(e)
+        end
+    finally
+        close(store)
+    end
+    return 0
+end
+
 # ── main ──────────────────────────────────────────────────────────────────────
 
 """
@@ -830,6 +906,8 @@ function main(args::Vector{String})::Int
             _cmd_ingest(config, sub_args, parsed)
         elseif cmd == "info"
             _cmd_info(config, sub_args, parsed)
+        elseif cmd == "serve"
+            _cmd_serve(config, constraints, sub_args, parsed)
         else
             println(stderr, "Unknown command: $cmd")
             2
