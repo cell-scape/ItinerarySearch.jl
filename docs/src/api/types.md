@@ -52,6 +52,19 @@ ScopeMode
 InterlineMode
 ```
 
+## Instrumentation
+
+```@docs
+StationStats
+BuildStats
+SearchStats
+MCTSelectionRow
+GeoStats
+aggregate_geo_stats
+merge_build_stats!
+merge_station_stats!
+```
+
 ## Utility Functions
 
 ```@docs

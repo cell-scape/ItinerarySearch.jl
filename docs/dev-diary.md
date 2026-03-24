@@ -1,5 +1,20 @@
 # ItinerarySearch Development Diary
 
+## 2026-03-23 — Tier 1 Instrumentation Wiring
+- **Scope**: Wire all unpopulated fields in BuildStats, SearchStats, MCTResult; add MCTSelectionRow audit logging; add geographic stats aggregation
+- **Changes**:
+  - `MCTResult` gains `matched_fields::UInt32` propagated from matched MCTRecord.specified
+  - Rule pass/fail counters wired in connection builder rule chain loop
+  - MCT cascade counters (lookups, exceptions, standards, defaults, suppressions) wired in MCTRule
+  - MCT time histogram (48 buckets, 10-min steps) and running average populated
+  - MCTSelectionRow audit log populated when `metrics_level == :full`
+  - Search stats: max_depth_reached, elapsed_time_hist (30-min buckets), total_distance_hist (250-mi buckets), search_time_ns
+  - BuildStats total_pairs_evaluated summed from per-station stats
+  - `merge_build_stats!` updated with weighted average for mct_avg_time; `merge_station_stats!` fixed for num_departures/num_arrivals
+  - `GeoStats` type alias and `aggregate_geo_stats` function: post-build aggregation by metro/state/country/region
+  - `FlightGraph` gains `geo_stats::GeoStats` field, populated in `build_graph!`
+- **Tests**: 1174 total (34 new instrumentation tests)
+
 ## 2026-03-23 — MCT Full SSIM8 Matching
 - **Scope**: Expanded the MCT lookup to support all SSIM8 Chapter 8 matching fields
 - **Changes**:

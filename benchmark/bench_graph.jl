@@ -20,6 +20,40 @@ function bench_connection_build(store::DuckDBStore, config::SearchConfig)
     n_cnx = sum(stn.stats.num_connections for (_, stn) in graph.stations; init=Int32(0))
     println("  Connections: $n_cnx across $(length(graph.stations)) stations")
     println("  Build time (from build_graph!): $(round(graph.build_stats.build_time_ns / 1e6; digits=1)) ms")
+
+    # Tier 1 build stats summary
+    bs = graph.build_stats
+    println("\n── Tier 1 Build Stats ──")
+    println("  Pairs evaluated: $(bs.total_pairs_evaluated)")
+    println("  MCT lookups:     $(bs.mct_lookups)")
+    println("  MCT cascade:     exceptions=$(bs.mct_exceptions) standards=$(bs.mct_standards) defaults=$(bs.mct_defaults) suppressions=$(bs.mct_suppressions)")
+    if bs.mct_lookups > 0
+        println("  MCT avg time:    $(round(bs.mct_avg_time; digits=1)) min")
+    end
+    # Rule pass/fail summary
+    if !isempty(bs.rule_pass)
+        total_pass = sum(bs.rule_pass)
+        total_fail = sum(bs.rule_fail)
+        println("  Rules:            $(total_pass) pass, $(total_fail) fail")
+        for i in eachindex(bs.rule_pass)
+            if bs.rule_pass[i] > 0 || bs.rule_fail[i] > 0
+                println("    Rule $i: pass=$(bs.rule_pass[i]) fail=$(bs.rule_fail[i])")
+            end
+        end
+    end
+
+    # Geographic stats summary
+    geo = graph.geo_stats
+    println("\n── Geographic Stats ──")
+    println("  Metros:    $(length(geo.by_metro))")
+    println("  States:    $(length(geo.by_state))")
+    println("  Countries: $(length(geo.by_country))")
+    println("  Regions:   $(length(geo.by_region))")
+
+    # Benchmark geo aggregation
+    b = @be aggregate_geo_stats(graph.stations)
+    print("  aggregate_geo_stats: ")
+    display(b)
 end
 
 function bench_search(graph, store::DuckDBStore)
@@ -54,6 +88,32 @@ function bench_search(graph, store::DuckDBStore)
         n = length(ctx.results)
         print("  $label: $n itineraries  ")
         display(b)
+    end
+
+    # Search stats summary from last OD
+    println("\n── Tier 1 Search Stats (aggregate across all ODs) ──")
+    # Run all ODs through a single ctx to show aggregate stats
+    ctx_agg = RuntimeContext(
+        config=config, constraints=constraints,
+        itn_rules=build_itn_rules(config),
+    )
+    for (org, dst, _) in ods
+        haskey(graph.stations, org) || continue
+        haskey(graph.stations, dst) || continue
+        search_itineraries(graph.stations, org, dst, target, ctx_agg)
+    end
+    ss = ctx_agg.search_stats
+    println("  Queries:           $(ss.queries)")
+    println("  Paths found:       $(ss.paths_found)")
+    println("  Paths rejected:    $(ss.paths_rejected)")
+    println("  Max depth:         $(ss.max_depth_reached)")
+    println("  By stops:          nonstop=$(ss.paths_by_stops[1]) 1-stop=$(ss.paths_by_stops[2]) 2-stop=$(ss.paths_by_stops[3]) 3+-stop=$(ss.paths_by_stops[4])")
+    println("  Search time:       $(round(ss.search_time_ns / 1e6; digits=1)) ms")
+    if sum(ss.elapsed_time_hist) > 0
+        println("  Elapsed hist:      $(sum(ss.elapsed_time_hist)) entries across $(count(>(0), ss.elapsed_time_hist)) buckets")
+    end
+    if sum(ss.total_distance_hist) > 0
+        println("  Distance hist:     $(sum(ss.total_distance_hist)) entries across $(count(>(0), ss.total_distance_hist)) buckets")
     end
 end
 

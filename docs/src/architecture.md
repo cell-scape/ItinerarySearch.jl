@@ -71,6 +71,8 @@ A SQL post-ingest pipeline runs inside DuckDB to join codeshare data, build the 
 
 Rules return positive on pass, zero or negative on fail. A passing pair produces a `GraphConnection` edge added to both legs' `connect_to` / `connect_from` lists and the station's `connections` list. Nonstop self-connections are also created for every departing leg (used as the first edge in the DFS).
 
+**Tier 1 Instrumentation:** Every rule evaluation is tracked via per-rule pass/fail counters on `BuildStats`. MCT lookups are instrumented with cascade source counters (exception, standard, default, suppression), a 48-bucket time histogram, and a running average. When `metrics_level == :full`, each MCT decision produces a zero-allocation `MCTSelectionRow` audit record. After the build pass, `aggregate_geo_stats` produces geographic aggregations (metro, state, country, region) stored on `FlightGraph.geo_stats`.
+
 ### Stage 4: DFS Search
 
 `search_itineraries` iterates every departing leg at the origin station that is valid on the target date. For each departure leg it:
@@ -85,6 +87,8 @@ Rules return positive on pass, zero or negative on fail. A passing pair produces
    - Layer 1 shortcut (optional): substitutes pre-computed `OneStopConnection` paths for two-hop tails
 
 When a complete path reaches the destination, `_validate_and_commit!` runs the itinerary rule chain, computes elapsed time via UTC conversion, counts geographic diversity, and deep-copies the result into `ctx.results`.
+
+**Tier 1 Instrumentation:** Each search tracks query count, max DFS depth reached, paths found/rejected with stop-count distribution, elapsed-time histogram (30-min buckets, 0–1440 min), distance histogram (250-mile buckets, 0–10000 mi), and wall-clock search time in nanoseconds — all accumulated on `SearchStats`.
 
 ### Stage 5: Output
 
