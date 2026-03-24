@@ -1,5 +1,29 @@
 # ItinerarySearch Development Diary
 
+## 2026-03-23 — Structured Logging with DynaTrace Compatibility
+- **Scope**: Add structured JSON logging compatible with DynaTrace, verbose @debug logging, configurable log levels
+- **Changes**:
+  - LoggingExtras `TeeLogger` fans out `@info`/`@debug`/`@warn`/`@error` to console + DynaTrace JSON
+  - `_dynatrace_json_formatter` produces `{"timestamp","severity","content","service.name","attributes"}` envelope
+  - `setup_logger(config)` builds the TeeLogger with `MinLevelLogger` wrapping
+  - Log level from `ITINERARY_SEARCH_LOG_LEVEL` env var → `config.log_level` → `:info`
+  - JSON output to file (`log_json_path`) and/or stdout (`log_stdout_json`)
+  - Verbose `@debug` calls added in builder, connect, search, ssim, mct, reference
+  - Logger installed in `build_graph!` with try/finally lifecycle
+- **Tests**: 1356 total (133 new logging tests)
+
+## 2026-03-23 — Observe Event Log + System Metrics Poller
+- **Scope**: Build `src/observe/` subsystem with typed events, pluggable EventLog, JSONL sink, cooperative system metrics polling
+- **Changes**:
+  - 5 event structs: SystemMetricsEvent, PhaseEvent, BuildSnapshotEvent, SearchSnapshotEvent, CustomEvent
+  - `EventLog` with `emit!`, `checkpoint!`, `with_phase`, `close`
+  - `collect_system_metrics()` captures RSS, GC stats, thread count
+  - `JsonlSink` (file) and `stdout_sink` for JSONL output
+  - `build_graph!` wired with 3 phase brackets + 4 system metrics checkpoints + BuildSnapshotEvent
+  - Disabled by default (`event_log_enabled = false`), zero overhead when off
+- **Tests**: 1223 total (48 new observe tests)
+- **Deferred**: SearchSnapshotEvent emission in search.jl, DuckDB sink, OTel integration
+
 ## 2026-03-23 — Tier 1 Instrumentation Wiring
 - **Scope**: Wire all unpopulated fields in BuildStats, SearchStats, MCTResult; add MCTSelectionRow audit logging; add geographic stats aggregation
 - **Changes**:

@@ -3,6 +3,8 @@
 using ItinerarySearch
 using Chairmarks
 using Dates
+using Logging
+using LoggingExtras
 
 function bench_graph_build(store::DuckDBStore, config::SearchConfig)
     target = Date(2026, 3, 20)
@@ -274,6 +276,49 @@ function bench_trip_search(graph, store::DuckDBStore)
         best = trips[1]
         println("  Best: score=$(round(best.score; digits=1)), $(best.trip_type), $(best.total_elapsed)min")
     end
+end
+
+function bench_logging_overhead(store::DuckDBStore, config::SearchConfig)
+    target = Date(2026, 3, 20)
+
+    println("\n── Logging Overhead ──")
+
+    # Baseline: no JSON logging (default)
+    config_baseline = SearchConfig(log_json_path = "", log_level = :info)
+    build_graph!(store, config_baseline, target)  # warmup
+    b1 = @be build_graph!(store, $config_baseline, $target)
+    print("  build_graph! (console only, INFO): ")
+    display(b1)
+
+    # With JSON file logging at INFO
+    path_info = tempname() * ".log"
+    config_json = SearchConfig(log_json_path = path_info, log_level = :info)
+    build_graph!(store, config_json, target)  # warmup
+    b2 = @be build_graph!(store, $config_json, $target)
+    print("  build_graph! (JSON file, INFO):    ")
+    display(b2)
+    rm(path_info; force=true)
+
+    # With JSON file logging at DEBUG (maximum verbosity)
+    path_debug = tempname() * ".log"
+    config_debug = SearchConfig(log_json_path = path_debug, log_level = :debug)
+    build_graph!(store, config_debug, target)  # warmup
+    b3 = @be build_graph!(store, $config_debug, $target)
+    print("  build_graph! (JSON file, DEBUG):   ")
+    display(b3)
+
+    # Count debug lines produced
+    n_lines = countlines(path_debug)
+    println("  DEBUG log lines: $n_lines")
+    rm(path_debug; force=true)
+
+    # Event log overhead
+    config_events = SearchConfig(event_log_enabled = true, event_log_path = tempname() * ".jsonl")
+    build_graph!(store, config_events, target)  # warmup
+    b4 = @be build_graph!(store, $config_events, $target)
+    print("  build_graph! (event log enabled):  ")
+    display(b4)
+    rm(config_events.event_log_path; force=true)
 end
 
 function bench_mct_lookup(graph)

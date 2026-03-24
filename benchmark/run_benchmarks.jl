@@ -49,6 +49,9 @@ if isfile(config.ssim_path)
     # Phase 9: Trip search
     bench_trip_search(graph, store)
 
+    # Phase 10: Logging overhead
+    bench_logging_overhead(store, config)
+
     close(store)
 else
     println("Demo data not found. Run extract_demo_data.jl first.")

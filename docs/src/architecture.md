@@ -96,6 +96,16 @@ The `itinerary_legs` / `itinerary_legs_multi` / `itinerary_legs_json` functions 
 
 PSV output (`write_legs`, `write_itineraries`, `write_trips`) flattens graph objects into pipe-delimited rows. Visualizations serialize graph and itinerary data to JSON embedded in self-contained HTML pages.
 
+### Observability
+
+Two parallel observability systems operate independently:
+
+**Structured Logging** (Julia's `@info`/`@debug`/`@warn`/`@error`) — LoggingExtras `TeeLogger` fans out every log call to both a `ConsoleLogger` (human-readable stderr) and a `FormatLogger` (DynaTrace-compatible JSON to file and/or stdout). `setup_logger(config)` builds the TeeLogger at the start of `build_graph!` and restores the original logger in a `finally` block. Log level resolves from `ENV["ITINERARY_SEARCH_LOG_LEVEL"]` → `config.log_level` → `:info`. Verbose `@debug` calls are placed across all phases (ingest, connection build, search) and are zero-cost at INFO level.
+
+**Event Log** (`EventLog` with `emit!`/`checkpoint!`/`with_phase`) — typed event structs (`SystemMetricsEvent`, `PhaseEvent`, `BuildSnapshotEvent`, `SearchSnapshotEvent`, `CustomEvent`) emitted through a pluggable sink interface. A JSONL file sink serializes events via JSON3. Cooperative checkpoints at phase boundaries in `build_graph!` capture system metrics (RSS, GC stats, thread count). Disabled by default (`event_log_enabled = false`).
+
+Both systems are configured via `SearchConfig` and can run simultaneously to different file paths.
+
 ---
 
 ## Type Hierarchy

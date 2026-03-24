@@ -403,6 +403,52 @@ refs = itinerary_legs(graph.stations, StationCode("ORD"), StationCode("LHR"), ta
 
 Layer 1 adds ~2.5 s of build time and significant memory pressure. It is most beneficial in distributed or server scenarios where the build cost is amortized across thousands of search requests.
 
+## Step 10: Observability
+
+### Structured JSON Logging (DynaTrace-Compatible)
+
+Enable DynaTrace-compatible JSON logging by setting `log_json_path`:
+
+```julia
+config = SearchConfig(
+    log_json_path = "data/output/app.log",  # JSON log file
+    log_level     = :debug,                  # :debug, :info, :warn, :error
+)
+graph = build_graph!(store, config, target_date)
+```
+
+Every `@info`, `@debug`, `@warn`, and `@error` message is written as a JSON line:
+
+```json
+{"timestamp":"2026-03-23T14:30:00.123Z","severity":"INFO","content":"Built connections","service.name":"ItinerarySearch","attributes":{"total":1234}}
+```
+
+For container deployments, also send JSON to stdout:
+
+```julia
+config = SearchConfig(log_stdout_json = true)
+```
+
+The log level can also be set via environment variable (takes precedence over config):
+
+```bash
+ITINERARY_SEARCH_LOG_LEVEL=debug julia --project=. scripts/demo.jl
+```
+
+### Event Log (Typed Telemetry)
+
+Enable the structured event log for phase timing and system metrics:
+
+```julia
+config = SearchConfig(
+    event_log_enabled = true,
+    event_log_path    = "data/output/events.jsonl",
+)
+graph = build_graph!(store, config, target_date)
+```
+
+The event log captures `PhaseEvent` (start/end of ingest, MCT materialization, connection build), `SystemMetricsEvent` (memory, GC stats), and `BuildSnapshotEvent` (connection build stats) as typed JSONL records.
+
 ## Complete Example Script
 
 ```julia

@@ -65,6 +65,39 @@ merge_build_stats!
 merge_station_stats!
 ```
 
+## Observability: Event Log
+
+```@docs
+EventLog
+emit!
+checkpoint!
+with_phase
+collect_system_metrics
+SystemMetricsEvent
+PhaseEvent
+BuildSnapshotEvent
+SearchSnapshotEvent
+CustomEvent
+JsonlSink
+stdout_sink
+```
+
+## Observability: Structured Logging
+
+```@docs
+setup_logger
+```
+
+The structured logger uses LoggingExtras `TeeLogger` to fan out Julia's standard `@info`/`@debug`/`@warn`/`@error` to both a `ConsoleLogger` (human-readable) and a `FormatLogger` (DynaTrace-compatible JSON). Configuration:
+
+| SearchConfig field | Default | Description |
+|-------------------|---------|-------------|
+| `log_level` | `:info` | Minimum log level (`:debug`, `:info`, `:warn`, `:error`) |
+| `log_json_path` | `""` | Path for JSON log file (empty = disabled) |
+| `log_stdout_json` | `false` | Also write JSON to stdout |
+
+Environment variable `ITINERARY_SEARCH_LOG_LEVEL` overrides `log_level`.
+
 ## Utility Functions
 
 ```@docs
