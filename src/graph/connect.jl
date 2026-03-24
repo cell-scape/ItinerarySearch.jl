@@ -153,6 +153,7 @@ function build_connections_at_station!(
     stats = station.stats
     stats.num_departures = Int32(n_dep)
     stats.num_arrivals   = Int32(n_arr)
+    @debug "Station pairing" station=String(station.code) arrivals=n_arr departures=n_dep
 
     # ── Step 1: nonstop self-connections for each departure ───────────────────
     for i in 1:n_dep
@@ -259,6 +260,7 @@ function build_connections_at_station!(
             n = Int(stats.num_connections)
             stats.avg_ground_time =
                 stats.avg_ground_time * (n - 1) / n + Float64(cp.cnx_time) / n
+            @debug "Connection accepted" from_org=String(arr_leg.record.org) to_dst=String(dep_leg.record.dst) cnx_time=cp.cnx_time mct=cp.mct
         end
     end
 

@@ -242,6 +242,7 @@ function ingest_ssim!(store::DuckDBStore, path::String)
                 leg_row_id += 1
                 current_row_id = leg_row_id
                 _append_type3!(legs_appender, current_row_id, line)
+                @debug "SSIM record" row_number=current_row_id airline=strip(_safe_substr(line, 3, 5)) flt_no=_parse_int16(_safe_substr(line, 6, 9)) org=strip(_safe_substr(line, 37, 39)) dst=strip(_safe_substr(line, 55, 57))
 
             elseif rec_type == '4' && length(line) >= 39
                 # DEI row shares the row_id of the most recent Type 3

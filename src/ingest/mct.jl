@@ -121,6 +121,7 @@ function ingest_mct!(store::DuckDBStore, path::String;
                     end
 
                     mct_id += 1
+                    @debug "MCT record" mct_id arr_stn=arr_stn_raw dep_stn=dep_stn_raw
                     _append_mct!(appender, mct_id, line)
                 end
             catch e

@@ -321,9 +321,10 @@ end
 """
 function _validate_and_commit!(itn::Itinerary, ctx::RuntimeContext)
     # Run itinerary rule chain
-    for rule in ctx.itn_rules
-        rc = rule(itn, ctx)
+    for k in 1:length(ctx.itn_rules)
+        rc = ctx.itn_rules[k](itn, ctx)
         if rc <= 0
+            @debug "Itinerary rejected" rule_index=k
             ctx.search_stats.paths_rejected += Int32(1)
             return
         end
@@ -364,6 +365,7 @@ function _validate_and_commit!(itn::Itinerary, ctx::RuntimeContext)
         num_regions=regions,
     )
     push!(ctx.results, committed)
+    @debug "Itinerary committed" stops=Int(committed.num_stops) elapsed=Int(committed.elapsed_time) distance=round(Float64(committed.total_distance); digits=0)
 
     # Update search stats
     ctx.search_stats.paths_found += Int32(1)
@@ -794,6 +796,7 @@ function search_itineraries(
     ctx.target_dow = dow_bit(Dates.dayofweek(target_date))
     empty!(ctx.results)
     ctx.search_stats.queries += Int32(1)
+    @debug "Search started" origin=String(origin) destination=String(dest) target_date
 
     # Pre-compute DFS pruning thresholds (avoid repeated multiplication in hot loop)
     ctx._max_elapsed_threshold = Int32(round(1.5 * ctx.constraints.defaults.max_elapsed))

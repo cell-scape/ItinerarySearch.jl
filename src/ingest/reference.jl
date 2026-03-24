@@ -121,6 +121,7 @@ function load_airports!(store::DuckDBStore, path::String)::Nothing
         DBInterface.close!(stmt)
     end
     @info "Loaded airports" count = loaded
+    @debug "Airports detail" path count = loaded
     nothing
 end
 
@@ -166,6 +167,7 @@ function load_regions!(store::DuckDBStore, path::String)::Nothing
         DBInterface.close!(stmt)
     end
     @info "Loaded regions" count = loaded
+    @debug "Regions detail" path count = loaded
     nothing
 end
 
@@ -269,5 +271,6 @@ function load_aircrafts!(store::DuckDBStore, path::String)::Nothing
         DBInterface.close!(stmt)
     end
     @info "Loaded aircrafts" count = loaded
+    @debug "Aircrafts detail" path count = loaded
     nothing
 end

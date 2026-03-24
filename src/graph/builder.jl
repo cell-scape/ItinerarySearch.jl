@@ -299,6 +299,7 @@ function build_graph!(
                     ),
                 )
                 n_filled += 1
+                @debug "Gap-filled distance" org=String(leg.record.org) dst=String(leg.record.dst) distance=leg.distance
             end
         end
     end
@@ -380,6 +381,7 @@ function build_graph!(
             segment_ac_arr = seg.record.segment_ac_arr,
         )
         _resolve_codeshare!(seg)
+        @debug "Segment resolved" hash=seg.record.segment_hash legs=length(seg.legs) codeshare=seg.is_codeshare
     end
     @info "Created segments" count = length(segments)
     emit!(event_log, PhaseEvent(phase = :schedule_load, action = :end, elapsed_ns = time_ns() - t0))
