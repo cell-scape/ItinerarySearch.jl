@@ -30,11 +30,15 @@ end
 function parse_build_args(args)
     mode = length(args) >= 1 ? args[1] : "sysimage"
     output = nothing
+    trim = "safe"
 
     i = 2
     while i <= length(args)
         if args[i] == "--output" && i + 1 <= length(args)
             output = args[i + 1]
+            i += 2
+        elseif args[i] == "--trim" && i + 1 <= length(args)
+            trim = args[i + 1]
             i += 2
         else
             println(stderr, "Unknown argument: $(args[i])")
@@ -42,12 +46,12 @@ function parse_build_args(args)
         end
     end
 
-    if mode ∉ ("sysimage", "app")
-        println(stderr, "Usage: julia build/build.jl [sysimage|app] [--output PATH]")
+    if mode ∉ ("sysimage", "app", "juliac")
+        println(stderr, "Usage: julia build/build.jl [sysimage|app|juliac] [--output PATH] [--trim safe|unsafe|no]")
         exit(2)
     end
 
-    return (; mode, output)
+    return (; mode, output, trim)
 end
 
 # ── Build ─────────────────────────────────────────────────────────────────────
@@ -98,6 +102,42 @@ function main(args)
 
         println("\nApp built: $output/")
         println("Run with: $output/bin/itinsearch --help")
+
+    elseif opts.mode == "juliac"
+        output = something(opts.output, joinpath(build_dir, "itinsearch"))
+        entry_file = joinpath(build_dir, "juliac_entry.jl")
+        juliac_script = joinpath(Sys.BINDIR, "..", "share", "julia", "juliac", "juliac.jl")
+
+        if !isfile(juliac_script)
+            println(stderr, "Error: juliac.jl not found at $juliac_script")
+            println(stderr, "juliac requires Julia 1.12+")
+            return
+        end
+
+        println("  Output:            $output")
+        println("  Entry point:       $entry_file")
+        println("  Trim mode:         $(opts.trim)")
+        println()
+        println("Building with juliac (this may take several minutes)...")
+
+        trim_arg = "--trim=$(opts.trim)"
+        cmd = `$(Base.julia_cmd()) --startup-file=no $juliac_script
+            --output-exe $output
+            --experimental $trim_arg
+            --verbose
+            $entry_file`
+
+        println("  Command: $cmd")
+        println()
+        run(cmd)
+
+        if isfile(output)
+            filesize_mb = round(filesize(output) / 1024^2; digits=1)
+            println("\njuliac binary built: $output ($filesize_mb MB)")
+            println("Run with: $output --help")
+        else
+            println(stderr, "\njuliac build may have failed — check output above")
+        end
     end
 end
 

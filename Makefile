@@ -1,4 +1,4 @@
-.PHONY: test demo bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info sysimage app
+.PHONY: test demo bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info sysimage app juliac
 
 # Run full test suite
 test:
@@ -54,5 +54,8 @@ sysimage:
 
 app:
 	julia --project=. build/build.jl app
+
+juliac:
+	julia --project=. build/build.jl juliac
 
 all: test bench demo
