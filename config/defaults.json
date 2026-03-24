@@ -15,17 +15,17 @@
     "oa_control": "data/input/oa_control_table.csv"
   },
   "search": {
-    "max_stops": 2,
+    "max_stops": 3,
     "max_connection_minutes": 480,
     "max_elapsed_minutes": 1440,
-    "circuity_factor": 2.5,
+    "circuity_factor": 2.0,
     "circuity_extra_miles": 500.0,
     "scope": "all",
     "interline": "codeshare"
   },
   "schedule": {
-    "max_days": 3,
-    "trailing_days": 1
+    "max_days": 1,
+    "trailing_days": 0
   },
   "output": {
     "format": "json",
