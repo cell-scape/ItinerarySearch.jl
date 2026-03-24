@@ -453,7 +453,73 @@ julia --project=. bin/itinsearch.jl search ORD LHR 2026-03-20 \
 
 Global flags: `--config`, `--log-level`, `--log-json`, `--quiet`, `--compact`, `--output`.
 
-## Step 11: Compilation
+## Step 11: REST API Server
+
+Start the service:
+
+```bash
+julia --project=. bin/itinsearch.jl serve --date 2026-03-20 --port 8080
+# or: make serve DATE=2026-03-20
+```
+
+The server loads the schedule, builds the graph once, then serves requests concurrently. Each request gets its own `RuntimeContext`; the shared graph is read-only.
+
+### Search
+
+```bash
+curl -X POST http://localhost:8080/search \
+  -H "Content-Type: application/json" \
+  -d '{
+    "origins": ["ORD"],
+    "destinations": ["LHR"],
+    "dates": ["2026-03-20"],
+    "max_stops": 2,
+    "compact": true
+  }'
+```
+
+Response: `{"status":"ok","data":{...}}` — same nested structure as `itinerary_legs_json`.
+
+### Trip Search
+
+```bash
+curl -X POST http://localhost:8080/trip \
+  -H "Content-Type: application/json" \
+  -d '{
+    "legs": [
+      {"origin":"ORD","destination":"LHR","date":"2026-03-20"},
+      {"origin":"LHR","destination":"ORD","date":"2026-03-27","min_stay":720}
+    ],
+    "max_trips": 50
+  }'
+```
+
+### Other Endpoints
+
+```bash
+# Station info
+curl http://localhost:8080/station/ORD
+
+# Server health
+curl http://localhost:8080/health
+
+# Refresh graph (rebuild in background)
+curl -X POST http://localhost:8080/rebuild
+curl -X POST http://localhost:8080/rebuild -d '{"date":"2026-03-21"}'
+```
+
+### Per-Request Constraint Overrides
+
+The `/search` endpoint accepts optional constraint fields in the request body:
+
+| Field | Default | Maps to |
+|-------|---------|---------|
+| `max_stops` | 2 | `ParameterSet.max_stops` |
+| `max_elapsed` | 1440 | `ParameterSet.max_elapsed` |
+| `max_connection` | 480 | `ParameterSet.max_mct_override` |
+| `circuity_factor` | 2.0 | `ParameterSet.circuity_factor` |
+
+## Step 12: Compilation
 
 ### Sysimage (fast startup, ~0ms load)
 

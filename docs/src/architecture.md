@@ -115,6 +115,10 @@ The `CLI` submodule (`src/cli.jl`) wraps the pipeline in an ArgParse.jl command 
 
 **PrecompileTools** — A `@compile_workload` block in the module exercises core code paths (type construction, MCT lookup, rule chains, DuckDB store, JSON serialization, CLI parser) during `Pkg.precompile()`, caching native code for ~400ms load / ~100ms first-call.
 
+### REST API
+
+The `Server` submodule (`src/server.jl`) wraps the pipeline in an HTTP.jl service. A `ServerState` mutable struct holds the shared `FlightGraph`, `DuckDBStore`, `SearchConfig`, and synchronization primitives (`ReentrantLock` for graph swap, `Atomic{Bool}` for rebuild guard). The graph is built once at startup and shared read-only across concurrent request threads. Each request handler snapshots the graph reference under the lock (microsecond hold), creates a per-request `RuntimeContext`, executes the search, and returns JSON. `POST /rebuild` triggers a background `build_graph!` that atomically swaps the graph when complete — in-flight requests continue using their pre-swap snapshot. Five endpoints: `/search`, `/trip`, `/station/:code`, `/health`, `/rebuild`.
+
 **PackageCompiler** — `build/build.jl` supports sysimage mode (0ms module load, ~236MB `.so`) and standalone app mode. A dedicated `build/precompile_workload.jl` runs the full pipeline (ingest, graph build, search, JSON output) with synthetic data, capturing all method specializations without requiring test-only dependencies.
 
 ---

@@ -1,5 +1,18 @@
 # ItinerarySearch Development Diary
 
+## 2026-03-24 — REST API Service
+- **Scope**: HTTP REST API wrapping the search pipeline, served from a pre-built in-memory flight graph
+- **Changes**:
+  - `Server` submodule (`src/server.jl`) with HTTP.jl: 5 endpoints (search, trip, station, health, rebuild)
+  - `ServerState` mutable struct with `ReentrantLock`-protected graph reference, `Atomic{Bool}` rebuild guard
+  - Per-request graph snapshot pattern: lock-free reads, lock-protected writes on rebuild only
+  - Per-request `SearchConstraints` from JSON body (max_stops, max_elapsed, max_connection, circuity_factor)
+  - `_trips_to_json` flat serialization avoiding circular graph references
+  - `POST /rebuild` with background task, atomic guard (409 if in progress), try/finally safety
+  - CLI `serve` subcommand: `itinsearch serve --date 2026-03-20 --port 8080`
+  - `make serve DATE=2026-03-20` target
+- **Tests**: 1413 total (20 new server endpoint tests)
+
 ## 2026-03-24 — CLI, PrecompileTools, PackageCompiler
 - **Scope**: Command-line interface, precompilation workloads, sysimage/app builds
 - **Changes**:
