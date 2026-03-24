@@ -1,4 +1,4 @@
-.PHONY: test demo bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info sysimage app juliac
+.PHONY: test demo bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve sysimage app juliac
 
 # Run full test suite
 test:
@@ -47,6 +47,13 @@ cli-ingest:
 
 cli-info:
 	julia --project=. bin/itinsearch.jl info $(EXTRA)
+
+# REST API server
+# Usage: make serve DATE=2026-03-20
+#        make serve DATE=2026-03-20 PORT=9090
+PORT ?= 8080
+serve:
+	julia --project=. bin/itinsearch.jl serve --date $(DATE) --port $(PORT) $(EXTRA)
 
 # PackageCompiler builds (uses test suite as precompile workload)
 sysimage:
