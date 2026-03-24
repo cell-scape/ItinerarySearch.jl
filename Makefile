@@ -1,4 +1,4 @@
-.PHONY: test demo bench viz json search all
+.PHONY: test demo bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info
 
 # Run full test suite
 test:
@@ -27,5 +27,25 @@ json:
 #        make search ORG=ORD DATE=2026-03-20            (all destinations)
 search:
 	julia --project=. scripts/search.jl $(ORG) $(DST) $(DATE)
+
+# CLI commands
+# Usage: make cli-search ORG=ORD DST=LHR DATE=2026-03-20
+#        make cli-search ORG=ORD,DEN DST=LHR,LAX DATE=2026-03-20
+#        make cli-trip LEGS="ORD LHR 2026-03-20 LHR ORD 2026-03-27"
+#        make cli-build DATE=2026-03-20
+cli-search:
+	julia --project=. bin/itinsearch.jl search $(ORG) $(DST) $(DATE) $(EXTRA)
+
+cli-trip:
+	julia --project=. bin/itinsearch.jl trip $(LEGS) $(EXTRA)
+
+cli-build:
+	julia --project=. bin/itinsearch.jl build --date $(DATE) $(EXTRA)
+
+cli-ingest:
+	julia --project=. bin/itinsearch.jl ingest $(EXTRA)
+
+cli-info:
+	julia --project=. bin/itinsearch.jl info $(EXTRA)
 
 all: test bench demo
