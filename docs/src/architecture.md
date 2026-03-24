@@ -71,6 +71,8 @@ A SQL post-ingest pipeline runs inside DuckDB to join codeshare data, build the 
 
 Rules return positive on pass, zero or negative on fail. A passing pair produces a `GraphConnection` edge added to both legs' `connect_to` / `connect_from` lists and the station's `connections` list. Nonstop self-connections are also created for every departing leg (used as the first edge in the DFS).
 
+**MCT Cache:** An `MCTCacheKey` (isbits, 96 bytes) indexes MCT results by all SSIM8 fields except flight numbers and target date. On cache hit, the result is revalidated: if the matched record used flight-number ranges or date validity, the hit is discarded and a full cascade lookup runs. This yields ~77% hit rate while guaranteeing correctness. Configurable via `mct_cache_enabled` (default `true`).
+
 **Tier 1 Instrumentation:** Every rule evaluation is tracked via per-rule pass/fail counters on `BuildStats`. MCT lookups are instrumented with cascade source counters (exception, standard, default, suppression), a 48-bucket time histogram, and a running average. When `metrics_level == :full`, each MCT decision produces a zero-allocation `MCTSelectionRow` audit record. After the build pass, `aggregate_geo_stats` produces geographic aggregations (metro, state, country, region) stored on `FlightGraph.geo_stats`.
 
 ### Stage 4: DFS Search
@@ -223,7 +225,7 @@ The type system splits into two layers:
 Domain string types (`StationCode`, `AirlineCode`, `FlightNumber`) are type aliases for `InlineStrings.String7` or similar fixed-width inline types. This keeps them `isbits`, stack-allocated, and usable in `Vector` without boxing. Avoids the pointer-call and hang pitfalls of raw `StaticString` approaches.
 
 ```julia
-const StationCode = InlineString7   # "ORD", "LHR", etc.
+const StationCode = InlineString3   # "ORD", "LHR", etc. (3-char IATA, 4 bytes)
 const AirlineCode = InlineString3   # "UA", "LH", etc.
 const FlightNumber = Int16          # 774, 3612, etc.
 ```

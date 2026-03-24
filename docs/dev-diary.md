@@ -1,5 +1,17 @@
 # ItinerarySearch Development Diary
 
+## 2026-03-24 — MCT Cache, LegKey Date/Time, StationCode Sizing
+- **Scope**: MCT lookup cache with revalidation, LegKey schedule context, StationCode type optimization
+- **Changes**:
+  - `MCTCacheKey` (isbits, 96 bytes) caches MCT results by full SSIM8 field set minus flight numbers and date
+  - Cache revalidation: if cached result matched on flight-number ranges or date validity, discards hit and does full lookup
+  - 77% cache hit rate (5.2M hits / 6.8M lookups), `mct_cache_enabled::Bool = true` on SearchConfig
+  - `LegKey` gains `operating_date::UInt32` and `dep_time::Minutes` for date disambiguation
+  - `itinerary_legs` output sorted by operating_date, dep_time, then stops/elapsed/distance
+  - JSON output includes operating_date and dep_time in leg keys and itinerary summaries
+  - `StationCode` changed from `InlineString7` (8 bytes) to `InlineString3` (4 bytes) — IATA codes are always 3 chars
+- **Tests**: 1291 total (all passing)
+
 ## 2026-03-23 — Remove Layer 1 (Experimental, Unused)
 - **Scope**: Remove the experimental Layer 1 one-stop pre-computation feature
 - **Rationale**: Disabled by default, 2.5s build overhead, caused result explosion (216k vs 1.8k), no value for single-session use

@@ -17,9 +17,14 @@ The lookup key is a `(arr_station, dep_station)` tuple, supporting both intra-st
 ```@docs
 MCTRecord
 MCTLookup
+MCTCacheKey
 materialize_mct_lookup
 lookup_mct
 ```
+
+### MCT Cache
+
+`MCTCacheKey` indexes MCT results by all SSIM8 matching fields except flight numbers and target date. On cache hit, the result's `matched_fields` and `specificity` are checked: if the matched record used flight-number ranges or date validity, the hit is discarded and a full lookup runs. This yields ~77% hit rate. Controlled by `SearchConfig.mct_cache_enabled` (default `true`).
 
 ### MCT Bitmask Constants
 

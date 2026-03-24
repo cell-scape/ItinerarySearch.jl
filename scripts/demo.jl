@@ -225,6 +225,11 @@ for day_offset in 0:(n_days - 1)
     if bs.mct_lookups > 0
         println("[$(target)]   MCT avg time: $(round(bs.mct_avg_time; digits=1)) min")
     end
+    cache_entries = length(ctx.mct_cache)
+    if cache_entries > 0
+        cache_hits = bs.mct_lookups - cache_entries
+        println("[$(target)]   MCT cache: $(cache_entries) entries, $(cache_hits) hits ($(round(cache_hits / max(1, bs.mct_lookups) * 100; digits=0))%)")
+    end
     if !isempty(bs.rule_pass)
         println("[$(target)]   Rules: $(sum(bs.rule_pass)) pass, $(sum(bs.rule_fail)) fail")
     end

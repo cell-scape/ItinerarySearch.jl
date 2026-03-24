@@ -57,6 +57,31 @@ function bench_connection_build(store::DuckDBStore, config::SearchConfig)
     b = @be aggregate_geo_stats(graph.stations)
     print("  aggregate_geo_stats: ")
     display(b)
+
+    # MCT cache stats
+    println("\n── MCT Cache ──")
+    println("  Enabled:       $(config.mct_cache_enabled)")
+    # Build a fresh ctx to inspect cache
+    cnx_rules_fresh = build_cnx_rules(config, SearchConstraints(), graph.mct_lookup)
+    ctx_cache = RuntimeContext(
+        config = config,
+        constraints = SearchConstraints(),
+        cnx_rules = cnx_rules_fresh,
+        itn_rules = build_itn_rules(config),
+        build_stats = BuildStats(rule_pass=zeros(Int64, length(cnx_rules_fresh)),
+                                  rule_fail=zeros(Int64, length(cnx_rules_fresh))),
+    )
+    build_connections!(graph.stations, cnx_rules_fresh, ctx_cache)
+    cache_entries = length(ctx_cache.mct_cache)
+    total_lookups = ctx_cache.build_stats.mct_lookups
+    cache_hits = total_lookups - cache_entries
+    println("  Lookups:       $total_lookups")
+    println("  Cache entries: $cache_entries")
+    println("  Cache hits:    $cache_hits")
+    if total_lookups > 0
+        println("  Hit rate:      $(round(cache_hits / total_lookups * 100; digits=1))%")
+    end
+    println("  sizeof(MCTCacheKey): $(sizeof(MCTCacheKey)) bytes")
 end
 
 function bench_search(graph, store::DuckDBStore)
