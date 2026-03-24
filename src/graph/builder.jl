@@ -225,6 +225,13 @@ function build_graph!(
 )::FlightGraph
     t0 = time_ns()
 
+    # Set up structured logging
+    prev_logger = global_logger()
+    logger = setup_logger(config)
+    global_logger(logger)
+
+    try
+
     # Set up event log
     event_log = EventLog(enabled = config.event_log_enabled)
     if event_log.enabled && !isempty(config.event_log_path)
@@ -455,6 +462,11 @@ function build_graph!(
     close(event_log)
 
     return graph
+
+    finally
+        _close_logger(logger)
+        global_logger(prev_logger)
+    end
 end
 
 # ── Convenience search ─────────────────────────────────────────────────────────
