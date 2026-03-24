@@ -94,6 +94,9 @@ the reference — no locking, no mutation.
     constraints_path::String = "data/output"
     event_log_enabled::Bool = false
     event_log_path::String = "data/output/events.jsonl"
+    log_level::Symbol = :info
+    log_json_path::String = ""
+    log_stdout_json::Bool = false
     output_formats::Vector{Symbol} = [:json, :yaml, :csv]
     distance_formula::Symbol = :haversine  # :haversine or :vincenty
     allow_roundtrips::Bool = false

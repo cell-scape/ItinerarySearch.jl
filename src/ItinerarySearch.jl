@@ -21,6 +21,7 @@ include("observe/events.jl")
 include("observe/metrics.jl")
 include("observe/event_log.jl")
 include("observe/sinks.jl")
+include("observe/logging.jl")
 include("compression.jl")
 include("ingest/schemas.jl")
 include("store/interface.jl")
@@ -93,6 +94,9 @@ export EventLog, emit!, checkpoint!, with_phase, collect_system_metrics
 
 # Exports — observe: sinks
 export JsonlSink, stdout_sink
+
+# Exports — observe: logging
+export setup_logger
 
 # Exports — ingest
 export ingest_ssim!
