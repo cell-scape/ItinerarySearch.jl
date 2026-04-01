@@ -26,7 +26,7 @@ Human-friendly one-line summary: flight identifier and O→D pair.
 """
 function Base.show(io::IO, leg::GraphLeg)
     rec = leg.record
-    print(io, "GraphLeg($(flight_id(rec)) $(rec.org)→$(rec.dst))")
+    print(io, "GraphLeg($(flight_id(rec)) $(rec.departure_station)→$(rec.arrival_station))")
 end
 
 """
@@ -38,7 +38,7 @@ and leg count.
 function Base.show(io::IO, seg::GraphSegment)
     rec = seg.record
     n = length(seg.legs)
-    print(io, "GraphSegment($(rec.airline)$(lpad(rec.flt_no, 4)) $(rec.segment_org)→$(rec.segment_dst), $(n) legs)")
+    print(io, "GraphSegment($(rec.carrier)$(lpad(rec.flight_number, 4)) $(rec.segment_departure_station)→$(rec.segment_arrival_station), $(n) legs)")
 end
 
 """
@@ -54,7 +54,7 @@ function Base.show(io::IO, cp::GraphConnection)
     from_id = flight_id(from_l.record)
     to_id = flight_id(to_l.record)
     if cp.from_leg === cp.to_leg
-        print(io, "GraphConnection(nonstop $(from_id) $(from_l.record.org)->$(from_l.record.dst))")
+        print(io, "GraphConnection(nonstop $(from_id) $(from_l.record.departure_station)->$(from_l.record.arrival_station))")
     else
         print(io, "GraphConnection($(from_id)->$(to_id) at $((cp.station::GraphStation).code), cnx=$(cp.cnx_time)min, mct=$(cp.mct)min)")
     end
@@ -114,7 +114,7 @@ end
 Compact display: airline/flt_no org->dst.
 """
 function Base.show(io::IO, key::LegKey)
-    print(io, "LegKey($(flight_id(key)) $(key.org)->$(key.dst))")
+    print(io, "LegKey($(flight_id(key)) $(key.departure_station)->$(key.arrival_station))")
 end
 
 """
@@ -196,24 +196,24 @@ function itinerary_long_format(itineraries::Vector{Itinerary})::Vector{NamedTupl
                 push!(rows, (
                     itinerary_id = itn_idx,
                     leg_seq = seq,
-                    airline = String(rec.airline),
-                    flt_no = Int(rec.flt_no),
+                    carrier = String(rec.carrier),
+                    flight_number = Int(rec.flight_number),
                     flight_id = flight_id(rec),
                     record_serial = Int(rec.record_serial),
                     segment_hash = rec.segment_hash,
-                    org = String(rec.org),
-                    dst = String(rec.dst),
-                    pax_dep = Int(rec.pax_dep),
-                    pax_arr = Int(rec.pax_arr),
-                    eqp = String(rec.eqp),
+                    departure_station = String(rec.departure_station),
+                    arrival_station = String(rec.arrival_station),
+                    passenger_departure_time = Int(rec.passenger_departure_time),
+                    passenger_arrival_time = Int(rec.passenger_arrival_time),
+                    aircraft_type = String(rec.aircraft_type),
                     body_type = rec.body_type,
                     distance = Float64(leg.distance),
                     is_through = cp.is_through,
                     is_nonstop = is_nonstop_cp,
                     cnx_time = seq > 1 ? Int(cp.cnx_time) : 0,
                     mct = seq > 1 ? Int(cp.mct) : 0,
-                    dep_term = String(rec.dep_term),
-                    arr_term = String(rec.arr_term),
+                    departure_terminal = String(rec.departure_terminal),
+                    arrival_terminal = String(rec.arrival_terminal),
                 ))
             end
 
@@ -229,24 +229,24 @@ function itinerary_long_format(itineraries::Vector{Itinerary})::Vector{NamedTupl
                 push!(rows, (
                     itinerary_id = itn_idx,
                     leg_seq = seq,
-                    airline = String(to_rec.airline),
-                    flt_no = Int(to_rec.flt_no),
+                    carrier = String(to_rec.carrier),
+                    flight_number = Int(to_rec.flight_number),
                     flight_id = flight_id(to_rec),
                     record_serial = Int(to_rec.record_serial),
                     segment_hash = to_rec.segment_hash,
-                    org = String(to_rec.org),
-                    dst = String(to_rec.dst),
-                    pax_dep = Int(to_rec.pax_dep),
-                    pax_arr = Int(to_rec.pax_arr),
-                    eqp = String(to_rec.eqp),
+                    departure_station = String(to_rec.departure_station),
+                    arrival_station = String(to_rec.arrival_station),
+                    passenger_departure_time = Int(to_rec.passenger_departure_time),
+                    passenger_arrival_time = Int(to_rec.passenger_arrival_time),
+                    aircraft_type = String(to_rec.aircraft_type),
                     body_type = to_rec.body_type,
                     distance = Float64(to_leg.distance),
                     is_through = false,
                     is_nonstop = false,
                     cnx_time = 0,
                     mct = 0,
-                    dep_term = String(to_rec.dep_term),
-                    arr_term = String(to_rec.arr_term),
+                    departure_terminal = String(to_rec.departure_terminal),
+                    arrival_terminal = String(to_rec.arrival_terminal),
                 ))
             end
         end
@@ -299,14 +299,14 @@ function itinerary_wide_format(itineraries::Vector{Itinerary})::Vector{NamedTupl
             push!(flight_nums, flight_id(leg.record))
             push!(record_ids, Int(leg.record.record_serial))
             if i == 1
-                origin = String(leg.record.org)
+                origin = String(leg.record.departure_station)
             end
             if i == n_cnx
                 if cp.from_leg === cp.to_leg  # nonstop self-connection
-                    destination = String(leg.record.dst)
+                    destination = String(leg.record.arrival_station)
                 else
                     to_leg = cp.to_leg::GraphLeg
-                    destination = String(to_leg.record.dst)
+                    destination = String(to_leg.record.arrival_station)
                     push!(flight_nums, flight_id(to_leg.record))
                     push!(record_ids, Int(to_leg.record.record_serial))
                 end
@@ -360,10 +360,10 @@ _format_time(m::Integer) = lpad(div(m, 60), 2, '0') * ":" * lpad(mod(m, 60), 2, 
 # Also resolves aircraft_owner: defaults to airline if empty on operating legs,
 # or codeshare_airline if empty on codeshare legs.
 function _resolve_flags(r)
-    airline = strip(String(r.airline))
-    flt_no = Int(r.flt_no)
-    cs_al = strip(String(r.codeshare_airline))
-    cs_flt = Int(r.codeshare_flt_no)
+    airline = strip(String(r.carrier))
+    flt_no = Int(r.flight_number)
+    cs_al = strip(String(r.administrating_carrier))
+    cs_flt = Int(r.administrating_carrier_flight_number)
     is_operating = cs_al == "" || cs_al == airline
     # Default codeshare fields to self when operating
     cs_al = is_operating ? airline : cs_al
@@ -382,14 +382,14 @@ _miles(d::Real) = round(Int, d)
 # Does this leg operate on `date`?  Checks eff/disc range + frequency DOW bit.
 # UTC block time for a single leg: (arr - arr_utc_offset) - (dep - dep_utc_offset) + date_var * 1440
 @inline function _utc_block_time(r)::Int32
-    utc_dep = Int32(r.pax_dep) - Int32(r.dep_utc_offset)
-    utc_arr = Int32(r.pax_arr) - Int32(r.arr_utc_offset) + Int32(r.arr_date_var) * Int32(1440)
+    utc_dep = Int32(r.passenger_departure_time) - Int32(r.departure_utc_offset)
+    utc_arr = Int32(r.passenger_arrival_time) - Int32(r.arrival_utc_offset) + Int32(r.arrival_date_variation) * Int32(1440)
     return max(Int32(0), utc_arr - utc_dep)
 end
 
 function _operates_on(r, date::Date)::Bool
-    eff = unpack_date(r.eff_date)
-    disc = unpack_date(r.disc_date)
+    eff = unpack_date(r.effective_date)
+    disc = unpack_date(r.discontinue_date)
     (eff <= date <= disc) || return false
     dow = Dates.dayofweek(date)  # 1=Mon .. 7=Sun
     return (Int(r.frequency) & (1 << (dow - 1))) != 0
@@ -432,19 +432,19 @@ function write_legs(io::IO, graph::FlightGraph, date::Date)::Int
         r = leg.record
         _operates_on(r, date) || continue
         flags = _resolve_flags(r)
-        org = strip(String(r.org))
-        dst = strip(String(r.dst))
+        org = strip(String(r.departure_station))
+        dst = strip(String(r.arrival_station))
 
         _write_row(io, [
             Int(r.record_serial), Int(r.row_number),
-            strip(String(r.airline)), Int(r.flt_no), r.operational_suffix,
-            Int(r.itin_var), Int(r.leg_seq), r.svc_type,
+            strip(String(r.carrier)), Int(r.flight_number), r.operational_suffix,
+            Int(r.itinerary_var_id), Int(r.leg_sequence_number), r.service_type,
             flags.cs_al, flags.cs_flt, flags.is_operating,
             org, dst, _market(org, dst),
-            date, _format_time(r.ac_dep), _format_time(r.ac_arr), Int(r.arr_date_var),
-            String(r.eqp), r.body_type, strip(String(r.dep_term)), strip(String(r.arr_term)),
+            date, _format_time(r.aircraft_departure_time), _format_time(r.aircraft_arrival_time), Int(r.arrival_date_variation),
+            String(r.aircraft_type), r.body_type, strip(String(r.departure_terminal)), strip(String(r.arrival_terminal)),
             _miles(leg.distance),
-            r.mct_status_dep, r.mct_status_arr,
+            r.dep_intl_dom, r.arr_intl_dom,
             strip(r.dei_10), strip(r.dei_127), r.wet_lease, flags.owner,
         ])
         n += 1
@@ -525,18 +525,18 @@ function _write_itn_leg_row(io::IO, itn_idx, leg_seq, leg::GraphLeg,
                             itn, date::Date)::Int
     r = leg.record
     flags = _resolve_flags(r)
-    org = strip(String(r.org))
-    dst = strip(String(r.dst))
+    org = strip(String(r.departure_station))
+    dst = strip(String(r.arrival_station))
 
     _write_row(io, [
         itn_idx, leg_seq,
         Int(r.record_serial), Int(r.row_number),
-        strip(String(r.airline)), Int(r.flt_no), r.operational_suffix,
-        Int(r.itin_var), Int(r.leg_seq), r.svc_type,
-        strip(String(r.codeshare_airline)), Int(r.codeshare_flt_no), flags.is_operating,
+        strip(String(r.carrier)), Int(r.flight_number), r.operational_suffix,
+        Int(r.itinerary_var_id), Int(r.leg_sequence_number), r.service_type,
+        strip(String(r.administrating_carrier)), Int(r.administrating_carrier_flight_number), flags.is_operating,
         org, dst, _market(org, dst),
-        date, _format_time(r.ac_dep), _format_time(r.ac_arr), Int(r.arr_date_var),
-        String(r.eqp), r.body_type, strip(String(r.dep_term)), strip(String(r.arr_term)),
+        date, _format_time(r.aircraft_departure_time), _format_time(r.aircraft_arrival_time), Int(r.arrival_date_variation),
+        String(r.aircraft_type), r.body_type, strip(String(r.departure_terminal)), strip(String(r.arrival_terminal)),
         _miles(leg.distance),
         strip(r.dei_10), strip(r.dei_127), r.wet_lease, flags.owner,
         cnx_type, cnx_time, mct_val, Int(mct_id),
@@ -615,19 +615,19 @@ function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date
             for (seq, (leg, cnx_type, cnx_time, mct_val, mct_id)) in enumerate(legs_out)
                 r = leg.record
                 flags = _resolve_flags(r)
-                org = strip(String(r.org))
-                dst = strip(String(r.dst))
+                org = strip(String(r.departure_station))
+                dst = strip(String(r.arrival_station))
 
                 _write_row(io, [
                     Int(trip.trip_id), trip.trip_type, itn_seq,
                     itn_seq, seq,
                     Int(r.record_serial), Int(r.row_number),
-                    strip(String(r.airline)), Int(r.flt_no), r.operational_suffix,
-                    Int(r.itin_var), Int(r.leg_seq), r.svc_type,
+                    strip(String(r.carrier)), Int(r.flight_number), r.operational_suffix,
+                    Int(r.itinerary_var_id), Int(r.leg_sequence_number), r.service_type,
                     flags.cs_al, flags.cs_flt, flags.is_operating,
                     org, dst, _market(org, dst),
-                    date, _format_time(r.ac_dep), _format_time(r.ac_arr), Int(r.arr_date_var),
-                    String(r.eqp), r.body_type, strip(String(r.dep_term)), strip(String(r.arr_term)),
+                    date, _format_time(r.aircraft_departure_time), _format_time(r.aircraft_arrival_time), Int(r.arrival_date_variation),
+                    String(r.aircraft_type), r.body_type, strip(String(r.departure_terminal)), strip(String(r.arrival_terminal)),
                     _miles(leg.distance),
                     strip(r.dei_10), strip(r.dei_127), r.wet_lease, flags.owner,
                     cnx_type, cnx_time, mct_val, Int(mct_id),
@@ -689,7 +689,7 @@ function itinerary_legs(
     # Sort by operating date (ascending), departure time, stops, elapsed, distance
     sort!(itineraries; by=itn -> begin
         first_rec = (itn.connections[1].from_leg::GraphLeg).record
-        (first_rec.operating_date, first_rec.pax_dep, itn.num_stops, itn.elapsed_time, itn.total_distance)
+        (first_rec.operating_date, first_rec.passenger_departure_time, itn.num_stops, itn.elapsed_time, itn.total_distance)
     end)
 
     # Deduplicate: two itineraries are identical if they use the same legs in the same order.
@@ -1024,19 +1024,19 @@ end
 
 function _legkey_to_dict(k::LegKey)::Dict{String,Any}
     Dict{String,Any}(
-        "row_number"         => Int(k.row_number),
-        "record_serial"      => Int(k.record_serial),
-        "airline"            => strip(String(k.airline)),
-        "flt_no"             => Int(k.flt_no),
-        "operational_suffix" => string(k.operational_suffix),
-        "itin_var"           => Int(k.itin_var),
-        "itin_var_overflow"  => string(k.itin_var_overflow),
-        "leg_seq"            => Int(k.leg_seq),
-        "svc_type"           => string(k.svc_type),
-        "codeshare_airline"  => strip(String(k.codeshare_airline)),
-        "codeshare_flt_no"   => Int(k.codeshare_flt_no),
-        "org"                => strip(String(k.org)),
-        "dst"                => strip(String(k.dst)),
+        "row_number"                          => Int(k.row_number),
+        "record_serial"                       => Int(k.record_serial),
+        "carrier"                             => strip(String(k.carrier)),
+        "flight_number"                       => Int(k.flight_number),
+        "operational_suffix"                  => string(k.operational_suffix),
+        "itinerary_var_id"                    => Int(k.itinerary_var_id),
+        "itinerary_var_overflow"              => string(k.itinerary_var_overflow),
+        "leg_sequence_number"                 => Int(k.leg_sequence_number),
+        "service_type"                        => string(k.service_type),
+        "administrating_carrier"              => strip(String(k.administrating_carrier)),
+        "administrating_carrier_flight_number" => Int(k.administrating_carrier_flight_number),
+        "departure_station"                   => strip(String(k.departure_station)),
+        "arrival_station"                     => strip(String(k.arrival_station)),
     )
 end
 
@@ -1051,7 +1051,7 @@ function _itnref_summary_dict(itn::ItineraryRef)::Dict{String,Any}
         "origin"          => String(origin(itn)),
         "destination"     => String(destination(itn)),
         "operating_date"  => Dates.format(d, "yyyy-mm-dd"),
-        "dep_time"        => _format_time(first_key.dep_time),
+        "departure_time"  => _format_time(first_key.departure_time),
         "elapsed_minutes" => Int(itn.elapsed_minutes),
         "flight_minutes"  => Int(itn.flight_minutes),
         "layover_minutes" => Int(itn.layover_minutes),
@@ -1065,19 +1065,19 @@ end
 function _write_legkey_json(io::IOBuffer, k::LegKey)
     print(io, "{\"row_number\":", Int(k.row_number),
               ",\"record_serial\":", Int(k.record_serial),
-              ",\"airline\":\"", strip(String(k.airline)), "\"",
-              ",\"flt_no\":", Int(k.flt_no),
+              ",\"carrier\":\"", strip(String(k.carrier)), "\"",
+              ",\"flight_number\":", Int(k.flight_number),
               ",\"operational_suffix\":\"", k.operational_suffix, "\"",
-              ",\"itin_var\":", Int(k.itin_var),
-              ",\"itin_var_overflow\":\"", k.itin_var_overflow, "\"",
-              ",\"leg_seq\":", Int(k.leg_seq),
-              ",\"svc_type\":\"", k.svc_type, "\"",
-              ",\"codeshare_airline\":\"", strip(String(k.codeshare_airline)), "\"",
-              ",\"codeshare_flt_no\":", Int(k.codeshare_flt_no),
-              ",\"org\":\"", strip(String(k.org)), "\"",
-              ",\"dst\":\"", strip(String(k.dst)), "\"",
+              ",\"itinerary_var_id\":", Int(k.itinerary_var_id),
+              ",\"itinerary_var_overflow\":\"", k.itinerary_var_overflow, "\"",
+              ",\"leg_sequence_number\":", Int(k.leg_sequence_number),
+              ",\"service_type\":\"", k.service_type, "\"",
+              ",\"administrating_carrier\":\"", strip(String(k.administrating_carrier)), "\"",
+              ",\"administrating_carrier_flight_number\":", Int(k.administrating_carrier_flight_number),
+              ",\"departure_station\":\"", strip(String(k.departure_station)), "\"",
+              ",\"arrival_station\":\"", strip(String(k.arrival_station)), "\"",
               ",\"operating_date\":", Int(k.operating_date),
-              ",\"dep_time\":", Int(k.dep_time), "}")
+              ",\"departure_time\":", Int(k.departure_time), "}")
 end
 
 function _write_itnref_summary_json(io::IOBuffer, itn::ItineraryRef)
@@ -1095,7 +1095,7 @@ function _write_itnref_summary_json(io::IOBuffer, itn::ItineraryRef)
               ",\"origin\":\"", origin(itn), "\"",
               ",\"destination\":\"", destination(itn), "\"",
               ",\"operating_date\":\"", Dates.format(d, "yyyy-mm-dd"), "\"",
-              ",\"dep_time\":\"", _format_time(first_key.dep_time), "\"",
+              ",\"departure_time\":\"", _format_time(first_key.departure_time), "\"",
               ",\"elapsed_minutes\":", Int(itn.elapsed_minutes),
               ",\"flight_minutes\":", Int(itn.flight_minutes),
               ",\"layover_minutes\":", Int(itn.layover_minutes),

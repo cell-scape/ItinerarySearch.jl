@@ -176,16 +176,16 @@ using PrecompileTools
         # Core type construction
         stn_rec = StationRecord(
             code=StationCode("ORD"), country=InlineString3("US"),
-            state=InlineString3("IL"), metro_area=InlineString3("CHI"),
-            region=InlineString3("NOA"), lat=41.97, lng=-87.91, utc_offset=Int16(-300))
+            state=InlineString3("IL"), city=InlineString3("CHI"),
+            region=InlineString3("NOA"), latitude=41.97, longitude=-87.91, utc_offset=Int16(-300))
         mct_result = MCTResult(
             time=Minutes(60), queried_status=MCT_DD, matched_status=MCT_DD,
             suppressed=false, source=SOURCE_GLOBAL_DEFAULT, specificity=UInt32(0))
         leg_key = LegKey(
             row_number=UInt64(1), record_serial=UInt32(1),
-            airline=AirlineCode("UA"), flt_no=FlightNumber(1234),
-            org=StationCode("ORD"), dst=StationCode("LHR"),
-            operating_date=UInt32(20260315), dep_time=Minutes(540))
+            carrier=AirlineCode("UA"), flight_number=FlightNumber(1234),
+            departure_station=StationCode("ORD"), arrival_station=StationCode("LHR"),
+            operating_date=UInt32(20260315), departure_time=Minutes(540))
         itn_ref = ItineraryRef(
             legs=[leg_key], num_stops=0, elapsed_minutes=Int32(480),
             flight_minutes=Int32(465), layover_minutes=Int32(0),

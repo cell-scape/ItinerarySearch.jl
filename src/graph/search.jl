@@ -707,10 +707,10 @@ function search_itineraries(
     if market_dist < 0.0
         market_dist = _geodesic_distance(
             ctx.config,
-            org_stn.record.lat,
-            org_stn.record.lng,
-            dst_stn.record.lat,
-            dst_stn.record.lng,
+            org_stn.record.latitude,
+            org_stn.record.longitude,
+            dst_stn.record.latitude,
+            dst_stn.record.longitude,
         )
         ctx.gc_cache[gc_key] = market_dist
     end
