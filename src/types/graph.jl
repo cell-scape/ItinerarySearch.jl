@@ -73,25 +73,25 @@ const _UNINIT_NODE = _UninitNode()
 
 const _ZERO_SEGMENT_RECORD = SegmentRecord(
     segment_hash=UInt64(0),
-    airline=AirlineCode(""),
-    flt_no=FlightNumber(0),
-    op_suffix=' ',
-    itin_var=UInt8(0),
-    itin_var_overflow=' ',
-    svc_type=' ',
+    carrier=AirlineCode(""),
+    flight_number=FlightNumber(0),
+    operational_suffix=' ',
+    itinerary_var_id=UInt8(0),
+    itinerary_var_overflow=' ',
+    service_type=' ',
     operating_date=UInt32(0),
     num_legs=UInt8(0),
     first_leg_seq=UInt8(0),
     last_leg_seq=UInt8(0),
-    segment_org=StationCode(""),
-    segment_dst=StationCode(""),
+    segment_departure_station=StationCode(""),
+    segment_arrival_station=StationCode(""),
     flown_distance=Distance(0),
     market_distance=Distance(0),
     segment_circuity=Float32(0),
-    segment_pax_dep=Minutes(0),
-    segment_pax_arr=Minutes(0),
-    segment_ac_dep=Minutes(0),
-    segment_ac_arr=Minutes(0),
+    segment_passenger_departure_time=Minutes(0),
+    segment_passenger_arrival_time=Minutes(0),
+    segment_aircraft_departure_time=Minutes(0),
+    segment_aircraft_arrival_time=Minutes(0),
 )
 
 # ── GraphSegment ──────────────────────────────────────────────────────────────
@@ -151,8 +151,8 @@ const _ZERO_MCT_RESULT = MCTResult(
   they are always `GraphLeg` or `GraphStation` instances respectively
 - `mct` is the minimum connecting time (minutes) from the MCT cascade;
   `mxct` is the maximum connecting time (minutes) enforced by `SearchConfig`
-- `cnx_time` is the actual available connection time (`to_leg.record.ac_dep -
-  from_leg.record.ac_arr`) in minutes
+- `cnx_time` is the actual available connection time (`to_leg.record.aircraft_departure_time -
+  from_leg.record.aircraft_arrival_time`) in minutes
 - `valid_from` / `valid_to` / `valid_days` are the intersection of the two legs'
   validity windows and frequency bitmasks; `num_valid_dates` is the count of
   operating dates in the intersection (0 = not yet computed)
@@ -217,43 +217,43 @@ const _NO_NONSTOP_CP = GraphConnection()
 # ── GraphLeg ──────────────────────────────────────────────────────────────────
 
 const _ZERO_LEG_RECORD = LegRecord(
-    airline=AirlineCode(""),
-    flt_no=FlightNumber(0),
+    carrier=AirlineCode(""),
+    flight_number=FlightNumber(0),
     operational_suffix=' ',
-    itin_var=UInt8(0),
-    itin_var_overflow=' ',
-    leg_seq=UInt8(0),
-    svc_type=' ',
-    org=StationCode(""),
-    dst=StationCode(""),
-    pax_dep=Minutes(0),
-    pax_arr=Minutes(0),
-    ac_dep=Minutes(0),
-    ac_arr=Minutes(0),
-    dep_utc_offset=Int16(0),
-    arr_utc_offset=Int16(0),
-    dep_date_var=Int8(0),
-    arr_date_var=Int8(0),
-    eqp=InlineString7(""),
+    itinerary_var_id=UInt8(0),
+    itinerary_var_overflow=' ',
+    leg_sequence_number=UInt8(0),
+    service_type=' ',
+    departure_station=StationCode(""),
+    arrival_station=StationCode(""),
+    passenger_departure_time=Minutes(0),
+    passenger_arrival_time=Minutes(0),
+    aircraft_departure_time=Minutes(0),
+    aircraft_arrival_time=Minutes(0),
+    departure_utc_offset=Int16(0),
+    arrival_utc_offset=Int16(0),
+    departure_date_variation=Int8(0),
+    arrival_date_variation=Int8(0),
+    aircraft_type=InlineString7(""),
     body_type=' ',
-    dep_term=InlineString3(""),
-    arr_term=InlineString3(""),
+    departure_terminal=InlineString3(""),
+    arrival_terminal=InlineString3(""),
     aircraft_owner=AirlineCode(""),
     operating_date=UInt32(0),
     day_of_week=UInt8(0),
-    eff_date=UInt32(0),
-    disc_date=UInt32(0),
+    effective_date=UInt32(0),
+    discontinue_date=UInt32(0),
     frequency=UInt8(0),
-    mct_status_dep=' ',
-    mct_status_arr=' ',
-    trc=InlineString15(""),
-    trc_overflow=' ',
+    dep_intl_dom=' ',
+    arr_intl_dom=' ',
+    traffic_restriction_for_leg=InlineString15(""),
+    traffic_restriction_overflow=' ',
     record_serial=UInt32(0),
     row_number=UInt64(0),
     segment_hash=UInt64(0),
     distance=Distance(0),
-    codeshare_airline=AirlineCode(""),
-    codeshare_flt_no=FlightNumber(0),
+    administrating_carrier=AirlineCode(""),
+    administrating_carrier_flight_number=FlightNumber(0),
     dei_10="",
     wet_lease=false,
     dei_127="",
@@ -299,10 +299,10 @@ const _ZERO_STATION_RECORD = StationRecord(
     code=StationCode(""),
     country=InlineString3(""),
     state=InlineString3(""),
-    metro_area=InlineString3(""),
+    city=InlineString3(""),
     region=InlineString3(""),
-    lat=0.0,
-    lng=0.0,
+    latitude=0.0,
+    longitude=0.0,
     utc_offset=Int16(0),
 )
 
@@ -509,8 +509,8 @@ end
 # Examples
 ```julia
 julia> rec = StationRecord(code=StationCode("ORD"), country=InlineString3("US"),
-               state=InlineString3("IL"), metro_area=InlineString3("CHI"),
-               region=InlineString3("NAM"), lat=41.97, lng=-87.91,
+               state=InlineString3("IL"), city=InlineString3("CHI"),
+               region=InlineString3("NAM"), latitude=41.97, longitude=-87.91,
                utc_offset=Int16(-360));
 julia> stn = GraphStation(rec);
 julia> stn.code == StationCode("ORD")
@@ -547,7 +547,7 @@ end
 # Examples
 ```julia
 julia> leg = GraphLeg(leg_record, org_station, dst_station);
-julia> leg.record.airline == AirlineCode("UA")
+julia> leg.record.carrier == AirlineCode("UA")
 true
 ```
 """
@@ -590,8 +590,8 @@ function nonstop_connection(leg::GraphLeg, station::GraphStation)
         cnx_time=Minutes(0),
         mct=Minutes(0),
         mxct=Minutes(0),
-        valid_from=leg.record.eff_date,
-        valid_to=leg.record.disc_date,
+        valid_from=leg.record.effective_date,
+        valid_to=leg.record.discontinue_date,
         valid_days=leg.record.frequency,
         num_valid_dates=Int16(0),
     )
