@@ -21,15 +21,15 @@ function _build_schedule_filters(store::DuckDBStore)::Tuple{Set{String}, Set{Str
     stations = Set{String}()
     carriers = Set{String}()
 
-    result = DBInterface.execute(store.db, "SELECT DISTINCT org AS stn FROM legs UNION SELECT DISTINCT dst AS stn FROM legs")
+    result = DBInterface.execute(store.db, "SELECT DISTINCT departure_station AS stn FROM legs UNION SELECT DISTINCT arrival_station AS stn FROM legs")
     for row in result
         s = strip(String(row.stn))
         isempty(s) || push!(stations, s)
     end
 
-    result = DBInterface.execute(store.db, "SELECT DISTINCT airline FROM legs")
+    result = DBInterface.execute(store.db, "SELECT DISTINCT carrier FROM legs")
     for row in result
-        c = strip(String(row.airline))
+        c = strip(String(row.carrier))
         isempty(c) || push!(carriers, c)
     end
 
