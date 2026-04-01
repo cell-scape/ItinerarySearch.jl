@@ -202,22 +202,22 @@ end
 )::MCTResult
     lookup_mct(
         r.lookup,
-        from_rec.airline, to_rec.airline,
+        from_rec.carrier, to_rec.carrier,
         stn_code, stn_code, mct_status;
         arr_body = from_rec.body_type,
         dep_body = to_rec.body_type,
-        arr_term = from_rec.arr_term,
-        dep_term = to_rec.dep_term,
-        prv_stn = from_rec.org,
-        nxt_stn = to_rec.dst,
+        arr_term = from_rec.arrival_terminal,
+        dep_term = to_rec.departure_terminal,
+        prv_stn = from_rec.departure_station,
+        nxt_stn = to_rec.arrival_station,
         arr_op_carrier = arr_op_carrier,
         dep_op_carrier = dep_op_carrier,
         arr_is_codeshare = arr_is_codeshare,
         dep_is_codeshare = dep_is_codeshare,
-        arr_acft_type = from_rec.eqp,
-        dep_acft_type = to_rec.eqp,
-        arr_flt_no = from_rec.flt_no,
-        dep_flt_no = to_rec.flt_no,
+        arr_acft_type = from_rec.aircraft_type,
+        dep_acft_type = to_rec.aircraft_type,
+        arr_flt_no = from_rec.flight_number,
+        dep_flt_no = to_rec.flight_number,
         prv_country = prv_stn_rec.country,
         nxt_country = nxt_stn_rec.country,
         prv_state = prv_stn_rec.state,
@@ -241,14 +241,14 @@ end
     end
 
     cache_key = MCTCacheKey(
-        from_rec.airline, to_rec.airline,
+        from_rec.carrier, to_rec.carrier,
         stn_code, stn_code, mct_status,
         from_rec.body_type, to_rec.body_type,
-        from_rec.org, to_rec.dst,
-        from_rec.arr_term, to_rec.dep_term,
+        from_rec.departure_station, to_rec.arrival_station,
+        from_rec.arrival_terminal, to_rec.departure_terminal,
         arr_op_carrier, dep_op_carrier,
         arr_is_codeshare, dep_is_codeshare,
-        from_rec.eqp, to_rec.eqp,
+        from_rec.aircraft_type, to_rec.aircraft_type,
         prv_stn_rec.country, nxt_stn_rec.country,
         prv_stn_rec.state, nxt_stn_rec.state,
         prv_stn_rec.region, nxt_stn_rec.region,
@@ -280,30 +280,30 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
 
     # Connection time in UTC — accounts for timezone differences at inter-station connections
     # dep_utc = local_dep - dep_utc_offset; arr_utc = local_arr - arr_utc_offset
-    dep_utc = Int32(to_leg.record.pax_dep) - Int32(to_leg.record.dep_utc_offset)
-    arr_utc = Int32(from_leg.record.pax_arr) - Int32(from_leg.record.arr_utc_offset) +
-              Int32(from_leg.record.arr_date_var) * Int32(1440)
+    dep_utc = Int32(to_leg.record.passenger_departure_time) - Int32(to_leg.record.departure_utc_offset)
+    arr_utc = Int32(from_leg.record.passenger_arrival_time) - Int32(from_leg.record.arrival_utc_offset) +
+              Int32(from_leg.record.arrival_date_variation) * Int32(1440)
     cnx_time = dep_utc - arr_utc
     if cnx_time < 0
         cnx_time += Int32(1440)  # overnight wrap
     end
 
     # Determine MCT status from dep/arr domestic/international flags
-    mct_status = _chars_to_mct_status(from_leg.record.mct_status_arr,
-                                       to_leg.record.mct_status_dep)
+    mct_status = _chars_to_mct_status(from_leg.record.arr_intl_dom,
+                                       to_leg.record.dep_intl_dom)
 
     # ── Codeshare: resolve operating carrier and codeshare indicator ──────────
     # Direct InlineString comparison — no String allocation
     from_rec = from_leg.record
     to_rec = to_leg.record
 
-    arr_is_codeshare = from_rec.codeshare_airline != NO_AIRLINE &&
-                       from_rec.codeshare_airline != from_rec.airline
-    arr_op_carrier = arr_is_codeshare ? from_rec.codeshare_airline : from_rec.airline
+    arr_is_codeshare = from_rec.administrating_carrier != NO_AIRLINE &&
+                       from_rec.administrating_carrier != from_rec.carrier
+    arr_op_carrier = arr_is_codeshare ? from_rec.administrating_carrier : from_rec.carrier
 
-    dep_is_codeshare = to_rec.codeshare_airline != NO_AIRLINE &&
-                       to_rec.codeshare_airline != to_rec.airline
-    dep_op_carrier = dep_is_codeshare ? to_rec.codeshare_airline : to_rec.airline
+    dep_is_codeshare = to_rec.administrating_carrier != NO_AIRLINE &&
+                       to_rec.administrating_carrier != to_rec.carrier
+    dep_op_carrier = dep_is_codeshare ? to_rec.administrating_carrier : to_rec.carrier
 
     # ── Geographic context from origin/destination station records ────────────
     prv_stn_rec = (from_leg.org::GraphStation).record
@@ -359,8 +359,8 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
         end
         row = MCTSelectionRow(
             (cp.station::GraphStation).code,
-            from_rec.airline,
-            to_rec.airline,
+            from_rec.carrier,
+            to_rec.carrier,
             mct_status,
             cascade_level,
             result.specificity,
@@ -461,16 +461,16 @@ end
 function check_cnx_suppcodes(cp::GraphConnection, ctx)::Int
     from_leg = cp.from_leg::GraphLeg
     to_leg_r = cp.to_leg::GraphLeg
-    from_trc = from_leg.record.trc
-    to_trc = to_leg_r.record.trc
+    from_trc = from_leg.record.traffic_restriction_for_leg
+    to_trc = to_leg_r.record.traffic_restriction_for_leg
 
-    from_seq = Int(from_leg.record.leg_seq)
+    from_seq = Int(from_leg.record.leg_sequence_number)
     if from_seq > 0 && from_seq <= length(from_trc)
         ch = from_trc[from_seq]
         ch == 'A' && return FAIL_SUPPCODE
     end
 
-    to_seq = Int(to_leg_r.record.leg_seq)
+    to_seq = Int(to_leg_r.record.leg_sequence_number)
     if to_seq > 0 && to_seq <= length(to_trc)
         ch = to_trc[to_seq]
         ch == 'A' && return FAIL_SUPPCODE
@@ -535,11 +535,11 @@ function (r::MAFTRule)(cp::GraphConnection, ctx)::Int
     from_rec = from_l.record
     to_rec = to_l.record
     from_block = max(Int32(0),
-        (Int32(from_rec.pax_arr) - Int32(from_rec.arr_utc_offset) + Int32(from_rec.arr_date_var) * Int32(1440)) -
-        (Int32(from_rec.pax_dep) - Int32(from_rec.dep_utc_offset)))
+        (Int32(from_rec.passenger_arrival_time) - Int32(from_rec.arrival_utc_offset) + Int32(from_rec.arrival_date_variation) * Int32(1440)) -
+        (Int32(from_rec.passenger_departure_time) - Int32(from_rec.departure_utc_offset)))
     to_block = max(Int32(0),
-        (Int32(to_rec.pax_arr) - Int32(to_rec.arr_utc_offset) + Int32(to_rec.arr_date_var) * Int32(1440)) -
-        (Int32(to_rec.pax_dep) - Int32(to_rec.dep_utc_offset)))
+        (Int32(to_rec.passenger_arrival_time) - Int32(to_rec.arrival_utc_offset) + Int32(to_rec.arrival_date_variation) * Int32(1440)) -
+        (Int32(to_rec.passenger_departure_time) - Int32(to_rec.departure_utc_offset)))
     actual_block = Float64(from_block + to_block)
 
     # MAFT from combined distance (pass when distance is unknown)
@@ -614,8 +614,8 @@ function (r::CircuityRule)(cp::GraphConnection, ctx)::Int
     if gc_dist < 0.0
         gc_dist = _geodesic_distance(
             ctx.config,
-            from_org.record.lat, from_org.record.lng,
-            to_dst.record.lat, to_dst.record.lng,
+            from_org.record.latitude, from_org.record.longitude,
+            to_dst.record.latitude, to_dst.record.longitude,
         )
         ctx.gc_cache[gc_key] = gc_dist
     end
@@ -759,14 +759,14 @@ end
 function check_cnx_trfrest(cp::GraphConnection, ctx)::Int
     from_l = cp.from_leg::GraphLeg
     to_l = cp.to_leg::GraphLeg
-    from_trc = from_l.record.trc
-    from_seq = Int(from_l.record.leg_seq)
+    from_trc = from_l.record.traffic_restriction_for_leg
+    from_seq = Int(from_l.record.leg_sequence_number)
     if from_seq > 0 && from_seq <= length(from_trc)
         _is_trc_blocked(from_trc[from_seq]) && return FAIL_TRFREST
     end
 
-    to_trc = to_l.record.trc
-    to_seq = Int(to_l.record.leg_seq)
+    to_trc = to_l.record.traffic_restriction_for_leg
+    to_seq = Int(to_l.record.leg_sequence_number)
     if to_seq > 0 && to_seq <= length(to_trc)
         _is_trc_blocked(to_trc[to_seq]) && return FAIL_TRFREST
     end

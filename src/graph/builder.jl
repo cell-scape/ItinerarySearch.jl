@@ -53,8 +53,8 @@ function aggregate_geo_stats(stations::Dict{StationCode,GraphStation})::GeoStats
 
     for (_, stn) in stations
         rec = stn.record
-        if rec.metro_area != empty_code
-            acc = get!(by_metro, rec.metro_area) do
+        if rec.city != empty_code
+            acc = get!(by_metro, rec.city) do
                 StationStats()
             end
             merge_station_stats!(acc, stn.stats)
@@ -157,9 +157,9 @@ from the first leg.
 function _resolve_codeshare!(seg::GraphSegment)::Nothing
     for leg_node in seg.legs
         leg = leg_node::GraphLeg  # legs is Vector{AbstractGraphNode}
-        if leg.record.codeshare_airline != NO_AIRLINE
-            seg.operating_airline = leg.record.codeshare_airline
-            seg.operating_flt_no = leg.record.codeshare_flt_no
+        if leg.record.administrating_carrier != NO_AIRLINE
+            seg.operating_airline = leg.record.administrating_carrier
+            seg.operating_flt_no = leg.record.administrating_carrier_flight_number
             seg.is_codeshare = true
             return nothing
         end
@@ -167,8 +167,8 @@ function _resolve_codeshare!(seg::GraphSegment)::Nothing
     # No codeshare — operating carrier is the marketing carrier
     if !isempty(seg.legs)
         first_leg = seg.legs[1]::GraphLeg  # legs is Vector{AbstractGraphNode}
-        seg.operating_airline = first_leg.record.airline
-        seg.operating_flt_no = first_leg.record.flt_no
+        seg.operating_airline = first_leg.record.carrier
+        seg.operating_flt_no = first_leg.record.flight_number
     end
     return nothing
 end
@@ -245,7 +245,7 @@ function build_graph!(
     # 3. Create stations — one per unique code
     stations = Dict{StationCode,GraphStation}()
     for rec in leg_records
-        for code in (rec.org, rec.dst)
+        for code in (rec.departure_station, rec.arrival_station)
             if !haskey(stations, code)
                 stn_rec = query_station(store, code)
                 if stn_rec !== nothing
@@ -262,8 +262,8 @@ function build_graph!(
     legs = GraphLeg[]
     sizehint!(legs, length(leg_records))
     for rec in leg_records
-        org_stn = stations[rec.org]
-        dst_stn = stations[rec.dst]
+        org_stn = stations[rec.departure_station]
+        dst_stn = stations[rec.arrival_station]
         leg = GraphLeg(rec, org_stn, dst_stn)
         push!(legs, leg)
         push!(org_stn.departures, leg)
@@ -275,23 +275,23 @@ function build_graph!(
     n_filled = 0
     for leg in legs
         if leg.distance == Distance(0)
-            org_stn = get(stations, leg.record.org, nothing)
-            dst_stn = get(stations, leg.record.dst, nothing)
+            org_stn = get(stations, leg.record.departure_station, nothing)
+            dst_stn = get(stations, leg.record.arrival_station, nothing)
             if org_stn !== nothing &&
                dst_stn !== nothing &&
-               (org_stn.record.lat != 0.0 || org_stn.record.lng != 0.0) &&
-               (dst_stn.record.lat != 0.0 || dst_stn.record.lng != 0.0)
+               (org_stn.record.latitude != 0.0 || org_stn.record.longitude != 0.0) &&
+               (dst_stn.record.latitude != 0.0 || dst_stn.record.longitude != 0.0)
                 leg.distance = Distance(
                     _geodesic_distance(
                         config,
-                        org_stn.record.lat,
-                        org_stn.record.lng,
-                        dst_stn.record.lat,
-                        dst_stn.record.lng,
+                        org_stn.record.latitude,
+                        org_stn.record.longitude,
+                        dst_stn.record.latitude,
+                        dst_stn.record.longitude,
                     ),
                 )
                 n_filled += 1
-                @debug "Gap-filled distance" org=String(leg.record.org) dst=String(leg.record.dst) distance=leg.distance
+                @debug "Gap-filled distance" org=String(leg.record.departure_station) dst=String(leg.record.arrival_station) distance=leg.distance
             end
         end
     end
@@ -308,10 +308,10 @@ function build_graph!(
         else
             # Synthesise a key from the flight identity: airline + flt_no + itin_var + svc_type
             hash(
-                leg.record.airline,
+                leg.record.carrier,
                 hash(
-                    leg.record.flt_no,
-                    hash(leg.record.itin_var, hash(leg.record.svc_type)),
+                    leg.record.flight_number,
+                    hash(leg.record.itinerary_var_id, hash(leg.record.service_type)),
                 ),
             )
         end
@@ -319,25 +319,25 @@ function build_graph!(
         if !haskey(segments, seg_key)
             seg_rec = SegmentRecord(
                 segment_hash = seg_key,
-                airline = leg.record.airline,
-                flt_no = leg.record.flt_no,
-                op_suffix = leg.record.operational_suffix,
-                itin_var = leg.record.itin_var,
-                itin_var_overflow = leg.record.itin_var_overflow,
-                svc_type = leg.record.svc_type,
-                operating_date = leg.record.eff_date,
+                carrier = leg.record.carrier,
+                flight_number = leg.record.flight_number,
+                operational_suffix = leg.record.operational_suffix,
+                itinerary_var_id = leg.record.itinerary_var_id,
+                itinerary_var_overflow = leg.record.itinerary_var_overflow,
+                service_type = leg.record.service_type,
+                operating_date = leg.record.effective_date,
                 num_legs = UInt8(0),
-                first_leg_seq = leg.record.leg_seq,
-                last_leg_seq = leg.record.leg_seq,
-                segment_org = leg.record.org,
-                segment_dst = leg.record.dst,
+                first_leg_seq = leg.record.leg_sequence_number,
+                last_leg_seq = leg.record.leg_sequence_number,
+                segment_departure_station = leg.record.departure_station,
+                segment_arrival_station = leg.record.arrival_station,
                 flown_distance = leg.record.distance,
                 market_distance = Distance(0),
                 segment_circuity = Float32(0),
-                segment_pax_dep = leg.record.pax_dep,
-                segment_pax_arr = leg.record.pax_arr,
-                segment_ac_dep = leg.record.ac_dep,
-                segment_ac_arr = leg.record.ac_arr,
+                segment_passenger_departure_time = leg.record.passenger_departure_time,
+                segment_passenger_arrival_time = leg.record.passenger_arrival_time,
+                segment_aircraft_departure_time = leg.record.aircraft_departure_time,
+                segment_aircraft_arrival_time = leg.record.aircraft_arrival_time,
             )
             seg = GraphSegment(record = seg_rec)
             segments[seg_key] = seg
@@ -352,12 +352,13 @@ function build_graph!(
     for (_, seg) in segments
         r = seg.record
         seg.record = SegmentRecord(
-            r.segment_hash, r.airline, r.flt_no, r.op_suffix,
-            r.itin_var, r.itin_var_overflow, r.svc_type, r.operating_date,
+            r.segment_hash, r.carrier, r.flight_number, r.operational_suffix,
+            r.itinerary_var_id, r.itinerary_var_overflow, r.service_type, r.operating_date,
             UInt8(length(seg.legs)),  # num_legs — the only changed field
-            r.first_leg_seq, r.last_leg_seq, r.segment_org, r.segment_dst,
+            r.first_leg_seq, r.last_leg_seq, r.segment_departure_station, r.segment_arrival_station,
             r.flown_distance, r.market_distance, r.segment_circuity,
-            r.segment_pax_dep, r.segment_pax_arr, r.segment_ac_dep, r.segment_ac_arr,
+            r.segment_passenger_departure_time, r.segment_passenger_arrival_time,
+            r.segment_aircraft_departure_time, r.segment_aircraft_arrival_time,
         )
         _resolve_codeshare!(seg)
         @debug "Segment resolved" hash=seg.record.segment_hash legs=length(seg.legs) codeshare=seg.is_codeshare
