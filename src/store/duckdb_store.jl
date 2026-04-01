@@ -81,40 +81,40 @@ function _create_tables!(store::DuckDBStore)
 
     _exec(store, """
         CREATE TABLE IF NOT EXISTS legs (
-            row_id              UBIGINT PRIMARY KEY,
-            record_serial       UINTEGER,
-            airline             VARCHAR(3),
-            flt_no              SMALLINT,
-            op_suffix           CHAR(1),
-            itin_var            UTINYINT,
-            itin_var_overflow   CHAR(1),
-            leg_seq             UTINYINT,
-            svc_type            CHAR(1),
-            org                 CHAR(3),
-            dst                 CHAR(3),
-            pax_dep_mins        SMALLINT,
-            pax_arr_mins        SMALLINT,
-            ac_dep_mins         SMALLINT,
-            ac_arr_mins         SMALLINT,
-            dep_utc_offset      SMALLINT,
-            arr_utc_offset      SMALLINT,
-            dep_date_var        TINYINT,
-            arr_date_var        TINYINT,
-            dep_term            VARCHAR(2),
-            arr_term            VARCHAR(2),
-            eqp                 CHAR(3),
-            body_type           CHAR(1),
-            aircraft_owner      VARCHAR(3),
-            eff_date            DATE,
-            disc_date           DATE,
-            frequency           UTINYINT,
-            mct_dep             CHAR(1),
-            mct_arr             CHAR(1),
-            trc                 VARCHAR(11),
-            trc_overflow        CHAR(1),
-            prbd                VARCHAR(20),
-            distance            FLOAT,
-            wet_lease           BOOLEAN DEFAULT FALSE
+            row_id                       UBIGINT PRIMARY KEY,
+            record_serial                UINTEGER,
+            carrier                      VARCHAR(3),
+            flight_number                SMALLINT,
+            op_suffix                    CHAR(1),
+            itinerary_var_id             UTINYINT,
+            itinerary_var_overflow       CHAR(1),
+            leg_sequence_number          UTINYINT,
+            service_type                 CHAR(1),
+            departure_station            CHAR(3),
+            arrival_station              CHAR(3),
+            passenger_departure_time     SMALLINT,
+            passenger_arrival_time       SMALLINT,
+            aircraft_departure_time      SMALLINT,
+            aircraft_arrival_time        SMALLINT,
+            departure_utc_offset         SMALLINT,
+            arrival_utc_offset           SMALLINT,
+            departure_date_variation     TINYINT,
+            arrival_date_variation       TINYINT,
+            departure_terminal           VARCHAR(2),
+            arrival_terminal             VARCHAR(2),
+            aircraft_type                CHAR(3),
+            body_type                    CHAR(1),
+            aircraft_owner               VARCHAR(3),
+            effective_date               DATE,
+            discontinue_date             DATE,
+            frequency                    UTINYINT,
+            dep_intl_dom                 CHAR(1),
+            arr_intl_dom                 CHAR(1),
+            traffic_restriction_for_leg  VARCHAR(11),
+            traffic_restriction_overflow CHAR(1),
+            prbd                         VARCHAR(20),
+            distance                     FLOAT,
+            wet_lease                    BOOLEAN DEFAULT FALSE
         )
     """)
 
@@ -136,10 +136,10 @@ function _create_tables!(store::DuckDBStore)
             code        CHAR(3) PRIMARY KEY,
             country     CHAR(2),
             state       VARCHAR(2),
-            metro_area  CHAR(3),
+            city        CHAR(3),
             region      CHAR(3),
-            lat         DOUBLE,
-            lng         DOUBLE,
+            latitude    DOUBLE,
+            longitude   DOUBLE,
             utc_offset  SMALLINT
         )
     """)
@@ -203,69 +203,69 @@ function _create_tables!(store::DuckDBStore)
 
     _exec(store, """
         CREATE TABLE IF NOT EXISTS expanded_legs (
-            row_id              UBIGINT,
-            operating_date      DATE,
-            airline             VARCHAR(3),
-            flt_no              SMALLINT,
-            op_suffix           CHAR(1),
-            itin_var            UTINYINT,
-            itin_var_overflow   CHAR(1),
-            leg_seq             UTINYINT,
-            svc_type            CHAR(1),
-            org                 CHAR(3),
-            dst                 CHAR(3),
-            pax_dep_mins        SMALLINT,
-            pax_arr_mins        SMALLINT,
-            dep_utc_offset      SMALLINT,
-            arr_utc_offset      SMALLINT,
-            dep_date_var        TINYINT,
-            arr_date_var        TINYINT,
-            dep_term            VARCHAR(2),
-            arr_term            VARCHAR(2),
-            eqp                 CHAR(3),
-            body_type           CHAR(1),
-            aircraft_owner      VARCHAR(3),
-            mct_dep             CHAR(1),
-            mct_arr             CHAR(1),
-            trc                 VARCHAR(11),
-            prbd                VARCHAR(20),
-            distance            FLOAT,
-            wet_lease           BOOLEAN DEFAULT FALSE,
-            segment_hash        UBIGINT
+            row_id                       UBIGINT,
+            operating_date               DATE,
+            carrier                      VARCHAR(3),
+            flight_number                SMALLINT,
+            op_suffix                    CHAR(1),
+            itinerary_var_id             UTINYINT,
+            itinerary_var_overflow       CHAR(1),
+            leg_sequence_number          UTINYINT,
+            service_type                 CHAR(1),
+            departure_station            CHAR(3),
+            arrival_station              CHAR(3),
+            passenger_departure_time     SMALLINT,
+            passenger_arrival_time       SMALLINT,
+            departure_utc_offset         SMALLINT,
+            arrival_utc_offset           SMALLINT,
+            departure_date_variation     TINYINT,
+            arrival_date_variation       TINYINT,
+            departure_terminal           VARCHAR(2),
+            arrival_terminal             VARCHAR(2),
+            aircraft_type                CHAR(3),
+            body_type                    CHAR(1),
+            aircraft_owner               VARCHAR(3),
+            dep_intl_dom                 CHAR(1),
+            arr_intl_dom                 CHAR(1),
+            traffic_restriction_for_leg  VARCHAR(11),
+            prbd                         VARCHAR(20),
+            distance                     FLOAT,
+            wet_lease                    BOOLEAN DEFAULT FALSE,
+            segment_hash                 UBIGINT
         )
     """)
 
     _exec(store, """
         CREATE TABLE IF NOT EXISTS segments (
-            segment_hash        UBIGINT PRIMARY KEY,
-            airline             VARCHAR(3),
-            flt_no              SMALLINT,
-            op_suffix           CHAR(1),
-            itin_var            UTINYINT,
-            itin_var_overflow   CHAR(1),
-            svc_type            CHAR(1),
-            operating_date      DATE,
-            num_legs            UTINYINT,
-            first_leg_seq       UTINYINT,
-            last_leg_seq        UTINYINT,
-            segment_org         CHAR(3),
-            segment_dst         CHAR(3),
-            flown_distance      FLOAT,
-            market_distance     FLOAT,
-            segment_circuity    FLOAT,
-            segment_pax_dep     SMALLINT,
-            segment_pax_arr     SMALLINT,
-            segment_ac_dep      SMALLINT,
-            segment_ac_arr      SMALLINT
+            segment_hash                    UBIGINT PRIMARY KEY,
+            carrier                         VARCHAR(3),
+            flight_number                   SMALLINT,
+            operational_suffix              CHAR(1),
+            itinerary_var_id                UTINYINT,
+            itinerary_var_overflow          CHAR(1),
+            service_type                    CHAR(1),
+            operating_date                  DATE,
+            num_legs                        UTINYINT,
+            first_leg_seq                   UTINYINT,
+            last_leg_seq                    UTINYINT,
+            segment_departure_station       CHAR(3),
+            segment_arrival_station         CHAR(3),
+            flown_distance                  FLOAT,
+            market_distance                 FLOAT,
+            segment_circuity                FLOAT,
+            segment_passenger_departure_time SMALLINT,
+            segment_passenger_arrival_time   SMALLINT,
+            segment_aircraft_departure_time  SMALLINT,
+            segment_aircraft_arrival_time    SMALLINT
         )
     """)
 
     _exec(store, """
         CREATE TABLE IF NOT EXISTS markets (
-            org                 CHAR(3),
-            dst                 CHAR(3),
+            stn_a               CHAR(3),
+            stn_b               CHAR(3),
             distance            FLOAT,
-            PRIMARY KEY (org, dst)
+            PRIMARY KEY (stn_a, stn_b)
         )
     """)
 
@@ -407,7 +407,7 @@ function _expand_schedule!(store::DuckDBStore)
     SELECT l.*, d.operating_date,
            EXTRACT(ISODOW FROM d.operating_date)::INT AS day_of_week
     FROM legs l
-    CROSS JOIN LATERAL generate_series(l.eff_date, l.disc_date, INTERVAL 1 DAY) AS d(operating_date)
+    CROSS JOIN LATERAL generate_series(l.effective_date, l.discontinue_date, INTERVAL 1 DAY) AS d(operating_date)
     WHERE l.frequency & (1 << ((EXTRACT(ISODOW FROM d.operating_date) - 1)::INT)) != 0
     """)
 end
@@ -417,8 +417,8 @@ function _create_codeshare_view!(store::DuckDBStore)
     _exec(store, """
     CREATE VIEW legs_with_operating AS
     SELECT l.*,
-        TRIM(SUBSTRING(dei50.data, 1, 3)) AS codeshare_airline,
-        CAST(NULLIF(TRIM(SUBSTRING(dei50.data, 4, 4)), '') AS SMALLINT) AS codeshare_flt_no,
+        TRIM(SUBSTRING(dei50.data, 1, 3)) AS administrating_carrier,
+        CAST(NULLIF(TRIM(SUBSTRING(dei50.data, 4, 4)), '') AS SMALLINT) AS administrating_carrier_flight_number,
         dei10.data AS dei_10,
         dei127.data AS dei_127
     FROM expanded_legs l
@@ -433,26 +433,27 @@ function _build_segments!(store::DuckDBStore)
     _exec(store, """
     CREATE TABLE segments AS
     SELECT
-        hash(airline || CAST(flt_no AS VARCHAR) || op_suffix
-             || CAST(itin_var AS VARCHAR) || itin_var_overflow
-             || svc_type || CAST(operating_date AS VARCHAR)) AS segment_hash,
-        airline, flt_no, op_suffix, itin_var, itin_var_overflow, svc_type,
+        hash(carrier || CAST(flight_number AS VARCHAR) || op_suffix
+             || CAST(itinerary_var_id AS VARCHAR) || itinerary_var_overflow
+             || service_type || CAST(operating_date AS VARCHAR)) AS segment_hash,
+        carrier, flight_number, op_suffix AS operational_suffix,
+        itinerary_var_id, itinerary_var_overflow, service_type,
         operating_date,
-        FIRST(leg_seq ORDER BY leg_seq) AS first_leg_seq,
-        LAST(leg_seq ORDER BY leg_seq) AS last_leg_seq,
+        FIRST(leg_sequence_number ORDER BY leg_sequence_number) AS first_leg_seq,
+        LAST(leg_sequence_number ORDER BY leg_sequence_number) AS last_leg_seq,
         CAST(COUNT(*) AS INTEGER) AS num_legs,
-        FIRST(org ORDER BY leg_seq) AS segment_org,
-        LAST(dst ORDER BY leg_seq) AS segment_dst,
+        FIRST(departure_station ORDER BY leg_sequence_number) AS segment_departure_station,
+        LAST(arrival_station ORDER BY leg_sequence_number) AS segment_arrival_station,
         COALESCE(SUM(distance), 0) AS flown_distance,
-        FIRST(pax_dep_mins ORDER BY leg_seq) AS segment_pax_dep,
-        LAST(pax_arr_mins ORDER BY leg_seq) AS segment_pax_arr,
-        FIRST(ac_dep_mins ORDER BY leg_seq) AS segment_ac_dep,
-        LAST(ac_arr_mins ORDER BY leg_seq) AS segment_ac_arr,
-        STRING_AGG(trc, '|' ORDER BY leg_seq) AS trc_by_leg,
-        LIST(org ORDER BY leg_seq) AS board_points,
-        LIST(dst ORDER BY leg_seq) AS off_points
+        FIRST(passenger_departure_time ORDER BY leg_sequence_number) AS segment_passenger_departure_time,
+        LAST(passenger_arrival_time ORDER BY leg_sequence_number) AS segment_passenger_arrival_time,
+        FIRST(aircraft_departure_time ORDER BY leg_sequence_number) AS segment_aircraft_departure_time,
+        LAST(aircraft_arrival_time ORDER BY leg_sequence_number) AS segment_aircraft_arrival_time,
+        STRING_AGG(traffic_restriction_for_leg, '|' ORDER BY leg_sequence_number) AS trc_by_leg,
+        LIST(departure_station ORDER BY leg_sequence_number) AS board_points,
+        LIST(arrival_station ORDER BY leg_sequence_number) AS off_points
     FROM expanded_legs
-    GROUP BY airline, flt_no, op_suffix, itin_var, itin_var_overflow, svc_type, operating_date
+    GROUP BY carrier, flight_number, op_suffix, itinerary_var_id, itinerary_var_overflow, service_type, operating_date
     """)
 end
 
@@ -470,38 +471,38 @@ function _build_markets!(store::DuckDBStore)
     CREATE TABLE markets AS
     WITH active_markets AS (
         SELECT DISTINCT
-            LEAST(segment_org, segment_dst) AS stn_a,
-            GREATEST(segment_org, segment_dst) AS stn_b
+            LEAST(segment_departure_station, segment_arrival_station) AS stn_a,
+            GREATEST(segment_departure_station, segment_arrival_station) AS stn_b
         FROM segments
 
         UNION
 
         SELECT DISTINCT
-            LEAST(a.org, b.dst) AS stn_a,
-            GREATEST(a.org, b.dst) AS stn_b
+            LEAST(a.departure_station, b.arrival_station) AS stn_a,
+            GREATEST(a.departure_station, b.arrival_station) AS stn_b
         FROM expanded_legs a
         JOIN expanded_legs b
-            ON  a.airline = b.airline
-            AND a.flt_no = b.flt_no
+            ON  a.carrier = b.carrier
+            AND a.flight_number = b.flight_number
             AND a.op_suffix = b.op_suffix
-            AND a.itin_var = b.itin_var
-            AND a.itin_var_overflow = b.itin_var_overflow
-            AND a.svc_type = b.svc_type
+            AND a.itinerary_var_id = b.itinerary_var_id
+            AND a.itinerary_var_overflow = b.itinerary_var_overflow
+            AND a.service_type = b.service_type
             AND a.operating_date = b.operating_date
-            AND a.leg_seq < b.leg_seq
-        WHERE a.org != b.dst
+            AND a.leg_sequence_number < b.leg_sequence_number
+        WHERE a.departure_station != b.arrival_station
     )
     SELECT
         m.stn_a,
         m.stn_b,
         m.stn_a || m.stn_b AS ndod,
         ST_Distance_Sphere(
-            ST_Point(sa.lng, sa.lat),
-            ST_Point(sb.lng, sb.lat)
+            ST_Point(sa.longitude, sa.latitude),
+            ST_Point(sb.longitude, sb.latitude)
         ) / 1609.344 AS distance_miles,
         ST_Distance_Sphere(
-            ST_Point(sa.lng, sa.lat),
-            ST_Point(sb.lng, sb.lat)
+            ST_Point(sa.longitude, sa.latitude),
+            ST_Point(sb.longitude, sb.latitude)
         ) / 1852.0 AS distance_nm
     FROM active_markets m
     JOIN stations sa ON sa.code = m.stn_a
@@ -518,8 +519,8 @@ function _compute_circuity!(store::DuckDBStore)
     SET market_distance = m.distance_miles,
         segment_circuity = s.flown_distance / NULLIF(m.distance_miles, 0)
     FROM markets m
-    WHERE m.stn_a = LEAST(s.segment_org, s.segment_dst)
-      AND m.stn_b = GREATEST(s.segment_org, s.segment_dst)
+    WHERE m.stn_a = LEAST(s.segment_departure_station, s.segment_arrival_station)
+      AND m.stn_b = GREATEST(s.segment_departure_station, s.segment_arrival_station)
     """)
 end
 
@@ -529,8 +530,8 @@ function _inject_leg_distances!(store::DuckDBStore)
     UPDATE legs l
     SET distance = m.distance_miles
     FROM markets m
-    WHERE m.stn_a = LEAST(l.org, l.dst)
-      AND m.stn_b = GREATEST(l.org, l.dst)
+    WHERE m.stn_a = LEAST(l.departure_station, l.arrival_station)
+      AND m.stn_b = GREATEST(l.departure_station, l.arrival_station)
       AND l.distance = 0
     """)
 
@@ -539,8 +540,8 @@ function _inject_leg_distances!(store::DuckDBStore)
     UPDATE expanded_legs el
     SET distance = m.distance_miles
     FROM markets m
-    WHERE m.stn_a = LEAST(el.org, el.dst)
-      AND m.stn_b = GREATEST(el.org, el.dst)
+    WHERE m.stn_a = LEAST(el.departure_station, el.arrival_station)
+      AND m.stn_b = GREATEST(el.departure_station, el.arrival_station)
       AND el.distance = 0
     """)
 
@@ -550,11 +551,11 @@ function _inject_leg_distances!(store::DuckDBStore)
 end
 
 function _create_indexes!(store::DuckDBStore)
-    _exec(store, "CREATE INDEX IF NOT EXISTS idx_expanded_org_date ON expanded_legs (org, operating_date)")
-    _exec(store, "CREATE INDEX IF NOT EXISTS idx_expanded_dst_date ON expanded_legs (dst, operating_date)")
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_expanded_org_date ON expanded_legs (departure_station, operating_date)")
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_expanded_dst_date ON expanded_legs (arrival_station, operating_date)")
     _exec(store, "CREATE INDEX IF NOT EXISTS idx_segments_hash ON segments (segment_hash)")
-    _exec(store, "CREATE INDEX IF NOT EXISTS idx_segments_org_date ON segments (segment_org, operating_date)")
-    _exec(store, "CREATE INDEX IF NOT EXISTS idx_segments_dst_date ON segments (segment_dst, operating_date)")
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_segments_org_date ON segments (segment_departure_station, operating_date)")
+    _exec(store, "CREATE INDEX IF NOT EXISTS idx_segments_dst_date ON segments (segment_arrival_station, operating_date)")
     _exec(store, "CREATE INDEX IF NOT EXISTS idx_markets_ndod ON markets (ndod)")
     _exec(store, "CREATE INDEX IF NOT EXISTS idx_markets_stn_a ON markets (stn_a)")
     _exec(store, "CREATE INDEX IF NOT EXISTS idx_markets_stn_b ON markets (stn_b)")
@@ -617,10 +618,10 @@ function query_station(store::DuckDBStore, code::StationCode)::Union{StationReco
         code       = StationCode(_safe_string(r.code)),
         country    = InlineString3(_safe_string(r.country)),
         state      = InlineString3(_safe_string(r.state)),
-        metro_area = InlineString3(_safe_string(r.metro_area)),
+        city       = InlineString3(_safe_string(r.city)),
         region     = InlineString3(_safe_string(r.region)),
-        lat        = Float64(_safe_missing(r.lat, 0.0)),
-        lng        = Float64(_safe_missing(r.lng, 0.0)),
+        latitude   = Float64(_safe_missing(r.latitude, 0.0)),
+        longitude  = Float64(_safe_missing(r.longitude, 0.0)),
         utc_offset = Int16(_safe_missing(r.utc_offset, 0)),
     )
 end
@@ -642,50 +643,50 @@ function _row_to_leg(r)::LegRecord
     op_date_val = _safe_missing(r.operating_date, Date(1900, 1, 1))
     op_date = op_date_val isa DateTime ? Date(op_date_val) : Date(op_date_val)
 
-    eff_val = _safe_missing(r.eff_date, Date(1900, 1, 1))
-    disc_val = _safe_missing(r.disc_date, Date(2099, 12, 31))
+    eff_val = _safe_missing(r.effective_date, Date(1900, 1, 1))
+    disc_val = _safe_missing(r.discontinue_date, Date(2099, 12, 31))
     eff_d = eff_val isa DateTime ? Date(eff_val) : Date(eff_val)
     disc_d = disc_val isa DateTime ? Date(disc_val) : Date(disc_val)
 
     LegRecord(
-        airline              = AirlineCode(_safe_string(r.airline)),
-        flt_no               = Int16(_safe_missing(r.flt_no, 0)),
+        carrier              = AirlineCode(_safe_string(r.carrier)),
+        flight_number        = Int16(_safe_missing(r.flight_number, 0)),
         operational_suffix   = _first_char(r.op_suffix, ' '),
-        itin_var             = UInt8(_safe_missing(r.itin_var, 0)),
-        itin_var_overflow    = _first_char(r.itin_var_overflow, ' '),
-        leg_seq              = UInt8(_safe_missing(r.leg_seq, 0)),
-        svc_type             = _first_char(r.svc_type, ' '),
-        org                  = StationCode(_safe_string(r.org)),
-        dst                  = StationCode(_safe_string(r.dst)),
-        pax_dep              = Int16(_safe_missing(r.pax_dep_mins, 0)),
-        pax_arr              = Int16(_safe_missing(r.pax_arr_mins, 0)),
-        ac_dep               = Int16(_safe_missing(r.ac_dep_mins, 0)),
-        ac_arr               = Int16(_safe_missing(r.ac_arr_mins, 0)),
-        dep_utc_offset       = Int16(_safe_missing(r.dep_utc_offset, 0)),
-        arr_utc_offset       = Int16(_safe_missing(r.arr_utc_offset, 0)),
-        dep_date_var         = Int8(_safe_missing(r.dep_date_var, 0)),
-        arr_date_var         = Int8(_safe_missing(r.arr_date_var, 0)),
-        eqp                  = InlineString7(_safe_string(r.eqp)),
+        itinerary_var_id     = UInt8(_safe_missing(r.itinerary_var_id, 0)),
+        itinerary_var_overflow = _first_char(r.itinerary_var_overflow, ' '),
+        leg_sequence_number  = UInt8(_safe_missing(r.leg_sequence_number, 0)),
+        service_type         = _first_char(r.service_type, ' '),
+        departure_station    = StationCode(_safe_string(r.departure_station)),
+        arrival_station      = StationCode(_safe_string(r.arrival_station)),
+        passenger_departure_time = Int16(_safe_missing(r.passenger_departure_time, 0)),
+        passenger_arrival_time   = Int16(_safe_missing(r.passenger_arrival_time, 0)),
+        aircraft_departure_time  = Int16(_safe_missing(r.aircraft_departure_time, 0)),
+        aircraft_arrival_time    = Int16(_safe_missing(r.aircraft_arrival_time, 0)),
+        departure_utc_offset = Int16(_safe_missing(r.departure_utc_offset, 0)),
+        arrival_utc_offset   = Int16(_safe_missing(r.arrival_utc_offset, 0)),
+        departure_date_variation = Int8(_safe_missing(r.departure_date_variation, 0)),
+        arrival_date_variation   = Int8(_safe_missing(r.arrival_date_variation, 0)),
+        aircraft_type        = InlineString7(_safe_string(r.aircraft_type)),
         body_type            = _first_char(r.body_type, ' '),
-        dep_term             = InlineString3(_safe_string(r.dep_term)),
-        arr_term             = InlineString3(_safe_string(r.arr_term)),
+        departure_terminal   = InlineString3(_safe_string(r.departure_terminal)),
+        arrival_terminal     = InlineString3(_safe_string(r.arrival_terminal)),
         aircraft_owner       = AirlineCode(_safe_string(r.aircraft_owner)),
         operating_date       = pack_date(op_date),
         day_of_week          = UInt8(_safe_missing(r.day_of_week, 0)),
-        eff_date             = pack_date(eff_d),
-        disc_date            = pack_date(disc_d),
+        effective_date       = pack_date(eff_d),
+        discontinue_date     = pack_date(disc_d),
         frequency            = UInt8(_safe_missing(r.frequency, 0)),
-        mct_status_dep       = _first_char(r.mct_dep, ' '),
-        mct_status_arr       = _first_char(r.mct_arr, ' '),
-        trc                  = InlineString15(_safe_string(r.trc)),
-        trc_overflow         = _first_char(r.trc_overflow, ' '),
+        dep_intl_dom         = _first_char(r.dep_intl_dom, ' '),
+        arr_intl_dom         = _first_char(r.arr_intl_dom, ' '),
+        traffic_restriction_for_leg = InlineString15(_safe_string(r.traffic_restriction_for_leg)),
+        traffic_restriction_overflow = _first_char(r.traffic_restriction_overflow, ' '),
         record_serial        = UInt32(_safe_missing(r.record_serial, 0)),
         row_number           = UInt64(_safe_missing(r.row_id, 0)),
         # segment_hash not in legs_with_operating — populated via segments join in Subsystem 2
         segment_hash         = UInt64(0),
         distance             = Float32(_safe_missing(r.distance, 0.0)),
-        codeshare_airline    = AirlineCode(_safe_string(hasproperty(r, :codeshare_airline) ? r.codeshare_airline : nothing)),
-        codeshare_flt_no     = Int16(_safe_missing(hasproperty(r, :codeshare_flt_no) ? r.codeshare_flt_no : nothing, 0)),
+        administrating_carrier = AirlineCode(_safe_string(hasproperty(r, :administrating_carrier) ? r.administrating_carrier : nothing)),
+        administrating_carrier_flight_number = Int16(_safe_missing(hasproperty(r, :administrating_carrier_flight_number) ? r.administrating_carrier_flight_number : nothing, 0)),
         dei_10               = _safe_string(hasproperty(r, :dei_10) ? r.dei_10 : nothing),
         wet_lease            = Bool(_safe_missing(r.wet_lease, false)),
         dei_127              = _safe_string(hasproperty(r, :dei_127) ? r.dei_127 : nothing),
@@ -710,7 +711,7 @@ end
 """
 function get_departures(store::DuckDBStore, station::StationCode, date::Date)::Vector{LegRecord}
     result = DBInterface.execute(store.db,
-        "SELECT * FROM legs_with_operating WHERE org = ? AND operating_date = ?",
+        "SELECT * FROM legs_with_operating WHERE departure_station = ? AND operating_date = ?",
         [String(station), date])
     [_row_to_leg(r) for r in result]
 end
@@ -732,7 +733,7 @@ end
 """
 function get_arrivals(store::DuckDBStore, station::StationCode, date::Date)::Vector{LegRecord}
     result = DBInterface.execute(store.db,
-        "SELECT * FROM legs_with_operating WHERE dst = ? AND operating_date = ?",
+        "SELECT * FROM legs_with_operating WHERE arrival_station = ? AND operating_date = ?",
         [String(station), date])
     [_row_to_leg(r) for r in result]
 end
@@ -755,7 +756,7 @@ end
 """
 function query_legs(store::DuckDBStore, origin::StationCode, destination::StationCode, date::Date)::Vector{LegRecord}
     result = DBInterface.execute(store.db,
-        "SELECT * FROM legs_with_operating WHERE org = ? AND dst = ? AND operating_date = ?",
+        "SELECT * FROM legs_with_operating WHERE departure_station = ? AND arrival_station = ? AND operating_date = ?",
         [String(origin), String(destination), date])
     [_row_to_leg(r) for r in result]
 end
@@ -813,25 +814,25 @@ function query_segment(store::DuckDBStore, segment_hash::UInt64)::Union{SegmentR
     op_date = op_dt isa DateTime ? Date(op_dt) : Date(op_dt)
     SegmentRecord(
         segment_hash      = UInt64(r.segment_hash),
-        airline           = AirlineCode(_safe_string(r.airline)),
-        flt_no            = Int16(_safe_missing(r.flt_no, 0)),
-        op_suffix         = _first_char(r.op_suffix, ' '),
-        itin_var          = UInt8(_safe_missing(r.itin_var, 0)),
-        itin_var_overflow = _first_char(r.itin_var_overflow, ' '),
-        svc_type          = _first_char(r.svc_type, ' '),
+        carrier           = AirlineCode(_safe_string(r.carrier)),
+        flight_number     = Int16(_safe_missing(r.flight_number, 0)),
+        operational_suffix = _first_char(r.operational_suffix, ' '),
+        itinerary_var_id  = UInt8(_safe_missing(r.itinerary_var_id, 0)),
+        itinerary_var_overflow = _first_char(r.itinerary_var_overflow, ' '),
+        service_type      = _first_char(r.service_type, ' '),
         operating_date    = pack_date(op_date),
         num_legs          = UInt8(_safe_missing(r.num_legs, 0)),
         first_leg_seq     = UInt8(_safe_missing(r.first_leg_seq, 0)),
         last_leg_seq      = UInt8(_safe_missing(r.last_leg_seq, 0)),
-        segment_org       = StationCode(_safe_string(r.segment_org)),
-        segment_dst       = StationCode(_safe_string(r.segment_dst)),
+        segment_departure_station = StationCode(_safe_string(r.segment_departure_station)),
+        segment_arrival_station   = StationCode(_safe_string(r.segment_arrival_station)),
         flown_distance    = Float32(_safe_missing(r.flown_distance, 0.0)),
         market_distance   = Float32(_safe_missing(r.market_distance, 0.0)),
         segment_circuity  = Float32(_safe_missing(r.segment_circuity, 0.0)),
-        segment_pax_dep   = Int16(_safe_missing(r.segment_pax_dep, 0)),
-        segment_pax_arr   = Int16(_safe_missing(r.segment_pax_arr, 0)),
-        segment_ac_dep    = Int16(_safe_missing(r.segment_ac_dep, 0)),
-        segment_ac_arr    = Int16(_safe_missing(r.segment_ac_arr, 0)),
+        segment_passenger_departure_time = Int16(_safe_missing(r.segment_passenger_departure_time, 0)),
+        segment_passenger_arrival_time   = Int16(_safe_missing(r.segment_passenger_arrival_time, 0)),
+        segment_aircraft_departure_time  = Int16(_safe_missing(r.segment_aircraft_departure_time, 0)),
+        segment_aircraft_arrival_time    = Int16(_safe_missing(r.segment_aircraft_arrival_time, 0)),
     )
 end
 
