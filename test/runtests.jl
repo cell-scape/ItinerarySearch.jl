@@ -74,6 +74,7 @@ include("test_helpers.jl")
     include("test_logging.jl")
     include("test_cli.jl")
     include("test_server.jl")
+    include("test_newssim_ingest.jl")
 
     @testset "SSIM Parsing Helpers" begin
         using ItinerarySearch: parse_ddmonyy, parse_hhmm, parse_frequency_bitmask
