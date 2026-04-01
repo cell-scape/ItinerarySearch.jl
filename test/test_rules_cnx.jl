@@ -7,76 +7,76 @@ using Dates
 
     # ── Test helpers ──────────────────────────────────────────────────────────
 
-    function _test_station_record(code, country, region; lat=0.0, lng=0.0)
+    function _test_station_record(code, country, region; latitude=0.0, longitude=0.0)
         StationRecord(
             code=StationCode(code),
             country=InlineString3(country),
             state=InlineString3(""),
-            metro_area=InlineString3(""),
+            city=InlineString3(""),
             region=InlineString3(region),
-            lat=lat,
-            lng=lng,
+            latitude=latitude,
+            longitude=longitude,
             utc_offset=Int16(0),
         )
     end
 
     function _test_leg_record(;
-        airline="UA",
-        flt_no=100,
-        org="ORD",
-        dst="LHR",
-        pax_dep=Int16(840),   # 14:00
-        pax_arr=Int16(540),   # 09:00
-        arr_date_var=Int8(0),
-        mct_status_dep='D',
-        mct_status_arr='D',
-        trc="",
-        leg_seq=UInt8(1),
+        carrier="UA",
+        flight_number=100,
+        departure_station="ORD",
+        arrival_station="LHR",
+        passenger_departure_time=Int16(840),   # 14:00
+        passenger_arrival_time=Int16(540),   # 09:00
+        arrival_date_variation=Int8(0),
+        dep_intl_dom='D',
+        arr_intl_dom='D',
+        traffic_restriction_for_leg="",
+        leg_sequence_number=UInt8(1),
         distance=1000.0f0,
         frequency=0x7f,       # all days
-        codeshare_airline="",
+        administrating_carrier="",
         body_type='N',
-        dep_term="1",
-        arr_term="1",
+        departure_terminal="1",
+        arrival_terminal="1",
     )
         LegRecord(
-            airline=AirlineCode(airline),
-            flt_no=Int16(flt_no),
+            carrier=AirlineCode(carrier),
+            flight_number=Int16(flight_number),
             operational_suffix=' ',
-            itin_var=UInt8(1),
-            itin_var_overflow=' ',
-            leg_seq=leg_seq,
-            svc_type='J',
-            org=StationCode(org),
-            dst=StationCode(dst),
-            pax_dep=Int16(pax_dep),
-            pax_arr=Int16(pax_arr),
-            ac_dep=Int16(pax_dep),
-            ac_arr=Int16(pax_arr),
-            dep_utc_offset=Int16(0),
-            arr_utc_offset=Int16(0),
-            dep_date_var=Int8(0),
-            arr_date_var=arr_date_var,
-            eqp=InlineString7("738"),
+            itinerary_var_id=UInt8(1),
+            itinerary_var_overflow=' ',
+            leg_sequence_number=leg_sequence_number,
+            service_type='J',
+            departure_station=StationCode(departure_station),
+            arrival_station=StationCode(arrival_station),
+            passenger_departure_time=Int16(passenger_departure_time),
+            passenger_arrival_time=Int16(passenger_arrival_time),
+            aircraft_departure_time=Int16(passenger_departure_time),
+            aircraft_arrival_time=Int16(passenger_arrival_time),
+            departure_utc_offset=Int16(0),
+            arrival_utc_offset=Int16(0),
+            departure_date_variation=Int8(0),
+            arrival_date_variation=arrival_date_variation,
+            aircraft_type=InlineString7("738"),
             body_type=body_type,
-            dep_term=InlineString3(dep_term),
-            arr_term=InlineString3(arr_term),
-            aircraft_owner=AirlineCode(airline),
+            departure_terminal=InlineString3(departure_terminal),
+            arrival_terminal=InlineString3(arrival_terminal),
+            aircraft_owner=AirlineCode(carrier),
             operating_date=UInt32(20260101),
             day_of_week=UInt8(1),
-            eff_date=UInt32(20260101),
-            disc_date=UInt32(20261231),
+            effective_date=UInt32(20260101),
+            discontinue_date=UInt32(20261231),
             frequency=UInt8(frequency),
-            mct_status_dep=mct_status_dep,
-            mct_status_arr=mct_status_arr,
-            trc=InlineString15(trc),
-            trc_overflow=' ',
+            dep_intl_dom=dep_intl_dom,
+            arr_intl_dom=arr_intl_dom,
+            traffic_restriction_for_leg=InlineString15(traffic_restriction_for_leg),
+            traffic_restriction_overflow=' ',
             record_serial=UInt32(1),
             row_number=UInt64(1),
             segment_hash=UInt64(0),
             distance=Distance(distance),
-            codeshare_airline=AirlineCode(codeshare_airline),
-            codeshare_flt_no=Int16(0),
+            administrating_carrier=AirlineCode(administrating_carrier),
+            administrating_carrier_flight_number=Int16(0),
             dei_10="",
             wet_lease=false,
             dei_127="",
@@ -87,17 +87,17 @@ using Dates
     # Build a GraphConnection from two leg records and a connect station.
     # status is a caller-supplied StatusBits value (e.g. for intl/interline flags).
     function _test_connection(;
-        from_rec=_test_leg_record(org="JFK", dst="ORD", pax_dep=Int16(420), pax_arr=Int16(720)),
-        to_rec=_test_leg_record(org="ORD", dst="LHR", pax_dep=Int16(900), pax_arr=Int16(1380)),
+        from_rec=_test_leg_record(departure_station="JFK", arrival_station="ORD", passenger_departure_time=Int16(420), passenger_arrival_time=Int16(720)),
+        to_rec=_test_leg_record(departure_station="ORD", arrival_station="LHR", passenger_departure_time=Int16(900), passenger_arrival_time=Int16(1380)),
         cnx_station_code="ORD",
         cnx_station_country="US",
         cnx_station_region="NAM",
         status=StatusBits(DOW_MON | DOW_TUE | DOW_WED | DOW_THU | DOW_FRI),
         is_through=false,
     )
-        org_stn  = GraphStation(_test_station_record(from_rec.org, "US", "NAM"))
+        org_stn  = GraphStation(_test_station_record(from_rec.departure_station, "US", "NAM"))
         cnx_stn  = GraphStation(_test_station_record(cnx_station_code, cnx_station_country, cnx_station_region))
-        dst_stn  = GraphStation(_test_station_record(to_rec.dst, "GB", "EUR"))
+        dst_stn  = GraphStation(_test_station_record(to_rec.arrival_station, "GB", "EUR"))
         from_leg = GraphLeg(from_rec, org_stn, cnx_stn)
         to_leg   = GraphLeg(to_rec, cnx_stn, dst_stn)
         GraphConnection(
@@ -165,8 +165,8 @@ using Dates
 
         @testset "roundtrip — from_leg.org == to_leg.dst" begin
             # from_leg: JFK→ORD  to_leg: ORD→JFK  => org JFK == dst JFK
-            from_rec = _test_leg_record(org="JFK", dst="ORD")
-            to_rec   = _test_leg_record(org="ORD", dst="JFK")
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD")
+            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="JFK")
             org_stn  = GraphStation(_test_station_record("JFK", "US", "NAM"))
             cnx_stn  = GraphStation(_test_station_record("ORD", "US", "NAM"))
             dst_stn  = GraphStation(_test_station_record("JFK", "US", "NAM"))
@@ -185,8 +185,8 @@ using Dates
 
         @testset "always passes even when roundtrip" begin
             # ensure it never returns a fail code
-            from_rec = _test_leg_record(org="LAX", dst="SFO")
-            to_rec   = _test_leg_record(org="SFO", dst="LAX")
+            from_rec = _test_leg_record(departure_station="LAX", arrival_station="SFO")
+            to_rec   = _test_leg_record(departure_station="SFO", arrival_station="LAX")
             org_stn  = GraphStation(_test_station_record("LAX", "US", "NAM"))
             cnx_stn  = GraphStation(_test_station_record("SFO", "US", "NAM"))
             dst_stn  = GraphStation(_test_station_record("LAX", "US", "NAM"))
@@ -272,14 +272,14 @@ using Dates
         end
 
         @testset "sufficient cnx_time passes (DD default=60 min)" begin
-            # from_leg arrives at pax_arr=540 (09:00), to_leg departs pax_dep=660 (11:00)
+            # from_leg arrives at passenger_arrival_time=540 (09:00), to_leg departs passenger_departure_time=660 (11:00)
             # cnx_time = 660 - 540 = 120 min > 60 min MCT_DD default
-            from_rec = _test_leg_record(org="JFK", dst="ORD",
-                                        pax_dep=Int16(300), pax_arr=Int16(540),
-                                        mct_status_arr='D')
-            to_rec   = _test_leg_record(org="ORD", dst="LHR",
-                                        pax_dep=Int16(660), pax_arr=Int16(960),
-                                        mct_status_dep='D')
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD",
+                                        passenger_departure_time=Int16(300), passenger_arrival_time=Int16(540),
+                                        arr_intl_dom='D')
+            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR",
+                                        passenger_departure_time=Int16(660), passenger_arrival_time=Int16(960),
+                                        dep_intl_dom='D')
             cp = _test_connection(from_rec=from_rec, to_rec=to_rec,
                                   status=StatusBits(DOW_MON))
             rule = MCTRule(lookup)
@@ -290,12 +290,12 @@ using Dates
 
         @testset "insufficient cnx_time fails with FAIL_TIME_MIN" begin
             # from_leg arrives at 540, to_leg departs at 570 => cnx_time=30 < MCT_DD=60
-            from_rec = _test_leg_record(org="JFK", dst="ORD",
-                                        pax_dep=Int16(300), pax_arr=Int16(540),
-                                        mct_status_arr='D')
-            to_rec   = _test_leg_record(org="ORD", dst="LHR",
-                                        pax_dep=Int16(570), pax_arr=Int16(900),
-                                        mct_status_dep='D')
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD",
+                                        passenger_departure_time=Int16(300), passenger_arrival_time=Int16(540),
+                                        arr_intl_dom='D')
+            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR",
+                                        passenger_departure_time=Int16(570), passenger_arrival_time=Int16(900),
+                                        dep_intl_dom='D')
             cp = _test_connection(from_rec=from_rec, to_rec=to_rec,
                                   status=StatusBits(DOW_MON))
             rule = MCTRule(lookup)
@@ -309,12 +309,12 @@ using Dates
             )
             ctx2 = _mock_ctx(constraints=constraints)
             # cnx_time = 900 - 540 = 360 min > 90 min max
-            from_rec = _test_leg_record(org="JFK", dst="ORD",
-                                        pax_dep=Int16(300), pax_arr=Int16(540),
-                                        mct_status_arr='D')
-            to_rec   = _test_leg_record(org="ORD", dst="LHR",
-                                        pax_dep=Int16(900), pax_arr=Int16(1200),
-                                        mct_status_dep='D')
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD",
+                                        passenger_departure_time=Int16(300), passenger_arrival_time=Int16(540),
+                                        arr_intl_dom='D')
+            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR",
+                                        passenger_departure_time=Int16(900), passenger_arrival_time=Int16(1200),
+                                        dep_intl_dom='D')
             cp = _test_connection(from_rec=from_rec, to_rec=to_rec,
                                   status=StatusBits(DOW_MON))
             rule = MCTRule(lookup)
@@ -324,13 +324,13 @@ using Dates
         @testset "overnight wrap-around" begin
             # from_leg arrives at 1380 (23:00), to_leg departs at 60 (01:00 next day)
             # cnx_time = 60 - 1380 = -1320 => +1440 = 120 min
-            from_rec = _test_leg_record(org="JFK", dst="ORD",
-                                        pax_dep=Int16(1200), pax_arr=Int16(1380),
-                                        arr_date_var=Int8(0),
-                                        mct_status_arr='D')
-            to_rec   = _test_leg_record(org="ORD", dst="LHR",
-                                        pax_dep=Int16(60), pax_arr=Int16(480),
-                                        mct_status_dep='D')
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD",
+                                        passenger_departure_time=Int16(1200), passenger_arrival_time=Int16(1380),
+                                        arrival_date_variation=Int8(0),
+                                        arr_intl_dom='D')
+            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR",
+                                        passenger_departure_time=Int16(60), passenger_arrival_time=Int16(480),
+                                        dep_intl_dom='D')
             cp = _test_connection(from_rec=from_rec, to_rec=to_rec,
                                   status=StatusBits(DOW_MON))
             rule = MCTRule(lookup)
@@ -345,12 +345,12 @@ using Dates
                 defaults=ParameterSet(min_mct_override=Minutes(120))
             )
             ctx2 = _mock_ctx(constraints=constraints)
-            from_rec = _test_leg_record(org="JFK", dst="ORD",
-                                        pax_dep=Int16(300), pax_arr=Int16(540),
-                                        mct_status_arr='D')
-            to_rec   = _test_leg_record(org="ORD", dst="LHR",
-                                        pax_dep=Int16(630), pax_arr=Int16(900),
-                                        mct_status_dep='D')
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD",
+                                        passenger_departure_time=Int16(300), passenger_arrival_time=Int16(540),
+                                        arr_intl_dom='D')
+            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR",
+                                        passenger_departure_time=Int16(630), passenger_arrival_time=Int16(900),
+                                        dep_intl_dom='D')
             cp = _test_connection(from_rec=from_rec, to_rec=to_rec,
                                   status=StatusBits(DOW_MON))
             rule = MCTRule(lookup)
@@ -398,27 +398,27 @@ using Dates
         end
 
         @testset "passes when TRC has no 'A' at leg_seq" begin
-            # leg_seq=1, trc[1]='B' — 'B' is a traffic restriction but not 'A'
-            from_rec = _test_leg_record(org="JFK", dst="ORD", trc="B", leg_seq=UInt8(1))
+            # leg_sequence_number=1, trc[1]='B' — 'B' is a traffic restriction but not 'A'
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="B", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)
             @test check_cnx_suppcodes(cp, ctx) == PASS
         end
 
         @testset "fails when from_leg TRC has 'A' at leg_seq" begin
-            from_rec = _test_leg_record(org="JFK", dst="ORD", trc="A", leg_seq=UInt8(1))
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)
             @test check_cnx_suppcodes(cp, ctx) == FAIL_SUPPCODE
         end
 
         @testset "fails when to_leg TRC has 'A' at leg_seq" begin
-            to_rec = _test_leg_record(org="ORD", dst="LHR", trc="A", leg_seq=UInt8(1))
+            to_rec = _test_leg_record(departure_station="ORD", arrival_station="LHR", traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
             cp = _test_connection(to_rec=to_rec)
             @test check_cnx_suppcodes(cp, ctx) == FAIL_SUPPCODE
         end
 
         @testset "passes when 'A' is at different leg_seq position" begin
-            # trc = "XA" but leg_seq=1 => trc[1]='X' => no suppression
-            from_rec = _test_leg_record(org="JFK", dst="ORD", trc="XA", leg_seq=UInt8(1))
+            # traffic_restriction_for_leg = "XA" but leg_sequence_number=1 => trc[1]='X' => no suppression
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="XA", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)
             @test check_cnx_suppcodes(cp, ctx) == PASS
         end
@@ -446,8 +446,8 @@ using Dates
             # block_time = (2000/400)*60 = 300 min
             # maft = max(300, 30) + 240 = 540 min
             # 300 <= 540 => PASS
-            from_rec = _test_leg_record(org="JFK", dst="ORD", distance=1000.0f0)
-            to_rec   = _test_leg_record(org="ORD", dst="LHR", distance=1000.0f0)
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", distance=1000.0f0)
+            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR", distance=1000.0f0)
             cp = _test_connection(from_rec=from_rec, to_rec=to_rec,
                                   status=StatusBits(DOW_MON))
             rule = MAFTRule()
@@ -478,12 +478,12 @@ using Dates
             # 4650 <= 2 * 3450 + 500 = 7400 => PASS
             gc_cache = Dict{Tuple{StationCode,StationCode}, Float64}()
             ctx = _mock_ctx(gc_cache=gc_cache)
-            from_rec = _test_leg_record(org="JFK", dst="ORD", distance=1100.0f0)
-            to_rec   = _test_leg_record(org="ORD", dst="LHR", distance=3550.0f0)
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", distance=1100.0f0)
+            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR", distance=3550.0f0)
 
-            org_stn_rec = _test_station_record("JFK", "US", "NAM"; lat=40.63, lng=-73.78)
-            cnx_stn_rec = _test_station_record("ORD", "US", "NAM"; lat=41.97, lng=-87.91)
-            dst_stn_rec = _test_station_record("LHR", "GB", "EUR"; lat=51.47, lng=-0.45)
+            org_stn_rec = _test_station_record("JFK", "US", "NAM"; latitude=40.63, longitude=-73.78)
+            cnx_stn_rec = _test_station_record("ORD", "US", "NAM"; latitude=41.97, longitude=-87.91)
+            dst_stn_rec = _test_station_record("LHR", "GB", "EUR"; latitude=51.47, longitude=-0.45)
 
             org_stn  = GraphStation(org_stn_rec)
             cnx_stn  = GraphStation(cnx_stn_rec)
@@ -511,12 +511,12 @@ using Dates
             # LAX(33.9N,118.4W) → SFO(37.6N,122.4W) → NYC(40.6N,73.8W)
             # GC LAX→NYC ≈ 2440 NM; legs 340 + 2570 = 2910 NM
             # With factor=1.0, extra=0: 2910 > 1*2440+0 => FAIL
-            from_rec = _test_leg_record(org="LAX", dst="SFO", distance=340.0f0)
-            to_rec   = _test_leg_record(org="SFO", dst="NYC", distance=2570.0f0)
+            from_rec = _test_leg_record(departure_station="LAX", arrival_station="SFO", distance=340.0f0)
+            to_rec   = _test_leg_record(departure_station="SFO", arrival_station="NYC", distance=2570.0f0)
 
-            org_stn_rec = _test_station_record("LAX", "US", "NAM"; lat=33.94, lng=-118.40)
-            cnx_stn_rec = _test_station_record("SFO", "US", "NAM"; lat=37.62, lng=-122.38)
-            dst_stn_rec = _test_station_record("NYC", "US", "NAM"; lat=40.63, lng=-73.78)
+            org_stn_rec = _test_station_record("LAX", "US", "NAM"; latitude=33.94, longitude=-118.40)
+            cnx_stn_rec = _test_station_record("SFO", "US", "NAM"; latitude=37.62, longitude=-122.38)
+            dst_stn_rec = _test_station_record("NYC", "US", "NAM"; latitude=40.63, longitude=-73.78)
 
             org_stn  = GraphStation(org_stn_rec)
             cnx_stn  = GraphStation(cnx_stn_rec)
@@ -537,12 +537,12 @@ using Dates
             gc_cache = Dict{Tuple{StationCode,StationCode}, Float64}()
             ctx = _mock_ctx(gc_cache=gc_cache)
 
-            from_rec = _test_leg_record(org="JFK", dst="ORD", distance=1100.0f0)
-            to_rec   = _test_leg_record(org="ORD", dst="LHR", distance=3550.0f0)
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", distance=1100.0f0)
+            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR", distance=3550.0f0)
 
-            org_stn  = GraphStation(_test_station_record("JFK", "US", "NAM"; lat=40.63, lng=-73.78))
-            cnx_stn  = GraphStation(_test_station_record("ORD", "US", "NAM"; lat=41.97, lng=-87.91))
-            dst_stn  = GraphStation(_test_station_record("LHR", "GB", "EUR"; lat=51.47, lng=-0.45))
+            org_stn  = GraphStation(_test_station_record("JFK", "US", "NAM"; latitude=40.63, longitude=-73.78))
+            cnx_stn  = GraphStation(_test_station_record("ORD", "US", "NAM"; latitude=41.97, longitude=-87.91))
+            dst_stn  = GraphStation(_test_station_record("LHR", "GB", "EUR"; latitude=51.47, longitude=-0.45))
             from_leg = GraphLeg(from_rec, org_stn, cnx_stn)
             to_leg   = GraphLeg(to_rec,   cnx_stn, dst_stn)
             cp = GraphConnection(
@@ -571,38 +571,38 @@ using Dates
 
         @testset "passes for non-blocked TRC code" begin
             # 'E' is not in the blocked set
-            from_rec = _test_leg_record(org="JFK", dst="ORD", trc="E", leg_seq=UInt8(1))
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="E", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)
             @test check_cnx_trfrest(cp, ctx) == PASS
         end
 
         @testset "fails for blocked TRC code 'A' on from_leg" begin
-            from_rec = _test_leg_record(org="JFK", dst="ORD", trc="A", leg_seq=UInt8(1))
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)
             @test check_cnx_trfrest(cp, ctx) == FAIL_TRFREST
         end
 
         @testset "fails for blocked TRC code 'B' on from_leg" begin
-            from_rec = _test_leg_record(org="JFK", dst="ORD", trc="B", leg_seq=UInt8(1))
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="B", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)
             @test check_cnx_trfrest(cp, ctx) == FAIL_TRFREST
         end
 
         @testset "fails for blocked TRC code 'C' on to_leg" begin
-            to_rec = _test_leg_record(org="ORD", dst="LHR", trc="C", leg_seq=UInt8(1))
+            to_rec = _test_leg_record(departure_station="ORD", arrival_station="LHR", traffic_restriction_for_leg="C", leg_sequence_number=UInt8(1))
             cp = _test_connection(to_rec=to_rec)
             @test check_cnx_trfrest(cp, ctx) == FAIL_TRFREST
         end
 
         @testset "fails for blocked TRC code 'D' on to_leg" begin
-            to_rec = _test_leg_record(org="ORD", dst="LHR", trc="D", leg_seq=UInt8(1))
+            to_rec = _test_leg_record(departure_station="ORD", arrival_station="LHR", traffic_restriction_for_leg="D", leg_sequence_number=UInt8(1))
             cp = _test_connection(to_rec=to_rec)
             @test check_cnx_trfrest(cp, ctx) == FAIL_TRFREST
         end
 
         @testset "passes when blocked code is at a different leg_seq position" begin
-            # trc="XA" but leg_seq=1 => trc[1]='X' => no block
-            from_rec = _test_leg_record(org="JFK", dst="ORD", trc="XA", leg_seq=UInt8(1))
+            # traffic_restriction_for_leg="XA" but leg_sequence_number=1 => trc[1]='X' => no block
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="XA", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)
             @test check_cnx_trfrest(cp, ctx) == PASS
         end
@@ -718,8 +718,8 @@ using Dates
         lookup = MCTLookup()
         rule = MCTRule(lookup)
         cp = _test_connection(
-            from_rec = _test_leg_record(org="JFK", dst="ORD", pax_dep=Int16(420), pax_arr=Int16(720)),
-            to_rec = _test_leg_record(org="ORD", dst="LHR", pax_dep=Int16(900), pax_arr=Int16(1380)),
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", passenger_departure_time=Int16(420), passenger_arrival_time=Int16(720)),
+            to_rec = _test_leg_record(departure_station="ORD", arrival_station="LHR", passenger_departure_time=Int16(900), passenger_arrival_time=Int16(1380)),
         )
         ctx = _mock_ctx()
 

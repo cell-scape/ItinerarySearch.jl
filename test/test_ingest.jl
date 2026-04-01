@@ -94,10 +94,10 @@ end
         # Verify leg data
         result = DBInterface.execute(store.db, "SELECT * FROM legs WHERE row_id = 1")
         row = first(result)
-        @test strip(String(row.airline)) == "UA"
-        @test row.flt_no == 1234
-        @test strip(String(row.org)) == "ORD"
-        @test strip(String(row.dst)) == "LHR"
+        @test strip(String(row.carrier)) == "UA"
+        @test row.flight_number == 1234
+        @test strip(String(row.departure_station)) == "ORD"
+        @test strip(String(row.arrival_station)) == "LHR"
 
         # Verify DEI data
         result = DBInterface.execute(store.db, "SELECT * FROM dei WHERE row_id = 1")
@@ -159,7 +159,7 @@ function _make_airport_line(;
     utc_var::String="+0000",
     lat_deg::String="00", lat_min::String="00", lat_sec::String="00", lat_hem::String="N",
     lng_deg::String="000", lng_min::String="00", lng_sec::String="00", lng_hem::String="W",
-    metro_area::String="   ", location_subctry::String="00",
+    city::String="   ", location_subctry::String="00",
 )::String
     buf = repeat(' ', 176)
     buf = collect(buf)
@@ -188,7 +188,7 @@ function _make_airport_line(;
     # lng hemisphere: 158
     buf[158] = lng_hem[1]
     # metro_area: 159-161
-    for (i, c) in enumerate(metro_area); i <= 3 && (buf[158+i] = c); end
+    for (i, c) in enumerate(city); i <= 3 && (buf[158+i] = c); end
     # location_subctry: 167-168
     for (i, c) in enumerate(location_subctry); i <= 2 && (buf[166+i] = c); end
     String(buf)
@@ -200,21 +200,21 @@ function make_test_airports()::String
         country="US", state="IL", airport="ORD", utc_var="-0500",
         lat_deg="41", lat_min="58", lat_sec="28", lat_hem="N",
         lng_deg="087", lng_min="54", lng_sec="26", lng_hem="W",
-        metro_area="CHI",
+        city="CHI",
     )
     # LHR: Heathrow — 51°28'39"N 000°27'41"W, UTC+0000
     lhr = _make_airport_line(
         country="GB", state="00", airport="LHR", utc_var="+0000",
         lat_deg="51", lat_min="28", lat_sec="39", lat_hem="N",
         lng_deg="000", lng_min="27", lng_sec="41", lng_hem="W",
-        metro_area="LON",
+        city="LON",
     )
     # JFK: John F Kennedy — 40°38'29"N 073°46'41"W, UTC-0500
     jfk = _make_airport_line(
         country="US", state="NY", airport="JFK", utc_var="-0500",
         lat_deg="40", lat_min="38", lat_sec="29", lat_hem="N",
         lng_deg="073", lng_min="46", lng_sec="41", lng_hem="W",
-        metro_area="NYC",
+        city="NYC",
     )
     join([ord, lhr, jfk], "\n") * "\n"
 end
@@ -356,8 +356,8 @@ end
         row = first(result)
         @test strip(String(row.country)) == "US"
         @test strip(String(row.state)) == "IL"
-        @test strip(String(row.metro_area)) == "CHI"
-        @test row.lat ≈ 41.97 atol=0.01
+        @test strip(String(row.city)) == "CHI"
+        @test row.latitude ≈ 41.97 atol=0.01
 
         close(store)
         rm(path)

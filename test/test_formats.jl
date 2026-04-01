@@ -7,77 +7,77 @@ using Dates
 
     # ── Test helpers (identical to test_search.jl helpers) ────────────────────
 
-    function _stn_rec(code, country, region; lat=0.0, lng=0.0, metro_area="", state="")
+    function _stn_rec(code, country, region; latitude=0.0, longitude=0.0, city="", state="")
         StationRecord(
             code=StationCode(code),
             country=InlineString3(country),
             state=InlineString3(state),
-            metro_area=InlineString3(metro_area),
+            city=InlineString3(city),
             region=InlineString3(region),
-            lat=lat,
-            lng=lng,
+            latitude=latitude,
+            longitude=longitude,
             utc_offset=Int16(0),
         )
     end
 
     function _leg_rec(;
-        airline="UA",
-        flt_no=100,
-        org="JFK",
-        dst="ORD",
-        pax_dep=Int16(480),
-        pax_arr=Int16(600),
-        arr_date_var=Int8(0),
+        carrier="UA",
+        flight_number=100,
+        departure_station="JFK",
+        arrival_station="ORD",
+        passenger_departure_time=Int16(480),
+        passenger_arrival_time=Int16(600),
+        arrival_date_variation=Int8(0),
         distance=800.0f0,
-        eqp="738",
+        aircraft_type="738",
         record_serial=UInt32(1),
         frequency=UInt8(0x7f),
-        eff_date=UInt32(20260101),
-        disc_date=UInt32(20261231),
-        mct_status_dep='D',
-        mct_status_arr='D',
-        leg_seq=UInt8(1),
-        dep_term="1",
-        arr_term="1",
+        effective_date=UInt32(20260101),
+        discontinue_date=UInt32(20261231),
+        dep_intl_dom='D',
+        arr_intl_dom='D',
+        leg_sequence_number=UInt8(1),
+        departure_terminal="1",
+        arrival_terminal="1",
     )
         LegRecord(
-            airline=AirlineCode(airline),
-            flt_no=Int16(flt_no),
+            carrier=AirlineCode(carrier),
+            flight_number=Int16(flight_number),
             operational_suffix=' ',
-            itin_var=UInt8(1),
-            itin_var_overflow=' ',
-            leg_seq=leg_seq,
-            svc_type='J',
-            org=StationCode(org),
-            dst=StationCode(dst),
-            pax_dep=pax_dep,
-            pax_arr=pax_arr,
-            ac_dep=pax_dep,
-            ac_arr=pax_arr,
-            dep_utc_offset=Int16(0),
-            arr_utc_offset=Int16(0),
-            dep_date_var=Int8(0),
-            arr_date_var=arr_date_var,
-            eqp=InlineString7(eqp),
+            itinerary_var_id=UInt8(1),
+            itinerary_var_overflow=' ',
+            leg_sequence_number=leg_sequence_number,
+            service_type='J',
+            departure_station=StationCode(departure_station),
+            arrival_station=StationCode(arrival_station),
+            passenger_departure_time=passenger_departure_time,
+            passenger_arrival_time=passenger_arrival_time,
+            aircraft_departure_time=passenger_departure_time,
+            aircraft_arrival_time=passenger_arrival_time,
+            departure_utc_offset=Int16(0),
+            arrival_utc_offset=Int16(0),
+            departure_date_variation=Int8(0),
+            arrival_date_variation=arrival_date_variation,
+            aircraft_type=InlineString7(aircraft_type),
             body_type='N',
-            dep_term=InlineString3(dep_term),
-            arr_term=InlineString3(arr_term),
-            aircraft_owner=AirlineCode(airline),
+            departure_terminal=InlineString3(departure_terminal),
+            arrival_terminal=InlineString3(arrival_terminal),
+            aircraft_owner=AirlineCode(carrier),
             operating_date=UInt32(20260615),
             day_of_week=UInt8(1),
-            eff_date=eff_date,
-            disc_date=disc_date,
+            effective_date=effective_date,
+            discontinue_date=discontinue_date,
             frequency=frequency,
-            mct_status_dep=mct_status_dep,
-            mct_status_arr=mct_status_arr,
-            trc=InlineString15(""),
-            trc_overflow=' ',
+            dep_intl_dom=dep_intl_dom,
+            arr_intl_dom=arr_intl_dom,
+            traffic_restriction_for_leg=InlineString15(""),
+            traffic_restriction_overflow=' ',
             record_serial=record_serial,
             row_number=UInt64(1),
             segment_hash=UInt64(0),
             distance=Distance(distance),
-            codeshare_airline=AirlineCode(""),
-            codeshare_flt_no=Int16(0),
+            administrating_carrier=AirlineCode(""),
+            administrating_carrier_flight_number=Int16(0),
             dei_10="",
             wet_lease=false,
             dei_127="",
@@ -87,14 +87,14 @@ using Dates
 
     # Build a simple nonstop itinerary: JFK → LHR
     function _nonstop_itinerary()
-        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"; lat=40.64, lng=-73.78))
-        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"; lat=51.48, lng=-0.46))
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"; latitude=40.64, longitude=-73.78))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"; latitude=51.48, longitude=-0.46))
         rec = _leg_rec(
-            airline="UA", flt_no=100,
-            org="JFK", dst="LHR",
-            pax_dep=Int16(540), pax_arr=Int16(1260),
+            carrier="UA", flight_number=100,
+            departure_station="JFK", arrival_station="LHR",
+            passenger_departure_time=Int16(540), passenger_arrival_time=Int16(1260),
             distance=3451.0f0, record_serial=UInt32(42),
-            dep_term="B", arr_term="3",
+            departure_terminal="B", arrival_terminal="3",
         )
         leg = GraphLeg(rec, jfk, lhr)
         cp = nonstop_connection(leg, jfk)
@@ -114,24 +114,24 @@ using Dates
 
     # Build a 1-stop itinerary: JFK → ORD → LHR
     function _one_stop_itinerary()
-        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"; lat=40.64, lng=-73.78))
-        ord = GraphStation(_stn_rec("ORD", "US", "NAM"; lat=41.97, lng=-87.91))
-        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"; lat=51.48, lng=-0.46))
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"; latitude=40.64, longitude=-73.78))
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"; latitude=41.97, longitude=-87.91))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"; latitude=51.48, longitude=-0.46))
 
         rec1 = _leg_rec(
-            airline="UA", flt_no=200,
-            org="JFK", dst="ORD",
-            pax_dep=Int16(480), pax_arr=Int16(600),
+            carrier="UA", flight_number=200,
+            departure_station="JFK", arrival_station="ORD",
+            passenger_departure_time=Int16(480), passenger_arrival_time=Int16(600),
             distance=800.0f0, record_serial=UInt32(10),
-            dep_term="B", arr_term="H",
+            departure_terminal="B", arrival_terminal="H",
         )
         rec2 = _leg_rec(
-            airline="UA", flt_no=916,
-            org="ORD", dst="LHR",
-            pax_dep=Int16(720), pax_arr=Int16(1320),
+            carrier="UA", flight_number=916,
+            departure_station="ORD", arrival_station="LHR",
+            passenger_departure_time=Int16(720), passenger_arrival_time=Int16(1320),
             distance=3941.0f0, record_serial=UInt32(20),
-            mct_status_arr='I',
-            dep_term="H", arr_term="3",
+            arr_intl_dom='I',
+            departure_terminal="H", arrival_terminal="3",
         )
 
         leg1 = GraphLeg(rec1, jfk, ord)
@@ -169,7 +169,7 @@ using Dates
 
     @testset "Base.show does not error" begin
         jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
-        rec = _leg_rec(airline="UA", flt_no=100, org="JFK", dst="LHR")
+        rec = _leg_rec(carrier="UA", flight_number=100, departure_station="JFK", arrival_station="LHR")
         leg = GraphLeg(rec, jfk, GraphStation(_stn_rec("LHR", "GB", "EUR")))
         seg = GraphSegment()
         cp = nonstop_connection(leg, jfk)
@@ -195,7 +195,7 @@ using Dates
     @testset "GraphLeg show content" begin
         jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
         lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
-        rec = _leg_rec(airline="UA", flt_no=100, org="JFK", dst="LHR")
+        rec = _leg_rec(carrier="UA", flight_number=100, departure_station="JFK", arrival_station="LHR")
         leg = GraphLeg(rec, jfk, lhr)
         s = sprint(show, leg)
         @test occursin("UA", s)
@@ -213,7 +213,7 @@ using Dates
     @testset "GraphConnection nonstop show" begin
         jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
         lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
-        rec = _leg_rec(airline="UA", flt_no=100, org="JFK", dst="LHR")
+        rec = _leg_rec(carrier="UA", flight_number=100, departure_station="JFK", arrival_station="LHR")
         leg = GraphLeg(rec, jfk, lhr)
         cp = nonstop_connection(leg, jfk)
         s = sprint(show, cp)
@@ -227,8 +227,8 @@ using Dates
         jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
         ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
         lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
-        rec1 = _leg_rec(airline="UA", flt_no=200, org="JFK", dst="ORD")
-        rec2 = _leg_rec(airline="UA", flt_no=916, org="ORD", dst="LHR")
+        rec1 = _leg_rec(carrier="UA", flight_number=200, departure_station="JFK", arrival_station="ORD")
+        rec2 = _leg_rec(carrier="UA", flight_number=916, departure_station="ORD", arrival_station="LHR")
         leg1 = GraphLeg(rec1, jfk, ord)
         leg2 = GraphLeg(rec2, ord, lhr)
         cp = GraphConnection(
@@ -272,27 +272,27 @@ using Dates
         r = rows[1]
         @test r.itinerary_id == 1
         @test r.leg_seq == 1
-        @test r.airline == "UA"
-        @test r.flt_no == 100
+        @test r.carrier == "UA"
+        @test r.flight_number == 100
         @test r.flight_id == "UA 100"
         @test r.record_serial == 42
-        @test r.org == "JFK"
-        @test r.dst == "LHR"
+        @test r.departure_station == "JFK"
+        @test r.arrival_station == "LHR"
         @test r.distance ≈ 3451.0
         @test r.is_nonstop == true
         @test r.cnx_time == 0
         @test r.mct == 0
-        @test r.dep_term == "B"
-        @test r.arr_term == "3"
+        @test r.departure_terminal == "B"
+        @test r.arrival_terminal == "3"
     end
 
     @testset "itinerary_long_format — 1-stop yields 2 rows" begin
         itn = _one_stop_itinerary()
         rows = itinerary_long_format(Itinerary[itn])
         # 2 connections: first has from==to (nonstop for leg1), second has leg1→leg2.
-        # Rows emitted: leg_seq=1 (from_leg of cp1 = leg1 JFK→ORD),
-        #               leg_seq=2 (from_leg of cp2 = leg1 JFK→ORD — first leg),
-        #               leg_seq=3 (to_leg of cp2 = leg2 ORD→LHR — terminal extra row)
+        # Rows emitted: leg_sequence_number=1 (from_leg of cp1 = leg1 JFK→ORD),
+        #               leg_sequence_number=2 (from_leg of cp2 = leg1 JFK→ORD — first leg),
+        #               leg_sequence_number=3 (to_leg of cp2 = leg2 ORD→LHR — terminal extra row)
         # Actually per the algorithm: connection 1 emits from_leg (leg1);
         # connection 2 emits from_leg (leg1 again? No — from_leg of cp2 is leg1,
         # to_leg is leg2). Wait — need to re-read the data structure.
@@ -302,8 +302,8 @@ using Dates
         #   cp2 = GraphConnection(from_leg=leg1, to_leg=leg2, station=ord)
         #
         # Iteration:
-        #   i=1, cp=cp1: from_leg=leg1 → emit row(leg_seq=1, JFK→ORD); !is_nonstop_cp? cp1 is nonstop → skip terminal
-        #   i=2, cp=cp2: from_leg=leg1 → emit row(leg_seq=2, JFK→ORD); last & !nonstop → emit to_leg=leg2 row(leg_seq=3, ORD→LHR)
+        #   i=1, cp=cp1: from_leg=leg1 → emit row(leg_sequence_number=1, JFK→ORD); !is_nonstop_cp? cp1 is nonstop → skip terminal
+        #   i=2, cp=cp2: from_leg=leg1 → emit row(leg_sequence_number=2, JFK→ORD); last & !nonstop → emit to_leg=leg2 row(leg_sequence_number=3, ORD→LHR)
         #
         # So 3 rows total? That doesn't match "1-stop yields 2 rows".
         # Actually the spec says: 1-stop = 2 rows.
@@ -333,21 +333,21 @@ using Dates
         # Long format deduplicates: emits leg1 once, then leg2 (terminal to_leg).
         @test length(rows) == 2
 
-        # First row: leg1 JFK→ORD (from cp1), leg_seq=1
+        # First row: leg1 JFK→ORD (from cp1), leg_sequence_number=1
         r1 = rows[1]
         @test r1.itinerary_id == 1
         @test r1.leg_seq == 1
-        @test r1.org == "JFK"
-        @test r1.dst == "ORD"
-        @test r1.flt_no == 200
+        @test r1.departure_station == "JFK"
+        @test r1.arrival_station == "ORD"
+        @test r1.flight_number == 200
         @test r1.cnx_time == 0   # leg_idx==1 → always 0
 
-        # Second row: leg2 ORD→LHR (terminal to_leg), leg_seq=2
+        # Second row: leg2 ORD→LHR (terminal to_leg), leg_sequence_number=2
         r2 = rows[2]
         @test r2.leg_seq == 2
-        @test r2.org == "ORD"
-        @test r2.dst == "LHR"
-        @test r2.flt_no == 916
+        @test r2.departure_station == "ORD"
+        @test r2.arrival_station == "LHR"
+        @test r2.flight_number == 916
     end
 
     @testset "itinerary_long_format — multiple itineraries" begin

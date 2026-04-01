@@ -7,15 +7,15 @@ using Dates
 
     # ── Test helpers ──────────────────────────────────────────────────────────
 
-    function _stn_rec(code, country, region; lat=0.0, lng=0.0, metro_area="", state="")
+    function _stn_rec(code, country, region; latitude=0.0, longitude=0.0, city="", state="")
         StationRecord(
             code=StationCode(code),
             country=InlineString3(country),
             state=InlineString3(state),
-            metro_area=InlineString3(metro_area),
+            city=InlineString3(city),
             region=InlineString3(region),
-            lat=lat,
-            lng=lng,
+            latitude=latitude,
+            longitude=longitude,
             utc_offset=Int16(0),
         )
     end
@@ -29,63 +29,63 @@ using Dates
     LHR_LNG = -0.4614
 
     function _leg_rec(;
-        airline="UA",
-        flt_no=100,
-        org="JFK",
-        dst="ORD",
-        pax_dep=Int16(480),
-        pax_arr=Int16(600),
-        arr_date_var=Int8(0),
+        carrier="UA",
+        flight_number=100,
+        departure_station="JFK",
+        arrival_station="ORD",
+        passenger_departure_time=Int16(480),
+        passenger_arrival_time=Int16(600),
+        arrival_date_variation=Int8(0),
         distance=800.0f0,
-        eqp="738",
+        aircraft_type="738",
         frequency=UInt8(0x7f),           # all days
-        eff_date=UInt32(20260101),
-        disc_date=UInt32(20261231),
-        mct_status_dep='D',
-        mct_status_arr='D',
-        leg_seq=UInt8(1),
-        trc="",
-        dep_utc_offset=Int16(0),
-        arr_utc_offset=Int16(0),
+        effective_date=UInt32(20260101),
+        discontinue_date=UInt32(20261231),
+        dep_intl_dom='D',
+        arr_intl_dom='D',
+        leg_sequence_number=UInt8(1),
+        traffic_restriction_for_leg="",
+        departure_utc_offset=Int16(0),
+        arrival_utc_offset=Int16(0),
     )
         LegRecord(
-            airline=AirlineCode(airline),
-            flt_no=Int16(flt_no),
+            carrier=AirlineCode(carrier),
+            flight_number=Int16(flight_number),
             operational_suffix=' ',
-            itin_var=UInt8(1),
-            itin_var_overflow=' ',
-            leg_seq=leg_seq,
-            svc_type='J',
-            org=StationCode(org),
-            dst=StationCode(dst),
-            pax_dep=pax_dep,
-            pax_arr=pax_arr,
-            ac_dep=pax_dep,
-            ac_arr=pax_arr,
-            dep_utc_offset=dep_utc_offset,
-            arr_utc_offset=arr_utc_offset,
-            dep_date_var=Int8(0),
-            arr_date_var=arr_date_var,
-            eqp=InlineString7(eqp),
+            itinerary_var_id=UInt8(1),
+            itinerary_var_overflow=' ',
+            leg_sequence_number=leg_sequence_number,
+            service_type='J',
+            departure_station=StationCode(departure_station),
+            arrival_station=StationCode(arrival_station),
+            passenger_departure_time=passenger_departure_time,
+            passenger_arrival_time=passenger_arrival_time,
+            aircraft_departure_time=passenger_departure_time,
+            aircraft_arrival_time=passenger_arrival_time,
+            departure_utc_offset=departure_utc_offset,
+            arrival_utc_offset=arrival_utc_offset,
+            departure_date_variation=Int8(0),
+            arrival_date_variation=arrival_date_variation,
+            aircraft_type=InlineString7(aircraft_type),
             body_type='N',
-            dep_term=InlineString3("1"),
-            arr_term=InlineString3("1"),
-            aircraft_owner=AirlineCode(airline),
+            departure_terminal=InlineString3("1"),
+            arrival_terminal=InlineString3("1"),
+            aircraft_owner=AirlineCode(carrier),
             operating_date=UInt32(20260615),
             day_of_week=UInt8(1),
-            eff_date=eff_date,
-            disc_date=disc_date,
+            effective_date=effective_date,
+            discontinue_date=discontinue_date,
             frequency=frequency,
-            mct_status_dep=mct_status_dep,
-            mct_status_arr=mct_status_arr,
-            trc=InlineString15(trc),
-            trc_overflow=' ',
+            dep_intl_dom=dep_intl_dom,
+            arr_intl_dom=arr_intl_dom,
+            traffic_restriction_for_leg=InlineString15(traffic_restriction_for_leg),
+            traffic_restriction_overflow=' ',
             record_serial=UInt32(1),
             row_number=UInt64(1),
             segment_hash=UInt64(0),
             distance=Distance(distance),
-            codeshare_airline=AirlineCode(""),
-            codeshare_flt_no=Int16(0),
+            administrating_carrier=AirlineCode(""),
+            administrating_carrier_flight_number=Int16(0),
             dei_10="",
             wet_lease=false,
             dei_127="",
@@ -138,43 +138,43 @@ using Dates
     )
         jfk_stn = GraphStation(
             _stn_rec("JFK", jfk_country, jfk_region;
-                lat=jfk_lat, lng=jfk_lng, metro_area="NYC", state="NY")
+                latitude=jfk_lat, longitude=jfk_lng, city="NYC", state="NY")
         )
         ord_stn = GraphStation(
             _stn_rec("ORD", ord_country, ord_region;
-                lat=ord_lat, lng=ord_lng, metro_area="CHI", state="IL")
+                latitude=ord_lat, longitude=ord_lng, city="CHI", state="IL")
         )
         lhr_stn = GraphStation(
             _stn_rec("LHR", lhr_country, lhr_region;
-                lat=lhr_lat, lng=lhr_lng, metro_area="LON")
+                latitude=lhr_lat, longitude=lhr_lng, city="LON")
         )
 
         # Leg 1: JFK → ORD  dep 08:00 (480 min)  arr 10:00 (600 min)
         rec1 = _leg_rec(
-            airline="UA", flt_no=200,
-            org="JFK", dst="ORD",
-            pax_dep=Int16(480), pax_arr=Int16(600),
-            distance=800.0f0, eqp=eqp1,
-            frequency=frequency_1, eff_date=eff, disc_date=disc,
-            mct_status_arr='D', mct_status_dep='D',
+            carrier="UA", flight_number=200,
+            departure_station="JFK", arrival_station="ORD",
+            passenger_departure_time=Int16(480), passenger_arrival_time=Int16(600),
+            distance=800.0f0, aircraft_type=eqp1,
+            frequency=frequency_1, effective_date=eff, discontinue_date=disc,
+            arr_intl_dom='D', dep_intl_dom='D',
         )
         # Leg 2: ORD → LHR  dep 12:00 (720 min)  arr 22:00 (1320 min)
         rec2 = _leg_rec(
-            airline="UA", flt_no=916,
-            org="ORD", dst="LHR",
-            pax_dep=Int16(720), pax_arr=Int16(1320),
-            distance=3941.0f0, eqp=eqp2,
-            frequency=frequency_2, eff_date=eff, disc_date=disc,
-            mct_status_arr='I', mct_status_dep='D',
+            carrier="UA", flight_number=916,
+            departure_station="ORD", arrival_station="LHR",
+            passenger_departure_time=Int16(720), passenger_arrival_time=Int16(1320),
+            distance=3941.0f0, aircraft_type=eqp2,
+            frequency=frequency_2, effective_date=eff, discontinue_date=disc,
+            arr_intl_dom='I', dep_intl_dom='D',
         )
         # Nonstop: JFK → LHR  dep 09:00 (540 min)  arr 21:00 (1260 min)
         rec_ns = _leg_rec(
-            airline="UA", flt_no=100,
-            org="JFK", dst="LHR",
-            pax_dep=Int16(540), pax_arr=Int16(1260),
-            distance=3451.0f0, eqp="789",
-            frequency=frequency_ns, eff_date=eff, disc_date=disc,
-            mct_status_arr='I', mct_status_dep='D',
+            carrier="UA", flight_number=100,
+            departure_station="JFK", arrival_station="LHR",
+            passenger_departure_time=Int16(540), passenger_arrival_time=Int16(1260),
+            distance=3451.0f0, aircraft_type="789",
+            frequency=frequency_ns, effective_date=eff, discontinue_date=disc,
+            arr_intl_dom='I', dep_intl_dom='D',
         )
 
         leg1 = GraphLeg(rec1, jfk_stn, ord_stn)
@@ -390,7 +390,7 @@ using Dates
         jfk_stn = GraphStation(_stn_rec("JFK", "US", "NAM"))
         ord_stn = GraphStation(_stn_rec("ORD", "US", "NAM"))
         rec = _leg_rec(
-            eff_date=UInt32(20260601), disc_date=UInt32(20260630),
+            effective_date=UInt32(20260601), discontinue_date=UInt32(20260630),
             frequency=UInt8(0x01),  # Mon only
         )
         leg = GraphLeg(rec, jfk_stn, ord_stn)
@@ -430,7 +430,7 @@ using Dates
         @testset "Nonstop: dep 08:00 arr 10:00" begin
             jfk_stn = GraphStation(_stn_rec("JFK", "US", "NAM"))
             ord_stn = GraphStation(_stn_rec("ORD", "US", "NAM"))
-            rec = _leg_rec(pax_dep=Int16(480), pax_arr=Int16(600), arr_date_var=Int8(0))
+            rec = _leg_rec(passenger_departure_time=Int16(480), passenger_arrival_time=Int16(600), arrival_date_variation=Int8(0))
             leg = GraphLeg(rec, jfk_stn, ord_stn)
             cp = nonstop_connection(leg, jfk_stn)
             itn = Itinerary(connections=GraphConnection[cp])
@@ -438,10 +438,10 @@ using Dates
             @test _compute_elapsed(itn) == Int32(120)
         end
 
-        @testset "Overnight flight: arr_date_var=1" begin
+        @testset "Overnight flight: arrival_date_variation=1" begin
             jfk_stn = GraphStation(_stn_rec("JFK", "US", "NAM"))
             lhr_stn = GraphStation(_stn_rec("LHR", "GB", "EUR"))
-            rec = _leg_rec(pax_dep=Int16(540), pax_arr=Int16(1260), arr_date_var=Int8(0))
+            rec = _leg_rec(passenger_departure_time=Int16(540), passenger_arrival_time=Int16(1260), arrival_date_variation=Int8(0))
             leg = GraphLeg(rec, jfk_stn, lhr_stn)
             cp = nonstop_connection(leg, jfk_stn)
             itn = Itinerary(connections=GraphConnection[cp])
@@ -453,7 +453,7 @@ using Dates
             jfk_stn = GraphStation(_stn_rec("JFK", "US", "NAM"))
             lhr_stn = GraphStation(_stn_rec("LHR", "GB", "EUR"))
             # dep 23:00 (1380), arr 07:00 next day (420 + 1440)
-            rec = _leg_rec(pax_dep=Int16(1380), pax_arr=Int16(420), arr_date_var=Int8(1))
+            rec = _leg_rec(passenger_departure_time=Int16(1380), passenger_arrival_time=Int16(420), arrival_date_variation=Int8(1))
             leg = GraphLeg(rec, jfk_stn, lhr_stn)
             cp = nonstop_connection(leg, jfk_stn)
             itn = Itinerary(connections=GraphConnection[cp])
@@ -470,10 +470,10 @@ using Dates
             ord_stn = GraphStation(_stn_rec("ORD", "US", "NAM"))
             lhr_stn = GraphStation(_stn_rec("LHR", "GB", "EUR"))
             rec = _leg_rec(
-                org="ORD", dst="LHR",
-                pax_dep=Int16(540), pax_arr=Int16(1320),
-                dep_utc_offset=Int16(-300), arr_utc_offset=Int16(0),
-                arr_date_var=Int8(0),
+                departure_station="ORD", arrival_station="LHR",
+                passenger_departure_time=Int16(540), passenger_arrival_time=Int16(1320),
+                departure_utc_offset=Int16(-300), arrival_utc_offset=Int16(0),
+                arrival_date_variation=Int8(0),
             )
             leg = GraphLeg(rec, ord_stn, lhr_stn)
             cp = nonstop_connection(leg, ord_stn)
@@ -488,10 +488,10 @@ using Dates
             jfk_stn = GraphStation(_stn_rec("JFK", "US", "NAM"))
             bos_stn = GraphStation(_stn_rec("BOS", "US", "NAM"))
             rec = _leg_rec(
-                org="JFK", dst="BOS",
-                pax_dep=Int16(480), pax_arr=Int16(560),
-                dep_utc_offset=Int16(-300), arr_utc_offset=Int16(-300),
-                arr_date_var=Int8(0),
+                departure_station="JFK", arrival_station="BOS",
+                passenger_departure_time=Int16(480), passenger_arrival_time=Int16(560),
+                departure_utc_offset=Int16(-300), arrival_utc_offset=Int16(-300),
+                arrival_date_variation=Int8(0),
             )
             leg = GraphLeg(rec, jfk_stn, bos_stn)
             cp = nonstop_connection(leg, jfk_stn)
@@ -513,11 +513,11 @@ using Dates
         lhr_stn = GraphStation(_stn_rec("LHR", "GB", "EUR"))
 
         rec_ns = _leg_rec(
-            airline="UA", flt_no=100,
-            org="JFK", dst="LHR",
-            pax_dep=Int16(540), pax_arr=Int16(1320),
-            dep_utc_offset=Int16(-300), arr_utc_offset=Int16(0),
-            arr_date_var=Int8(0),
+            carrier="UA", flight_number=100,
+            departure_station="JFK", arrival_station="LHR",
+            passenger_departure_time=Int16(540), passenger_arrival_time=Int16(1320),
+            departure_utc_offset=Int16(-300), arrival_utc_offset=Int16(0),
+            arrival_date_variation=Int8(0),
             distance=3451.0f0,
         )
         leg_ns = GraphLeg(rec_ns, jfk_stn, lhr_stn)
@@ -568,11 +568,11 @@ using Dates
         # JFK→LHR bearing ≈ 51°; JFK→SYD bearing ≈ 266° → divergence ≈ 145°
         # With default max_divergence_deg=120, SYD should be pruned from JFK→LHR search.
         jfk_stn = GraphStation(_stn_rec("JFK", "US", "NAM";
-            lat=JFK_LAT, lng=JFK_LNG))
+            latitude=JFK_LAT, longitude=JFK_LNG))
         syd_stn = GraphStation(_stn_rec("SYD", "AU", "PAC";
-            lat=-33.8688, lng=151.2093))
+            latitude=-33.8688, longitude=151.2093))
         lhr_stn = GraphStation(_stn_rec("LHR", "GB", "EUR";
-            lat=LHR_LAT, lng=LHR_LNG))
+            latitude=LHR_LAT, longitude=LHR_LNG))
 
         # Divergence ≈ 145° > 120° → SYD should be pruned (false)
         @test !_direction_ok(jfk_stn, syd_stn, lhr_stn)
@@ -584,7 +584,7 @@ using Dates
         @test _direction_ok(jfk_stn, lhr_stn, lhr_stn)
 
         # When current station coordinates are zero, always passes (no data)
-        zero_stn = GraphStation(_stn_rec("ZZZ", "US", "NAM"; lat=0.0, lng=0.0))
+        zero_stn = GraphStation(_stn_rec("ZZZ", "US", "NAM"; latitude=0.0, longitude=0.0))
         @test _direction_ok(zero_stn, syd_stn, lhr_stn)
     end
 
@@ -651,30 +651,30 @@ using Dates
         # Leg 3: C → A  dep 16:00 arr 18:00   distance=2000
         #
         # Round-trip detected when searching A → A.
-        # B (at lng=90) is farthest from A (at lng=0) → split_idx=1 (A→B outbound)
+        # B (at longitude=90) is farthest from A (at longitude=0) → split_idx=1 (A→B outbound)
         # Outbound: A→B (1 leg, 0 stops)
         # Return:   B→C→A (2 legs, 1 stop)
 
-        a_stn = GraphStation(_stn_rec("AAA", "US", "NAM"; lat=0.0, lng=0.0))
-        b_stn = GraphStation(_stn_rec("BBB", "US", "NAM"; lat=0.0, lng=90.0))
-        c_stn = GraphStation(_stn_rec("CCC", "US", "NAM"; lat=0.0, lng=45.0))
+        a_stn = GraphStation(_stn_rec("AAA", "US", "NAM"; latitude=0.0, longitude=0.0))
+        b_stn = GraphStation(_stn_rec("BBB", "US", "NAM"; latitude=0.0, longitude=90.0))
+        c_stn = GraphStation(_stn_rec("CCC", "US", "NAM"; latitude=0.0, longitude=45.0))
 
         rec_ab = _leg_rec(
-            airline="UA", flt_no=1,
-            org="AAA", dst="BBB",
-            pax_dep=Int16(480), pax_arr=Int16(600),
+            carrier="UA", flight_number=1,
+            departure_station="AAA", arrival_station="BBB",
+            passenger_departure_time=Int16(480), passenger_arrival_time=Int16(600),
             distance=3000.0f0,
         )
         rec_bc = _leg_rec(
-            airline="UA", flt_no=2,
-            org="BBB", dst="CCC",
-            pax_dep=Int16(720), pax_arr=Int16(840),
+            carrier="UA", flight_number=2,
+            departure_station="BBB", arrival_station="CCC",
+            passenger_departure_time=Int16(720), passenger_arrival_time=Int16(840),
             distance=2000.0f0,
         )
         rec_ca = _leg_rec(
-            airline="UA", flt_no=3,
-            org="CCC", dst="AAA",
-            pax_dep=Int16(960), pax_arr=Int16(1080),
+            carrier="UA", flight_number=3,
+            departure_station="CCC", arrival_station="AAA",
+            passenger_departure_time=Int16(960), passenger_arrival_time=Int16(1080),
             distance=2000.0f0,
         )
 
@@ -875,32 +875,32 @@ using Dates
         # Nonstop (JFK→LHR distance=3451) has circuity ≈ 1.0 → survives.
 
         jfk_stn = GraphStation(
-            _stn_rec("JFK", "US", "NAM"; lat=JFK_LAT, lng=JFK_LNG, metro_area="NYC", state="NY")
+            _stn_rec("JFK", "US", "NAM"; latitude=JFK_LAT, longitude=JFK_LNG, city="NYC", state="NY")
         )
         ord_stn = GraphStation(
-            _stn_rec("ORD", "US", "NAM"; lat=ORD_LAT, lng=ORD_LNG, metro_area="CHI", state="IL")
+            _stn_rec("ORD", "US", "NAM"; latitude=ORD_LAT, longitude=ORD_LNG, city="CHI", state="IL")
         )
         lhr_stn = GraphStation(
-            _stn_rec("LHR", "GB", "EUR"; lat=LHR_LAT, lng=LHR_LNG, metro_area="LON")
+            _stn_rec("LHR", "GB", "EUR"; latitude=LHR_LAT, longitude=LHR_LNG, city="LON")
         )
 
         rec1 = _leg_rec(
-            airline="UA", flt_no=200,
-            org="JFK", dst="ORD",
-            pax_dep=Int16(480), pax_arr=Int16(600),
+            carrier="UA", flight_number=200,
+            departure_station="JFK", arrival_station="ORD",
+            passenger_departure_time=Int16(480), passenger_arrival_time=Int16(600),
             distance=800.0f0,
         )
         # Leg 2 has absurdly large distance to force candidate_circ >> threshold
         rec2 = _leg_rec(
-            airline="UA", flt_no=916,
-            org="ORD", dst="LHR",
-            pax_dep=Int16(720), pax_arr=Int16(1320),
+            carrier="UA", flight_number=916,
+            departure_station="ORD", arrival_station="LHR",
+            passenger_departure_time=Int16(720), passenger_arrival_time=Int16(1320),
             distance=999_999.0f0,
         )
         rec_ns = _leg_rec(
-            airline="UA", flt_no=100,
-            org="JFK", dst="LHR",
-            pax_dep=Int16(540), pax_arr=Int16(1260),
+            carrier="UA", flight_number=100,
+            departure_station="JFK", arrival_station="LHR",
+            passenger_departure_time=Int16(540), passenger_arrival_time=Int16(1260),
             distance=3451.0f0,
         )
 

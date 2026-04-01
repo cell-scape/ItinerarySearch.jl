@@ -107,19 +107,19 @@ end
     @testset "get_departures" begin
         deps = get_departures(store, StationCode("ORD"), Date(2026, 6, 15))
         @test length(deps) >= 1
-        @test all(r -> r.org == StationCode("ORD"), deps)
+        @test all(r -> r.departure_station == StationCode("ORD"), deps)
     end
 
     @testset "get_arrivals" begin
         arrs = get_arrivals(store, StationCode("LHR"), Date(2026, 6, 15))
         @test length(arrs) >= 1
-        @test all(r -> r.dst == StationCode("LHR"), arrs)
+        @test all(r -> r.arrival_station == StationCode("LHR"), arrs)
     end
 
     @testset "query_legs" begin
         legs = query_legs(store, StationCode("ORD"), StationCode("LHR"), Date(2026, 6, 15))
         @test length(legs) >= 1
-        @test legs[1].airline == AirlineCode("UA")
+        @test legs[1].carrier == AirlineCode("UA")
     end
 
     @testset "query_market_distance" begin
@@ -142,7 +142,7 @@ end
         hash_val = UInt64(row.segment_hash)
         seg = query_segment(store, hash_val)
         @test seg !== nothing
-        @test seg.airline == AirlineCode("UA")
+        @test seg.carrier == AirlineCode("UA")
     end
 
     @testset "query_segment_stops" begin
@@ -239,7 +239,7 @@ end
     # Query tests
     stn = query_station(store, StationCode("ORD"))
     @test stn !== nothing
-    @test stn.lat ≈ 41.97 atol=0.01
+    @test stn.latitude ≈ 41.97 atol=0.01
 
     # Market distance
     d = query_market_distance(store, StationCode("ORD"), StationCode("LHR"))
