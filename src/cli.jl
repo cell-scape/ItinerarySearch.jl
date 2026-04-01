@@ -27,6 +27,7 @@ import ..SCOPE_ALL, ..SCOPE_DOM, ..SCOPE_INTL
 import ..INTERLINE_ONLINE, ..INTERLINE_CODESHARE, ..INTERLINE_ALL
 import .._parse_scope, .._parse_interline
 import ..Server
+import ..ingest_newssim!, ..ingest_mct!
 
 # ── Parser construction ────────────────────────────────────────────────────────
 
@@ -130,6 +131,17 @@ function _build_parser()::ArgParseSettings
         "--no-mct-cache"
         help = "Disable MCT lookup cache"
         action = :store_true
+
+        # ── Alternate ingest source ──────────────────────────────────────────
+        "--newssim"
+        help = "Path to a NewSSIM CSV file (alternative to SSIM fixed-width)"
+        arg_type = String
+        default = nothing
+
+        "--delimiter"
+        help = "CSV delimiter override character for --newssim"
+        arg_type = String
+        default = nothing
 
         # ── Command dispatch ──────────────────────────────────────────────────
         "search"
@@ -514,8 +526,15 @@ function _cmd_search(
 
     store = DuckDBStore()
     try
-        load_schedule!(store, config)
-        graph = build_graph!(store, config, target)
+        if global_args["newssim"] !== nothing
+            delim = global_args["delimiter"] !== nothing ? global_args["delimiter"][1] : nothing
+            ingest_newssim!(store, global_args["newssim"]; delimiter=delim)
+            ingest_mct!(store, config.mct_path)
+        else
+            load_schedule!(store, config)
+        end
+        source = global_args["newssim"] !== nothing ? :newssim : :ssim
+        graph = build_graph!(store, config, target; source=source)
 
         itn_rules = build_itn_rules(config)
         ctx = RuntimeContext(
@@ -628,8 +647,15 @@ function _cmd_trip(
 
     store = DuckDBStore()
     try
-        load_schedule!(store, config)
-        graph = build_graph!(store, config, target)
+        if global_args["newssim"] !== nothing
+            delim = global_args["delimiter"] !== nothing ? global_args["delimiter"][1] : nothing
+            ingest_newssim!(store, global_args["newssim"]; delimiter=delim)
+            ingest_mct!(store, config.mct_path)
+        else
+            load_schedule!(store, config)
+        end
+        source = global_args["newssim"] !== nothing ? :newssim : :ssim
+        graph = build_graph!(store, config, target; source=source)
 
         itn_rules = build_itn_rules(config)
         ctx = RuntimeContext(
@@ -674,8 +700,15 @@ function _cmd_build(config::SearchConfig, args::Dict, global_args::Dict)::Int
 
     store = DuckDBStore()
     try
-        load_schedule!(store, config)
-        graph = build_graph!(store, config, target)
+        if global_args["newssim"] !== nothing
+            delim = global_args["delimiter"] !== nothing ? global_args["delimiter"][1] : nothing
+            ingest_newssim!(store, global_args["newssim"]; delimiter=delim)
+            ingest_mct!(store, config.mct_path)
+        else
+            load_schedule!(store, config)
+        end
+        source = global_args["newssim"] !== nothing ? :newssim : :ssim
+        graph = build_graph!(store, config, target; source=source)
 
         bs = graph.build_stats
         # Print human-readable summary to stderr
@@ -723,7 +756,13 @@ end
 function _cmd_ingest(config::SearchConfig, _args::Dict, global_args::Dict)::Int
     store = DuckDBStore()
     try
-        load_schedule!(store, config)
+        if global_args["newssim"] !== nothing
+            delim = global_args["delimiter"] !== nothing ? global_args["delimiter"][1] : nothing
+            ingest_newssim!(store, global_args["newssim"]; delimiter=delim)
+            ingest_mct!(store, config.mct_path)
+        else
+            load_schedule!(store, config)
+        end
         stats = table_stats(store)
         _write_output(JSON3.write(stats), global_args)
     finally
@@ -809,8 +848,15 @@ function _cmd_serve(
 
     store = DuckDBStore()
     try
-        load_schedule!(store, config)
-        graph = build_graph!(store, config, target)
+        if globals["newssim"] !== nothing
+            delim = globals["delimiter"] !== nothing ? globals["delimiter"][1] : nothing
+            ingest_newssim!(store, globals["newssim"]; delimiter=delim)
+            ingest_mct!(store, config.mct_path)
+        else
+            load_schedule!(store, config)
+        end
+        source = globals["newssim"] !== nothing ? :newssim : :ssim
+        graph = build_graph!(store, config, target; source=source)
 
         state = Server.ServerState(
             config, constraints, store, graph,
