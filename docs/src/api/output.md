@@ -60,16 +60,16 @@ One row per leg per itinerary:
 |-------|------|-------------|
 | `itinerary_id` | Int | Sequential itinerary number |
 | `leg_seq` | Int | Position of this leg (1-based) |
-| `airline` | String | Marketing carrier IATA code |
-| `flt_no` | Int | Marketing flight number |
+| `carrier` | String | Marketing carrier IATA code |
+| `flight_number` | Int | Marketing flight number |
 | `flight_id` | String | Formatted flight identifier (e.g., `"UA 920"`) |
 | `record_serial` | Int | SSIM record serial number |
 | `segment_hash` | UInt64 | Segment identity hash |
-| `org` | String | Departure station IATA code |
-| `dst` | String | Arrival station IATA code |
-| `pax_dep` | Int | Scheduled passenger departure (minutes since midnight) |
-| `pax_arr` | Int | Scheduled passenger arrival (minutes since midnight) |
-| `eqp` | String | Equipment type code |
+| `departure_station` | String | Departure station IATA code |
+| `arrival_station` | String | Arrival station IATA code |
+| `passenger_departure_time` | Int | Scheduled passenger departure (minutes since midnight) |
+| `passenger_arrival_time` | Int | Scheduled passenger arrival (minutes since midnight) |
+| `aircraft_type` | String | Equipment type code |
 | `body_type` | Char | Aircraft body type (`'W'` = widebody, `'N'` = narrowbody) |
 | `distance` | Float64 | Flown distance (miles) |
 | `is_through` | Bool | True when this is a through-service leg |
@@ -114,7 +114,7 @@ Pipe-delimited, one row per leg per itinerary. Key columns beyond the long forma
 | `cnx_type` | `L` = single nonstop leg, `S` = through-segment, `C` = connection |
 | `mct_id` | Primary key of the matched MCT rule (0 = global default) |
 | `is_operating` | True for the physical operating flight; false for codeshare |
-| `codeshare_airline`, `codeshare_flt_no` | Operating carrier (from DEI 50) |
+| `administrating_carrier`, `administrating_carrier_flight_number` | Operating carrier (from DEI 50) |
 | `dei_10` | Commercial duplicate list |
 | `dei_127` | Operating airline disclosure |
 | `wet_lease` | True when operated under wet-lease |

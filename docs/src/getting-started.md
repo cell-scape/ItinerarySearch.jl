@@ -35,6 +35,26 @@ load_schedule!(store, config)
 
 The store is now ready to serve graph-build queries.
 
+### Alternative: NewSSIM CSV Ingest
+
+For denormalized CSV schedule files (comma, pipe, or tab-delimited; .gz supported), use the NewSSIM ingest path:
+
+```julia
+store = DuckDBStore()
+ingest_newssim!(store, "data/demo/sample_newssim.csv.gz")
+ingest_mct!(store, "data/input/MCTIMFILUA.DAT")  # MCT still required
+
+target_date = Date(2026, 6, 15)
+graph = build_graph!(store, config, target_date; source=:newssim)
+```
+
+Or from the CLI:
+
+```bash
+julia --project=. bin/itinsearch.jl --newssim data/demo/sample_newssim.csv.gz \
+    search ORD LHR 2026-06-15
+```
+
 ## Step 2: Build the Flight Graph
 
 ```julia
@@ -192,10 +212,10 @@ JSON structure:
           "legs": [
             {
               "row_number": 8234,
-              "airline": "UA",
-              "flt_no": 920,
-              "org": "ORD",
-              "dst": "LHR"
+              "carrier": "UA",
+              "flight_number": 920,
+              "departure_station": "ORD",
+              "arrival_station": "LHR"
             }
           ]
         }
@@ -215,11 +235,11 @@ key = ref.legs[1]
 
 # Resolve to GraphLeg (requires graph in memory)
 graph_leg = resolve_leg(key, graph)
-println(graph_leg.record.pax_dep)   # scheduled departure (minutes since midnight)
+println(graph_leg.record.passenger_departure_time)   # scheduled departure (minutes since midnight)
 
 # Resolve to LegRecord from DuckDB (works without graph)
 leg_record = resolve_leg(key, store)
-println(leg_record.eqp)             # equipment type
+println(leg_record.aircraft_type)    # equipment type
 
 # Resolve all legs in an ItineraryRef
 all_legs = resolve_legs(ref, graph)   # Vector{Union{GraphLeg, Nothing}}
@@ -243,14 +263,14 @@ for (date, org_dict) in result
         for (dst, itinerary_refs) in dst_dict
             fname = joinpath(outdir, "$(org)_$(dst)_$(date).psv")
             open(fname, "w") do io
-                println(io, "itinerary|leg_pos|row_number|record_serial|airline|flt_no|org|dst")
+                println(io, "itinerary|leg_pos|row_number|record_serial|carrier|flight_number|departure_station|arrival_station")
                 for (itn_idx, ref) in enumerate(itinerary_refs)
                     for (leg_pos, key) in enumerate(ref.legs)
                         println(io, join([
                             itn_idx, leg_pos,
                             key.row_number, key.record_serial,
-                            strip(String(key.airline)), key.flt_no,
-                            strip(String(key.org)), strip(String(key.dst)),
+                            strip(String(key.carrier)), key.flight_number,
+                            strip(String(key.departure_station)), strip(String(key.arrival_station)),
                         ], "|"))
                     end
                 end

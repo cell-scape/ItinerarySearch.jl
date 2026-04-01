@@ -19,16 +19,16 @@ Each row contains the flight identity fields needed to cross-reference with the 
 | `leg_pos` | Position of this leg in the itinerary (1, 2, 3, ...) |
 | `row_number` | Unique database row ID for this leg record |
 | `record_serial` | SSIM record serial number (bytes 195-200) |
-| `airline` | Marketing carrier IATA code |
-| `flt_no` | Marketing flight number |
+| `carrier` | Marketing carrier IATA code |
+| `flight_number` | Marketing flight number |
 | `operational_suffix` | SSIM operational suffix |
-| `itin_var` | Itinerary variation number |
-| `leg_seq` | SSIM leg sequence number within the flight |
-| `svc_type` | Service type code |
-| `codeshare_airline` | Operating carrier (same as airline when operating) |
-| `codeshare_flt_no` | Operating flight number (same as flt_no when operating) |
-| `org` | Departure station IATA code |
-| `dst` | Arrival station IATA code |
+| `itinerary_var_id` | Itinerary variation number |
+| `leg_sequence_number` | SSIM leg sequence number within the flight |
+| `service_type` | Service type code |
+| `administrating_carrier` | Operating carrier (same as `carrier` when operating) |
+| `administrating_carrier_flight_number` | Operating flight number (same as `flight_number` when operating) |
+| `departure_station` | Departure station IATA code |
+| `arrival_station` | Arrival station IATA code |
 
 ### Functions
 
@@ -82,7 +82,7 @@ result[Date(2026, 3, 20)]["DEN"]["LAX"]  # → Vector{ItineraryRef}
           "distance_miles": 3958.0,
           "circuity": 1.01,
           "legs": [
-            {"row_number": 8234, "record_serial": 56789, "airline": "UA", "flt_no": 920, "org": "ORD", "dst": "LHR", ...}
+            {"row_number": 8234, "record_serial": 56789, "carrier": "UA", "flight_number": 920, "departure_station": "ORD", "arrival_station": "LHR", ...}
           ]
         }
       ]
@@ -276,14 +276,14 @@ for (date, org_dict) in result
         for (dst, itinerary_refs) in dst_dict
             fname = joinpath(outdir, "$(org)_$(dst)_$(date).psv")
             open(fname, "w") do io
-                println(io, "itinerary|leg_pos|row_number|record_serial|airline|flt_no|org|dst")
+                println(io, "itinerary|leg_pos|row_number|record_serial|carrier|flight_number|departure_station|arrival_station")
                 for (itn_idx, ref) in enumerate(itinerary_refs)
                     for (leg_pos, key) in enumerate(ref.legs)
                         println(io, join([
                             itn_idx, leg_pos,
                             key.row_number, key.record_serial,
-                            strip(String(key.airline)), key.flt_no,
-                            strip(String(key.org)), strip(String(key.dst)),
+                            strip(String(key.carrier)), key.flight_number,
+                            strip(String(key.departure_station)), strip(String(key.arrival_station)),
                         ], "|"))
                     end
                 end
@@ -333,7 +333,7 @@ close(store)
 ## Example Output
 
 ```
-itinerary|leg_pos|row_number|record_serial|airline|flt_no|org|dst
+itinerary|leg_pos|row_number|record_serial|carrier|flight_number|departure_station|arrival_station
 1|1|8234|56789|UA|774|DEN|LAX
 2|1|8301|56812|UA|2240|DEN|LAX
 3|1|8156|56734|UA|1013|DEN|LAX
