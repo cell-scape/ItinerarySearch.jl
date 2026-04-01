@@ -176,7 +176,7 @@ end
 # ── build_graph! ──────────────────────────────────────────────────────────────
 
 """
-    `function build_graph!(store::DuckDBStore, config::SearchConfig, target_date::Date)::FlightGraph`
+    `function build_graph!(store::DuckDBStore, config::SearchConfig, target_date::Date; source::Symbol=:ssim)::FlightGraph`
 ---
 
 # Description
@@ -184,7 +184,8 @@ end
 - Pipeline:
   1. Compute schedule window from `target_date` ± `config.leading_days` /
      `config.trailing_days`
-  2. Query schedule-level legs from DuckDB (`query_schedule_legs`)
+  2. Query schedule-level legs from DuckDB (`query_schedule_legs` for `:ssim`,
+     `query_newssim_legs` for `:newssim`)
   3. Create `GraphStation` nodes (one per unique station code); populate from the
      `stations` reference table when available, otherwise create minimal nodes
   4. Create `GraphLeg` edges; link to origin and destination stations
@@ -199,6 +200,10 @@ end
 1. `store::DuckDBStore`: populated DuckDB store (must have legs loaded)
 2. `config::SearchConfig`: search configuration (window sizes, rule parameters)
 3. `target_date::Date`: centre date of the schedule window
+
+# Keyword Arguments
+- `source::Symbol=:ssim`: data source — `:ssim` for SSIM fixed-width pipeline,
+  `:newssim` for denormalized CSV pipeline
 
 # Returns
 - `::FlightGraph`: fully built and connected flight network graph
@@ -215,7 +220,8 @@ true
 function build_graph!(
     store::DuckDBStore,
     config::SearchConfig,
-    target_date::Date,
+    target_date::Date;
+    source::Symbol = :ssim,
 )::FlightGraph
     t0 = time_ns()
 
@@ -239,15 +245,23 @@ function build_graph!(
     emit!(event_log, PhaseEvent(phase = :schedule_load, action = :start))
 
     # 2. Query schedule-level legs
-    leg_records = query_schedule_legs(store, window_start, window_end)
-    @info "Loaded schedule legs" count = length(leg_records)
+    leg_records = if source == :newssim
+        query_newssim_legs(store, window_start, window_end)
+    else
+        query_schedule_legs(store, window_start, window_end)
+    end
+    @info "Loaded schedule legs" count = length(leg_records) source
 
     # 3. Create stations — one per unique code
     stations = Dict{StationCode,GraphStation}()
     for rec in leg_records
         for code in (rec.departure_station, rec.arrival_station)
             if !haskey(stations, code)
-                stn_rec = query_station(store, code)
+                stn_rec = if source == :newssim
+                    query_newssim_station(store, code)
+                else
+                    query_station(store, code)
+                end
                 if stn_rec !== nothing
                     stations[code] = GraphStation(stn_rec)
                 else
