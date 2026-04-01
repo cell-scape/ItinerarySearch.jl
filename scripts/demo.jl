@@ -55,7 +55,7 @@ println("="^50)
 # Station lookup
 stn = query_station(store, StationCode("ORD"))
 if stn !== nothing
-    println("\nStation ORD: $(stn.metro_area), $(stn.country) ($(stn.lat), $(stn.lng))")
+    println("\nStation ORD: $(stn.city), $(stn.country) ($(stn.latitude), $(stn.longitude))")
 end
 
 # Market distance
@@ -180,11 +180,11 @@ for day_offset in 0:(n_days-1)
                         for (leg_pos, k) in enumerate(itn_ref.legs)
                             println(io, join([itn_idx, leg_pos,
                                     Int(k.row_number), Int(k.record_serial),
-                                    strip(String(k.airline)), Int(k.flt_no),
-                                    k.operational_suffix, Int(k.itin_var),
-                                    k.itin_var_overflow, Int(k.leg_seq), k.svc_type,
-                                    strip(String(k.codeshare_airline)), Int(k.codeshare_flt_no),
-                                    strip(String(k.org)), strip(String(k.dst))], "|"))
+                                    strip(String(k.carrier)), Int(k.flight_number),
+                                    k.operational_suffix, Int(k.itinerary_var_id),
+                                    k.itinerary_var_overflow, Int(k.leg_sequence_number), k.service_type,
+                                    strip(String(k.administrating_carrier)), Int(k.administrating_carrier_flight_number),
+                                    strip(String(k.departure_station)), strip(String(k.arrival_station))], "|"))
                             n_rows += 1
                         end
                     end
