@@ -498,10 +498,30 @@ function _handle_rebuild(req::HTTP.Request, state::ServerState)::HTTP.Response
     _store  = state.store
     _config = state.config
 
+    # Parse optional source from body
+    _source = :ssim
+    if length(req.body) > 0
+        raw_body2 = try
+            JSON3.read(String(req.body))
+        catch
+            nothing
+        end
+        if raw_body2 isa JSON3.Object
+            body_obj2 = raw_body2::JSON3.Object
+            if haskey(body_obj2, :source)
+                src_val = body_obj2[:source]
+                if src_val isa String && src_val == "newssim"
+                    _source = :newssim
+                end
+            end
+        end
+    end
+
     _target = target  # immutable local capture
+    _source_local = _source
     Threads.@spawn begin
         try
-            new_graph = build_graph!(_store, _config, _target)
+            new_graph = build_graph!(_store, _config, _target; source=_source_local)
             lock(state.graph_lock) do
                 state.graph           = new_graph
                 state.target_date     = _target
