@@ -33,6 +33,8 @@ include("store/schedule_queries.jl")
 include("ingest/ssim.jl")
 include("ingest/mct.jl")
 include("ingest/reference.jl")
+include("ingest/newssim.jl")
+include("ingest/newssim_materialize.jl")
 include("graph/mct_lookup.jl")
 include("graph/rules_cnx.jl")
 include("graph/rules_itn.jl")
@@ -103,6 +105,7 @@ export setup_logger
 # Exports — ingest
 export ingest_ssim!
 export ingest_mct!
+export ingest_newssim!, detect_delimiter
 export load_airports!, load_regions!, load_oa_control!, load_aircrafts!
 
 # Exports — store interface
