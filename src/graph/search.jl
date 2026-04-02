@@ -502,6 +502,21 @@ end
 
 # ── Layer 1 path helper ─────────────────────────────────────────────────────────
 
+# ── DFS helpers ──────────────────────────────────────────────────────────────────
+
+"""
+Check whether `station_code` appears as a departure station in any connection
+already in the itinerary path. Used to prevent station cycles in the DFS.
+"""
+@inline function _station_in_path(itn::Itinerary, station_code::StationCode)::Bool
+    for j in 1:length(itn.connections)
+        if (itn.connections[j].from_leg::GraphLeg).record.departure_station == station_code
+            return true
+        end
+    end
+    return false
+end
+
 # ── DFS core ────────────────────────────────────────────────────────────────────
 
 """
@@ -557,6 +572,13 @@ function _dfs!(
         cp.from_leg === cp.to_leg && continue
 
         next_leg = cp.to_leg::GraphLeg  # to_leg is AbstractGraphNode
+
+        # Station cycle check — the connection-level backtrack rule catches
+        # immediate reversals (A→X→A), but longer cycles (A→X→Y→A) require
+        # path awareness. Scan the current path for the connecting station.
+        # O(depth) where depth ≤ max_stops; effectively free at depth 2-3.
+        cnx_stn = (cp.station::GraphStation).code
+        _station_in_path(itn, cnx_stn) && continue
 
         # Elapsed-time pruning (UTC-based)
         next_utc_arr = Int32(next_leg.record.passenger_arrival_time) - Int32(next_leg.record.arrival_utc_offset) +
