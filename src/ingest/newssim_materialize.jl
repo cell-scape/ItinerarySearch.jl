@@ -1,4 +1,88 @@
 # src/ingest/newssim_materialize.jl — Materialize graph structs from newssim DuckDB table
+#
+# Uses station UTC offsets from the airports reference file when available,
+# rather than deriving from the CSV's datetime columns (which may have
+# day-crossing errors from upstream SSIM parsers).
+
+# ── Timezone offset loader ──────────────────────────────────────────────────────
+
+"""
+    `load_timezone_offsets(path::AbstractString)::Dict{StationCode, Int16}`
+---
+
+# Description
+- Load station UTC offsets from an airports reference file
+- Supports two formats (auto-detected):
+  - Tab-delimited: `CODE\\tNAME\\tMETRO\\tCOUNTRY\\tSTATE\\tLAT\\tLNG\\tOFFSET_MIN`
+  - Fixed-width (OAG mdstua.txt): station code at cols 7-9, UTC offset ±HHMM at cols 11-15
+- Returns a dictionary mapping 3-letter station codes to UTC offset in minutes
+- These are standard (non-DST) offsets; DST awareness is a future enhancement
+- Handles duplicate entries by keeping the first (airport-level, not city-level)
+
+# Arguments
+1. `path::AbstractString`: path to airports reference file (may be compressed)
+
+# Returns
+- `::Dict{StationCode, Int16}`: station code → UTC offset in minutes
+
+# Examples
+```julia
+julia> tz = load_timezone_offsets("data/input/airports_tab.txt");
+julia> tz[StationCode("ORD")]
+-360
+```
+"""
+function load_timezone_offsets(path::AbstractString)::Dict{StationCode,Int16}
+    offsets = Dict{StationCode,Int16}()
+    io = open_maybe_compressed(path)
+    try
+        first_line = readline(io)
+
+        if occursin('\t', first_line)
+            # Tab-delimited format: CODE\tNAME\t...\tOFFSET_MIN
+            _parse_tz_tab_line!(offsets, first_line)
+            for line in eachline(io)
+                _parse_tz_tab_line!(offsets, line)
+            end
+        else
+            # Fixed-width format: station code at 7-9, UTC offset ±HHMM at 11-15
+            _parse_tz_fwf_line!(offsets, first_line)
+            for line in eachline(io)
+                _parse_tz_fwf_line!(offsets, line)
+            end
+        end
+    finally
+        close(io)
+    end
+    @info "Loaded timezone offsets" count = length(offsets) path
+    return offsets
+end
+
+function _parse_tz_tab_line!(offsets::Dict{StationCode,Int16}, line::AbstractString)
+    parts = split(line, '\t')
+    length(parts) >= 8 || return
+    code = strip(String(parts[1]))
+    (length(code) != 3 || any(!isletter, code)) && return
+    haskey(offsets, StationCode(code)) && return
+    v = tryparse(Int16, strip(String(parts[8])))
+    v === nothing && return
+    offsets[StationCode(code)] = v
+end
+
+function _parse_tz_fwf_line!(offsets::Dict{StationCode,Int16}, line::AbstractString)
+    length(line) >= 15 || return
+    code = String(line[7:9])
+    (length(code) != 3 || any(!isletter, code)) && return
+    haskey(offsets, StationCode(code)) && return
+    offset_str = String(line[11:15])
+    # Parse ±HHMM format
+    s = strip(offset_str)
+    length(s) < 5 && return
+    sign = s[1] == '-' ? Int16(-1) : Int16(1)
+    hhmm = tryparse(Int, s[2:end])
+    hhmm === nothing && return
+    offsets[StationCode(code)] = sign * Int16(div(hhmm, 100) * 60 + rem(hhmm, 100))
+end
 
 """
     `function parse_dms(s::AbstractString)::Float64`
@@ -210,7 +294,8 @@ julia> legs = query_newssim_legs(store, Date(2026, 2, 25), Date(2026, 2, 27));
 function query_newssim_legs(
     store::DuckDBStore,
     window_start::Date,
-    window_end::Date,
+    window_end::Date;
+    tz_offsets::Dict{StationCode,Int16}=Dict{StationCode,Int16}(),
 )::Vector{LegRecord}
     result = DBInterface.execute(
         store.db,
@@ -239,19 +324,73 @@ function query_newssim_legs(
         pax_dep = _parse_time_to_minutes(r.passenger_departure_time)
         pax_arr = _parse_time_to_minutes(r.passenger_arrival_time)
 
-        # Correct arrival datetimes for day-crossing errors in source data.
-        # Some upstream SSIM parsers don't apply date variation to the arrival
-        # datetime, causing arr_utc to be before dep_utc for overnight flights.
-        arr_dt_corrected = _correct_arrival_datetime(r.departure_datetime_utc, r.arrival_datetime_utc)
-        arr_local_corrected = _correct_arrival_datetime(r.departure_datetime, r.arrival_datetime)
+        # Station codes for timezone lookup
+        dep_stn = StationCode(_safe_string(r.departure_station))
+        arr_stn = StationCode(_safe_string(r.arrival_station))
 
-        # UTC offsets from datetime comparisons
-        dep_utc = _compute_utc_offset(r.departure_datetime, r.departure_datetime_utc)
-        arr_utc = _compute_utc_offset(arr_local_corrected, arr_dt_corrected)
+        # UTC offsets: prefer reference timezone data over CSV datetime columns.
+        # The CSV's UTC datetimes have systematic day-crossing errors from
+        # upstream SSIM parsers that don't apply date variation properly.
+        dep_utc_off = get(tz_offsets, dep_stn, nothing)
+        arr_utc_off = get(tz_offsets, arr_stn, nothing)
 
-        # Date variations
-        dep_date_var = _compute_date_variation(r.departure_datetime, op_date)
-        arr_date_var = _compute_date_variation(arr_local_corrected, op_date)
+        if dep_utc_off !== nothing && arr_utc_off !== nothing
+            # Use reference timezone offsets — reliable, no day-crossing bugs
+            dep_utc = dep_utc_off
+            arr_utc = arr_utc_off
+
+            # Compute arrival date variation from local times and known UTC offsets.
+            # Convert both times to UTC-minutes-since-midnight-of-operating-date:
+            dep_utc_mins = Int(pax_dep) - Int(dep_utc)   # can be negative (dep before UTC midnight)
+            arr_utc_mins = Int(pax_arr) - Int(arr_utc)   # can be > 1440 or < 0
+
+            # The flight time in UTC must be positive and <= 24h for a single leg.
+            # Find the integer number of days N such that:
+            #   0 < (arr_utc_mins + N*1440) - dep_utc_mins <= 1440
+            # This gives us the day offset in UTC. The arrival local date variation
+            # is then derived by converting back to local time.
+            raw_diff = arr_utc_mins - dep_utc_mins
+            # Normalize raw_diff to 1..1440 range by adding/subtracting days
+            utc_day_offset = if raw_diff > 0 && raw_diff <= 1440
+                0
+            elseif raw_diff <= 0
+                # Need to add days
+                d = 1
+                while raw_diff + d * 1440 <= 0 && d < 4; d += 1; end
+                d
+            else
+                # raw_diff > 1440 — need to subtract days
+                d = -1
+                while raw_diff + d * 1440 > 1440 && d > -4; d -= 1; end
+                d
+            end
+
+            # Arrival UTC minute = dep_utc_mins + flight_time
+            # Arrival local minute = arr_utc_mins + utc_day_offset * 1440
+            # The local arrival day relative to operating date:
+            arr_local_total_mins = Int(pax_arr) + utc_day_offset * 1440
+            arr_date_var = if arr_local_total_mins < 0
+                Int8(-1)
+            elseif arr_local_total_mins < 1440
+                Int8(0)
+            elseif arr_local_total_mins < 2880
+                Int8(1)
+            else
+                Int8(2)
+            end
+
+            dep_date_var = _compute_date_variation(r.departure_datetime, op_date)
+        else
+            # Fallback: derive from CSV datetime columns with day-crossing correction
+            arr_dt_corrected = _correct_arrival_datetime(r.departure_datetime_utc, r.arrival_datetime_utc)
+            arr_local_corrected = _correct_arrival_datetime(r.departure_datetime, r.arrival_datetime)
+
+            dep_utc = _compute_utc_offset(r.departure_datetime, r.departure_datetime_utc)
+            arr_utc = _compute_utc_offset(arr_local_corrected, arr_dt_corrected)
+
+            dep_date_var = _compute_date_variation(r.departure_datetime, op_date)
+            arr_date_var = _compute_date_variation(arr_local_corrected, op_date)
+        end
 
         # Carrier and flight number
         carrier_str = _safe_string(r.carrier)
@@ -373,7 +512,8 @@ julia> stn.country
 """
 function query_newssim_station(
     store::DuckDBStore,
-    code::StationCode,
+    code::StationCode;
+    tz_offsets::Dict{StationCode,Int16}=Dict{StationCode,Int16}(),
 )::Union{StationRecord,Nothing}
     code_str = strip(String(code))
 
@@ -445,11 +585,14 @@ function query_newssim_station(
     lat = parse_dms(lat_str)
     lng = parse_dms(lng_str)
 
-    # Derive UTC offset from the datetime pair if available
-    utc_off = _compute_utc_offset(
-        hasproperty(r, :local_dt) ? r.local_dt : nothing,
-        hasproperty(r, :utc_dt) ? r.utc_dt : nothing,
-    )
+    # Use reference timezone offset if available; fall back to datetime derivation
+    utc_off = get(tz_offsets, StationCode(code_str), nothing)
+    if utc_off === nothing
+        utc_off = _compute_utc_offset(
+            hasproperty(r, :local_dt) ? r.local_dt : nothing,
+            hasproperty(r, :utc_dt) ? r.utc_dt : nothing,
+        )
+    end
 
     return StationRecord(
         code       = StationCode(code_str),

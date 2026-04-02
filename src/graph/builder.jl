@@ -222,11 +222,36 @@ function build_graph!(
     config::SearchConfig,
     target_date::Date;
     source::Symbol = :ssim,
+    airports_path::Union{String,Nothing} = nothing,
 )::FlightGraph
     t0 = time_ns()
 
     # Set up structured logging (task-local — no global state mutation)
     logger = setup_logger(config)
+
+    # Load timezone offsets for the newssim path (used to compute correct UTC
+    # offsets from reference data rather than the CSV's datetime columns)
+    tz_offsets = Dict{StationCode,Int16}()
+    if source == :newssim
+        tz_path = airports_path
+        if tz_path === nothing
+            # Auto-discover: check standard locations (tab-delimited and fixed-width)
+            for candidate in [
+                "data/input/airports_tab.txt",
+                "data/input/mdstua.txt",
+                "data/demo/airports_tab.txt",
+                "data/demo/airports.txt",
+            ]
+                if isfile(candidate)
+                    tz_path = candidate
+                    break
+                end
+            end
+        end
+        if tz_path !== nothing && isfile(tz_path)
+            tz_offsets = load_timezone_offsets(tz_path)
+        end
+    end
 
     return Logging.with_logger(logger) do
 
@@ -246,7 +271,7 @@ function build_graph!(
 
     # 2. Query schedule-level legs
     leg_records = if source == :newssim
-        query_newssim_legs(store, window_start, window_end)
+        query_newssim_legs(store, window_start, window_end; tz_offsets=tz_offsets)
     else
         query_schedule_legs(store, window_start, window_end)
     end
@@ -258,7 +283,7 @@ function build_graph!(
         for code in (rec.departure_station, rec.arrival_station)
             if !haskey(stations, code)
                 stn_rec = if source == :newssim
-                    query_newssim_station(store, code)
+                    query_newssim_station(store, code; tz_offsets=tz_offsets)
                 else
                     query_station(store, code)
                 end
