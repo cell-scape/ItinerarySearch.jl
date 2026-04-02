@@ -3,19 +3,13 @@ using DBInterface
 
 @testset "NewSSIM Ingest" begin
     @testset "detect_delimiter" begin
-        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv")
+        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
         @test ItinerarySearch.detect_delimiter(demo_csv) == ','
-
-        # Test compressed file
-        gz_path = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
-        if isfile(gz_path)
-            @test ItinerarySearch.detect_delimiter(gz_path) == ','
-        end
     end
 
     @testset "ingest_newssim!" begin
         store = DuckDBStore()
-        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv")
+        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
 
         n = ingest_newssim!(store, demo_csv)
         @test n > 100_000  # demo file has ~168K rows
@@ -30,7 +24,7 @@ using DBInterface
 
     @testset "ingest_newssim! with explicit delimiter" begin
         store = DuckDBStore()
-        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv")
+        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
 
         n = ingest_newssim!(store, demo_csv; delimiter=',')
         @test n > 100_000
@@ -48,7 +42,7 @@ using DBInterface
 
     @testset "query_newssim_legs" begin
         store = DuckDBStore()
-        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv")
+        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
         ingest_newssim!(store, demo_csv)
 
         # Query legs in a date window that covers the demo data
@@ -70,7 +64,7 @@ using DBInterface
 
     @testset "query_newssim_station" begin
         store = DuckDBStore()
-        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv")
+        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
         ingest_newssim!(store, demo_csv)
 
         stn = ItinerarySearch.query_newssim_station(store, StationCode("SFO"))
@@ -86,7 +80,7 @@ using DBInterface
 
     @testset "full pipeline: ingest → build → search" begin
         store = DuckDBStore()
-        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv")
+        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
         mct_path = joinpath(@__DIR__, "..", "data", "demo", "mct_demo.dat")
 
         ingest_newssim!(store, demo_csv)

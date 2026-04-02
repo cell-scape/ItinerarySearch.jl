@@ -31,7 +31,7 @@ graph_source = :ssim
 
 if use_newssim
     # NewSSIM CSV path — load denormalized CSV + MCT
-    newssim_path = joinpath("data", "demo", "sample_newssim.csv")
+    newssim_path = joinpath("data", "demo", "sample_newssim.csv.gz")
     mct_path = joinpath("data", "demo", "mct_demo.dat")
     if !isfile(newssim_path)
         println("\nNewSSIM demo data not found: $(newssim_path)")
@@ -370,7 +370,7 @@ println("  Ingest:   julia --project=. bin/itinsearch.jl ingest")
 println("  Info:     julia --project=. bin/itinsearch.jl info")
 println("  Sysimage: make sysimage  (then use --sysimage=build/ItinerarySearch.so)")
 println()
-println("  NewSSIM:  julia --project=. bin/itinsearch.jl --newssim data/demo/sample_newssim.csv search ORD LHR 2026-02-26")
+println("  NewSSIM:  julia --project=. bin/itinsearch.jl --newssim data/demo/sample_newssim.csv.gz search ORD LHR 2026-02-26")
 println("  Demo:     make demo              (SSIM path)")
 println("            make demo-newssim      (NewSSIM CSV path)")
 

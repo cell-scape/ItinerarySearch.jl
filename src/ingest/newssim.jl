@@ -17,7 +17,7 @@
 
 # Examples
 ```julia
-julia> detect_delimiter("data/demo/sample_newssim.csv")
+julia> detect_delimiter("data/demo/sample_newssim.csv.gz")
 ','
 ```
 """
@@ -56,7 +56,7 @@ end
 # Examples
 ```julia
 julia> store = DuckDBStore();
-julia> n = ingest_newssim!(store, "data/demo/sample_newssim.csv");
+julia> n = ingest_newssim!(store, "data/demo/sample_newssim.csv.gz");
 julia> n > 100_000
 true
 ```
