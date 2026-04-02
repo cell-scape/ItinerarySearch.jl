@@ -7,11 +7,12 @@ ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Ti
 ## Features
 
 - **SSIM ingest** — streaming fixed-width parser for OAG/SSIM Type 1-5 records, with EDF expansion, codeshare (DEI 50) resolution, and segment building
+- **NewSSIM CSV ingest** — alternative CSV-based ingest path (`ingest_newssim!`) for denormalized schedule files; auto-detects delimiter (comma, pipe, tab) and handles .gz compression
 - **MCT lookup** — full SSIM8 Chapter 8 matching with 29-level specificity cascade, codeshare indicators, aircraft type, flight number ranges, state geography, date validity, suppression geography, and inter-station (multi-airport city) support; result cache with revalidation (~77% hit rate)
 - **Graph-based connection building** — O(n²) rule-chain pass producing `GraphConnection` edges at every station; Tuple-dispatched rules for fully specialized compilation
 - **DFS search with pruning** — depth-first traversal with elapsed-time, circuity, direction, and stop-count pruning
 - **Trip search with scoring** — multi-leg trip pairing with configurable weighted scoring (`TripScoringWeights`)
-- **Multiple output formats** — PSV files, JSON (full and compact with `ItineraryRef` summary), `itinerary_long_format` / `itinerary_wide_format` tables
+- **Multiple output formats** — CSV files, JSON (full and compact with `ItineraryRef` summary), `itinerary_long_format` / `itinerary_wide_format` tables
 - **Interactive visualizations** — self-contained HTML network map (Leaflet), timeline (D3 Gantt), and trip comparison (D3 stacked bar)
 - **Observability** — structured event log with typed events and JSONL sink, DynaTrace-compatible JSON logging via LoggingExtras TeeLogger, cooperative system metrics polling, Tier 1 instrumentation (rule counters, MCT cascade stats, geographic aggregation)
 - **CLI** — `itinsearch` with 6 commands (search, trip, build, ingest, info, serve), global flags, per-invocation parameter overrides
@@ -70,6 +71,12 @@ julia --project=. bin/itinsearch.jl ingest
 # With overrides
 julia --project=. bin/itinsearch.jl search ORD LHR 2026-03-20 \
     --max-stops 3 --scope intl --output results.json --log-level debug
+
+# NewSSIM CSV ingest (alternative to SSIM fixed-width)
+julia --project=. bin/itinsearch.jl --newssim data/demo/sample_newssim.csv.gz \
+    search ORD LHR 2026-06-15
+julia --project=. bin/itinsearch.jl --newssim data/input/schedule.csv --delimiter '|' \
+    build --date 2026-06-15
 ```
 
 ### REST API
@@ -92,15 +99,16 @@ curl -X POST http://localhost:8080/trip \
 curl http://localhost:8080/station/ORD
 curl http://localhost:8080/health
 curl -X POST http://localhost:8080/rebuild
+curl -X POST http://localhost:8080/rebuild -d '{"source":"newssim"}'
 ```
 
 ## Architecture
 
 ```
 SSIM file ──┐
-MCT file  ──┼──► DuckDB Store ──► FlightGraph ──► DFS Search ──► Output
-Ref tables ─┘                                                     ├── JSON / PSV
-                                                                  ├── CLI (stdout)
+NewSSIM CSV ┼──► DuckDB Store ──► FlightGraph ──► DFS Search ──► Output
+MCT file  ──┤                                                     ├── JSON / CSV
+Ref tables ─┘                                                     ├── CLI (stdout)
                                                                   └── REST API (HTTP)
 ```
 

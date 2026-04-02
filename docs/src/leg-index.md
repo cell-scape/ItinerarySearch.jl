@@ -35,17 +35,17 @@ Each `LegKey` contains the fields needed to cross-reference with the full schedu
 |-------|-------------|
 | `row_number` | Unique database row ID for this leg record |
 | `record_serial` | SSIM record serial number (bytes 195-200) |
-| `airline` | Marketing carrier IATA code |
-| `flt_no` | Marketing flight number |
+| `carrier` | Marketing carrier IATA code |
+| `flight_number` | Marketing flight number |
 | `operational_suffix` | SSIM operational suffix |
-| `itin_var` | Itinerary variation number |
-| `itin_var_overflow` | Itinerary variation overflow character |
-| `leg_seq` | SSIM leg sequence number within the flight |
-| `svc_type` | Service type code |
-| `codeshare_airline` | Operating carrier (same as `airline` when operating) |
-| `codeshare_flt_no` | Operating flight number (same as `flt_no` when operating) |
-| `org` | Departure station IATA code |
-| `dst` | Arrival station IATA code |
+| `itinerary_var_id` | Itinerary variation number |
+| `itinerary_var_overflow` | Itinerary variation overflow character |
+| `leg_sequence_number` | SSIM leg sequence number within the flight |
+| `service_type` | Service type code |
+| `administrating_carrier` | Operating carrier (same as `carrier` when operating) |
+| `administrating_carrier_flight_number` | Operating flight number (same as `flight_number` when operating) |
+| `departure_station` | Departure station IATA code |
+| `arrival_station` | Arrival station IATA code |
 
 ## Functions
 
@@ -100,8 +100,8 @@ result[Date(2026, 3, 20)]["ORD"]["SFO"]  # → Vector{ItineraryRef}
           "legs": [
             {
               "row_number": 8234, "record_serial": 56789,
-              "airline": "UA", "flt_no": 920,
-              "org": "ORD", "dst": "LHR"
+              "carrier": "UA", "flight_number": 920,
+              "departure_station": "ORD", "arrival_station": "LHR"
             }
           ]
         }
@@ -215,7 +215,7 @@ compact = itinerary_legs_json(graph.stations, ctx;
 )
 ```
 
-### Step 5: Write PSV Files
+### Step 5: Write CSV Files
 
 ```julia
 outdir = "data/output/legs_index"
@@ -229,15 +229,15 @@ result = itinerary_legs_multi(graph.stations, ctx;
 
 header = join([
     "itinerary", "leg_pos", "row_number", "record_serial",
-    "airline", "flt_no", "operational_suffix", "itin_var",
-    "leg_seq", "svc_type", "codeshare_airline", "codeshare_flt_no",
-    "org", "dst",
-], "|")
+    "carrier", "flight_number", "operational_suffix", "itinerary_var_id",
+    "leg_sequence_number", "service_type", "administrating_carrier", "administrating_carrier_flight_number",
+    "departure_station", "arrival_station",
+], ",")
 
 for (date, org_dict) in result
     for (org, dst_dict) in org_dict
         for (dst, itinerary_refs) in dst_dict
-            fname = joinpath(outdir, "$(org)_$(dst)_$(date).psv")
+            fname = joinpath(outdir, "$(org)_$(dst)_$(date).csv")
             open(fname, "w") do io
                 println(io, header)
                 for (itn_idx, ref) in enumerate(itinerary_refs)
@@ -245,13 +245,13 @@ for (date, org_dict) in result
                         println(io, join([
                             itn_idx, leg_pos,
                             key.row_number, key.record_serial,
-                            strip(String(key.airline)), key.flt_no,
-                            key.operational_suffix, key.itin_var,
-                            key.leg_seq, key.svc_type,
-                            strip(String(key.codeshare_airline)),
-                            key.codeshare_flt_no,
-                            strip(String(key.org)), strip(String(key.dst)),
-                        ], "|"))
+                            strip(String(key.carrier)), key.flight_number,
+                            key.operational_suffix, key.itinerary_var_id,
+                            key.leg_sequence_number, key.service_type,
+                            strip(String(key.administrating_carrier)),
+                            key.administrating_carrier_flight_number,
+                            strip(String(key.departure_station)), strip(String(key.arrival_station)),
+                        ], ","))
                     end
                 end
             end
@@ -298,7 +298,7 @@ close(store)
 ## Example Output
 
 ```
-itinerary|leg_pos|row_number|record_serial|airline|flt_no|org|dst
+itinerary|leg_pos|row_number|record_serial|carrier|flight_number|departure_station|arrival_station
 1|1|8234|56789|UA|774|DEN|LAX
 2|1|8301|56812|UA|2240|DEN|LAX
 3|1|8156|56734|UA|1013|DEN|LAX
@@ -315,7 +315,7 @@ itinerary|leg_pos|row_number|record_serial|airline|flt_no|org|dst
 
 | Command | Description |
 |---------|-------------|
-| `make search ORG=ORD DST=LHR DATE=2026-03-20` | Single O-D: PSV, JSON, HTML table, network map |
+| `make search ORG=ORD DST=LHR DATE=2026-03-20` | Single O-D: CSV, JSON, HTML table, network map |
 | `make search ORG=ORD DATE=2026-03-20` | All destinations from ORG |
 | `make viz [DATE=2026-03-18]` | Regenerate HTML visualizations only |
 | `make json [DATE=2026-03-18] [DAYS=3]` | Write JSON output only (full + compact) |

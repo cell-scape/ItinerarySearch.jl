@@ -25,37 +25,38 @@ end
 Immutable flight leg record. Captures everything needed to identify,
 display, and cross-reference a flight leg from SSIM data.
 
-The **Flight Identifier** `(airline, flt_no, operational_suffix, itin_var,
-itin_var_overflow, leg_seq, svc_type)` uniquely identifies a record in the
-SSIM schedule. Dropping `leg_seq` gives the **Segment Identifier**.
+The **Flight Identifier** `(carrier, flight_number, operational_suffix,
+itinerary_var_id, itinerary_var_overflow, leg_sequence_number, service_type)`
+uniquely identifies a record in the SSIM schedule. Dropping
+`leg_sequence_number` gives the **Segment Identifier**.
 """
 @kwdef struct LegRecord
     # ── Flight Identifier (SSIM Type 3 bytes 2-14) ──
-    airline::AirlineCode
-    flt_no::FlightNumber
+    carrier::AirlineCode
+    flight_number::FlightNumber
     operational_suffix::Char
-    itin_var::UInt8
-    itin_var_overflow::Char
-    leg_seq::UInt8
-    svc_type::Char
+    itinerary_var_id::UInt8
+    itinerary_var_overflow::Char
+    leg_sequence_number::UInt8
+    service_type::Char
 
     # ── Stations & Times ──
-    org::StationCode
-    dst::StationCode
-    pax_dep::Minutes                # Passenger STD: HHMM → minutes since midnight
-    pax_arr::Minutes                # Passenger STA
-    ac_dep::Minutes                 # Aircraft STD (connection building uses this)
-    ac_arr::Minutes                 # Aircraft STA
-    dep_utc_offset::Int16           # minutes from UTC
-    arr_utc_offset::Int16
-    dep_date_var::Int8              # 0, 1, 2, or -1 for 'A'
-    arr_date_var::Int8
+    departure_station::StationCode
+    arrival_station::StationCode
+    passenger_departure_time::Minutes   # Passenger STD: HHMM → minutes since midnight
+    passenger_arrival_time::Minutes     # Passenger STA
+    aircraft_departure_time::Minutes    # Aircraft STD (connection building uses this)
+    aircraft_arrival_time::Minutes      # Aircraft STA
+    departure_utc_offset::Int16         # minutes from UTC
+    arrival_utc_offset::Int16
+    departure_date_variation::Int8      # 0, 1, 2, or -1 for 'A'
+    arrival_date_variation::Int8
 
     # ── Equipment & Terminals ──
-    eqp::InlineString7
+    aircraft_type::InlineString7
     body_type::Char                 # 'W'ide or 'N'arrow
-    dep_term::InlineString3
-    arr_term::InlineString3
+    departure_terminal::InlineString3
+    arrival_terminal::InlineString3
     aircraft_owner::AirlineCode
 
     # ── Operating Date (from EDF expansion) ──
@@ -63,15 +64,15 @@ SSIM schedule. Dropping `leg_seq` gives the **Segment Identifier**.
     day_of_week::UInt8              # 1=Mon .. 7=Sun (ISO)
 
     # ── Schedule Dates & Frequency ──
-    eff_date::UInt32                # packed YYYYMMDD
-    disc_date::UInt32               # packed YYYYMMDD
+    effective_date::UInt32          # packed YYYYMMDD
+    discontinue_date::UInt32        # packed YYYYMMDD
     frequency::UInt8                # 7-bit DOW bitmask (Mon=bit0 .. Sun=bit6)
 
     # ── MCT & Restrictions ──
-    mct_status_dep::Char            # 'D' or 'I'
-    mct_status_arr::Char
-    trc::InlineString15             # bytes 150-160, indexed by leg_seq
-    trc_overflow::Char
+    dep_intl_dom::Char              # 'D' or 'I'
+    arr_intl_dom::Char
+    traffic_restriction_for_leg::InlineString15  # bytes 150-160, indexed by leg_sequence_number
+    traffic_restriction_overflow::Char
 
     # ── Identity & Cross-reference ──
     record_serial::UInt32           # SSIM bytes 195-200
@@ -79,9 +80,9 @@ SSIM schedule. Dropping `leg_seq` gives the **Segment Identifier**.
     segment_hash::UInt64            # hash of segment identity fields
     distance::Distance
 
-    # ── Codeshare / Operating Carrier (from DEI supplements) ──
-    codeshare_airline::AirlineCode  # DEI 50
-    codeshare_flt_no::FlightNumber  # DEI 50
+    # ── Operating Carrier (DEI 50 / DEI 127: operating airline disclosure) ──
+    operating_carrier::AirlineCode          # DEI 50
+    operating_flight_number::FlightNumber   # DEI 50
     dei_10::String                  # DEI 10: commercial duplicate list (variable length)
     wet_lease::Bool                 # byte 149: 'Z' or 'S'
     dei_127::String                 # DEI 127: operating airline disclosure (variable length)
@@ -95,7 +96,7 @@ end
 
 Human-readable flight identifier (e.g., "UA 354").
 """
-flight_id(r::LegRecord) = "$(r.airline)$(lpad(r.flt_no, 4))"
+flight_id(r::LegRecord) = "$(r.carrier)$(lpad(r.flight_number, 4))"
 
 # ── LegKey ───────────────────────────────────────────────────────────────────
 
@@ -104,7 +105,7 @@ flight_id(r::LegRecord) = "$(r.airline)$(lpad(r.flt_no, 4))"
 
 Compact reference to a leg in the schedule. Contains the SSIM Type 3 flight
 identifier fields plus the database row ID and record serial for cross-referencing.
-Codeshare fields default to self when the leg is operating.
+Operating carrier fields default to self when the leg is operating.
 """
 @kwdef struct LegKey
     # ── Cross-reference IDs ──
@@ -112,56 +113,56 @@ Codeshare fields default to self when the leg is operating.
     record_serial::UInt32 = UInt32(0)
 
     # ── Flight Identifier (SSIM Type 3 bytes 2-14) ──
-    airline::AirlineCode = AirlineCode("")
-    flt_no::FlightNumber = FlightNumber(0)
+    carrier::AirlineCode = AirlineCode("")
+    flight_number::FlightNumber = FlightNumber(0)
     operational_suffix::Char = ' '
-    itin_var::UInt8 = UInt8(1)
-    itin_var_overflow::Char = ' '
-    leg_seq::UInt8 = UInt8(1)
-    svc_type::Char = 'J'
+    itinerary_var_id::UInt8 = UInt8(1)
+    itinerary_var_overflow::Char = ' '
+    leg_sequence_number::UInt8 = UInt8(1)
+    service_type::Char = 'J'
 
-    # ── Codeshare / Operating Carrier (from DEI 50) ──
-    codeshare_airline::AirlineCode = AirlineCode("")
-    codeshare_flt_no::FlightNumber = FlightNumber(0)
+    # ── Operating Carrier (DEI 50 / DEI 127: operating airline disclosure) ──
+    operating_carrier::AirlineCode = AirlineCode("")
+    operating_flight_number::FlightNumber = FlightNumber(0)
 
     # ── Station Pair ──
-    org::StationCode = StationCode("")
-    dst::StationCode = StationCode("")
+    departure_station::StationCode = StationCode("")
+    arrival_station::StationCode = StationCode("")
 
     # ── Schedule Context ──
     operating_date::UInt32 = UInt32(0)  # packed YYYYMMDD — which day this leg operates
-    dep_time::Minutes = Minutes(0)      # scheduled departure (minutes since midnight, local)
+    departure_time::Minutes = Minutes(0)      # scheduled departure (minutes since midnight, local)
 end
 
 """
     `LegKey(r::LegRecord)::LegKey`
 
 Construct a `LegKey` from a full `LegRecord`, copying identity fields.
-Codeshare fields default to self when the leg is operating.
+Operating carrier fields default to self when the leg is operating.
 """
 function LegKey(r::LegRecord)
-    cs_al = strip(String(r.codeshare_airline))
-    airline_s = strip(String(r.airline))
+    cs_al = strip(String(r.operating_carrier))
+    carrier_s = strip(String(r.carrier))
     LegKey(
-        row_number          = r.row_number,
-        record_serial       = r.record_serial,
-        airline             = r.airline,
-        flt_no              = r.flt_no,
-        operational_suffix  = r.operational_suffix,
-        itin_var            = r.itin_var,
-        itin_var_overflow   = r.itin_var_overflow,
-        leg_seq             = r.leg_seq,
-        svc_type            = r.svc_type,
-        codeshare_airline   = (cs_al == "" || cs_al == airline_s) ? r.airline : r.codeshare_airline,
-        codeshare_flt_no    = (cs_al == "" || cs_al == airline_s) ? r.flt_no : r.codeshare_flt_no,
-        org                 = r.org,
-        dst                 = r.dst,
-        operating_date      = r.operating_date,
-        dep_time            = r.pax_dep,
+        row_number                          = r.row_number,
+        record_serial                       = r.record_serial,
+        carrier                             = r.carrier,
+        flight_number                       = r.flight_number,
+        operational_suffix                  = r.operational_suffix,
+        itinerary_var_id                    = r.itinerary_var_id,
+        itinerary_var_overflow              = r.itinerary_var_overflow,
+        leg_sequence_number                 = r.leg_sequence_number,
+        service_type                        = r.service_type,
+        operating_carrier                   = (cs_al == "" || cs_al == carrier_s) ? r.carrier : r.operating_carrier,
+        operating_flight_number             = (cs_al == "" || cs_al == carrier_s) ? r.flight_number : r.operating_flight_number,
+        departure_station                   = r.departure_station,
+        arrival_station                     = r.arrival_station,
+        operating_date                      = r.operating_date,
+        departure_time                      = r.passenger_departure_time,
     )
 end
 
-flight_id(k::LegKey) = "$(k.airline)$(lpad(k.flt_no, 4))"
+flight_id(k::LegKey) = "$(k.carrier)$(lpad(k.flight_number, 4))"
 
 # ── ItineraryRef ─────────────────────────────────────────────────────────────
 
@@ -196,20 +197,20 @@ end
 
 # ── Derived accessors (computed on demand, not stored) ───────────────────────
 
-"""Origin station code of the itinerary (first leg's org)."""
-origin(ref::ItineraryRef) = isempty(ref.legs) ? StationCode("") : ref.legs[1].org
+"""Origin station code of the itinerary (first leg's departure_station)."""
+origin(ref::ItineraryRef) = isempty(ref.legs) ? StationCode("") : ref.legs[1].departure_station
 
-"""Destination station code (last leg's dst)."""
-destination(ref::ItineraryRef) = isempty(ref.legs) ? StationCode("") : ref.legs[end].dst
+"""Destination station code (last leg's arrival_station)."""
+destination(ref::ItineraryRef) = isempty(ref.legs) ? StationCode("") : ref.legs[end].arrival_station
 
 """Station codes visited in order (origin + intermediates + destination)."""
 function stops(ref::ItineraryRef)::Vector{StationCode}
     isempty(ref.legs) && return StationCode[]
     result = StationCode[]
     for k in ref.legs
-        (isempty(result) || result[end] != k.org) && push!(result, k.org)
+        (isempty(result) || result[end] != k.departure_station) && push!(result, k.departure_station)
     end
-    push!(result, ref.legs[end].dst)
+    push!(result, ref.legs[end].arrival_station)
     return result
 end
 
@@ -239,14 +240,14 @@ route_str(ref::ItineraryRef) = join(String.(stops(ref)), " -> ")
 
 Segment identifier: flight_id + itinerary variation + service type.
 """
-segment_id(r::LegRecord) = "$(flight_id(r))/$(r.itin_var)/$(r.svc_type)"
+segment_id(r::LegRecord) = "$(flight_id(r))/$(r.itinerary_var_id)/$(r.service_type)"
 
 """
     `full_id(r::LegRecord)::String`
 
 Full leg identifier: segment_id + leg sequence number.
 """
-full_id(r::LegRecord) = "$(segment_id(r))/L$(lpad(r.leg_seq, 2, '0'))"
+full_id(r::LegRecord) = "$(segment_id(r))/L$(lpad(r.leg_sequence_number, 2, '0'))"
 
 
 """
@@ -258,10 +259,10 @@ Immutable record for station/airport reference data.
     code::StationCode = ""
     country::InlineString3 = ""          # 2-char ISO
     state::InlineString3 = ""           # 2-char, may be empty
-    metro_area::InlineString3 = ""
+    city::InlineString3 = ""
     region::InlineString3 = ""          # 3-char IATA region
-    lat::Float64 = 0.
-    lng::Float64 = 0.
+    latitude::Float64 = 0.
+    longitude::Float64 = 0.
     utc_offset::Int16 = 0              # minutes from UTC
 end
 
@@ -290,33 +291,33 @@ end
     struct SegmentRecord
 
 Precomputed segment-level aggregates from the `segments` DuckDB table.
-A segment is all legs sharing the same flight identity minus leg_seq
-on the same operating date.
+A segment is all legs sharing the same flight identity minus
+leg_sequence_number on the same operating date.
 """
 @kwdef struct SegmentRecord
     segment_hash::UInt64
     # Identity
-    airline::AirlineCode
-    flt_no::FlightNumber
-    op_suffix::Char
-    itin_var::UInt8
-    itin_var_overflow::Char
-    svc_type::Char
+    carrier::AirlineCode
+    flight_number::FlightNumber
+    operational_suffix::Char
+    itinerary_var_id::UInt8
+    itinerary_var_overflow::Char
+    service_type::Char
     operating_date::UInt32          # packed YYYYMMDD
     # Structure
     num_legs::UInt8
     first_leg_seq::UInt8
     last_leg_seq::UInt8
     # Endpoints
-    segment_org::StationCode
-    segment_dst::StationCode
+    segment_departure_station::StationCode
+    segment_arrival_station::StationCode
     # Distances & Circuity
     flown_distance::Distance        # sum of leg distances
     market_distance::Distance       # great-circle org→dst
     segment_circuity::Float32       # flown / market (1.0 = direct)
     # Timing
-    segment_pax_dep::Minutes
-    segment_pax_arr::Minutes
-    segment_ac_dep::Minutes
-    segment_ac_arr::Minutes
+    segment_passenger_departure_time::Minutes
+    segment_passenger_arrival_time::Minutes
+    segment_aircraft_departure_time::Minutes
+    segment_aircraft_arrival_time::Minutes
 end

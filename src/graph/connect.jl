@@ -44,12 +44,12 @@ function _set_connection_status!(
     end
 
     # Interline vs codeshare: compare marketing carriers first
-    if arr_leg.record.airline != dep_leg.record.airline
-        # Resolve operating carriers (codeshare_airline is non-empty when set)
-        arr_op = arr_leg.record.codeshare_airline != NO_AIRLINE ?
-            arr_leg.record.codeshare_airline : arr_leg.record.airline
-        dep_op = dep_leg.record.codeshare_airline != NO_AIRLINE ?
-            dep_leg.record.codeshare_airline : dep_leg.record.airline
+    if arr_leg.record.carrier != dep_leg.record.carrier
+        # Resolve operating carriers (operating_carrier is non-empty when set)
+        arr_op = arr_leg.record.operating_carrier != NO_AIRLINE ?
+            arr_leg.record.operating_carrier : arr_leg.record.carrier
+        dep_op = dep_leg.record.operating_carrier != NO_AIRLINE ?
+            dep_leg.record.operating_carrier : dep_leg.record.carrier
         if arr_op == dep_op
             cp.status |= STATUS_CODESHARE
         else
@@ -101,8 +101,8 @@ function _set_validity_window!(
     arr_leg::GraphLeg,
     dep_leg::GraphLeg,
 )::Nothing
-    cp.valid_from = max(arr_leg.record.eff_date, dep_leg.record.eff_date)
-    cp.valid_to   = min(arr_leg.record.disc_date, dep_leg.record.disc_date)
+    cp.valid_from = max(arr_leg.record.effective_date, dep_leg.record.effective_date)
+    cp.valid_to   = min(arr_leg.record.discontinue_date, dep_leg.record.discontinue_date)
     # cp.valid_days is already set by _set_connection_status! (single source of truth)
     if cp.valid_from <= cp.valid_to
         cp.num_valid_dates = Int16(max(1, count_ones(cp.valid_days)))
@@ -165,7 +165,7 @@ function build_connections_at_station!(
         stats.num_nonstops += Int32(1)
         # Track distance and equipment for departures
         stats.total_dep_distance += Float64(dep_leg.distance)
-        push!(stats.unique_equipment, dep_leg.record.eqp)
+        push!(stats.unique_equipment, dep_leg.record.aircraft_type)
     end
 
     # Track arrival distances
@@ -253,16 +253,16 @@ function build_connections_at_station!(
             end
 
             # Carrier and equipment tracking
-            push!(stats.unique_carriers, arr_leg.record.airline)
-            push!(stats.unique_carriers, dep_leg.record.airline)
-            push!(stats.unique_equipment, arr_leg.record.eqp)
-            push!(stats.unique_equipment, dep_leg.record.eqp)
+            push!(stats.unique_carriers, arr_leg.record.carrier)
+            push!(stats.unique_carriers, dep_leg.record.carrier)
+            push!(stats.unique_equipment, arr_leg.record.aircraft_type)
+            push!(stats.unique_equipment, dep_leg.record.aircraft_type)
 
             # Running weighted average ground time (cnx_time set by MCTRule)
             n = Int(stats.num_connections)
             stats.avg_ground_time =
                 stats.avg_ground_time * (n - 1) / n + Float64(cp.cnx_time) / n
-            @debug "Connection accepted" from_org=String(arr_leg.record.org) to_dst=String(dep_leg.record.dst) cnx_time=cp.cnx_time mct=cp.mct
+            @debug "Connection accepted" from_org=String(arr_leg.record.departure_station) to_dst=String(dep_leg.record.arrival_station) cnx_time=cp.cnx_time mct=cp.mct
         end
     end
 

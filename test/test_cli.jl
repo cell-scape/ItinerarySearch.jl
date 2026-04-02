@@ -114,6 +114,38 @@ end
             @test args["interline"] === nothing
             @test args["allow-roundtrips"] == false
             @test args["no-mct-cache"] == false
+            @test args["newssim"] === nothing
+            @test args["delimiter"] === nothing
+        end
+
+        @testset "--newssim flag recognized" begin
+            args = parse_args(["--newssim", "/tmp/test.csv", "info"], parser)
+            @test args["newssim"] == "/tmp/test.csv"
+            @test args["delimiter"] === nothing
+        end
+
+        @testset "--newssim with --delimiter" begin
+            args = parse_args(["--newssim", "/tmp/test.csv", "--delimiter", "|", "info"], parser)
+            @test args["newssim"] == "/tmp/test.csv"
+            @test args["delimiter"] == "|"
+        end
+
+        @testset "--delimiter alone (without --newssim)" begin
+            args = parse_args(["--delimiter", "\\t", "info"], parser)
+            @test args["newssim"] === nothing
+            @test args["delimiter"] == "\\t"
+        end
+
+        @testset "--newssim with search command" begin
+            args = parse_args(["--newssim", "/tmp/test.csv", "search", "ORD", "LHR", "2026-06-15"], parser)
+            @test args["newssim"] == "/tmp/test.csv"
+            @test args["%COMMAND%"] == "search"
+        end
+
+        @testset "--newssim with build command" begin
+            args = parse_args(["--newssim", "/tmp/test.csv", "build", "--date", "2026-06-15"], parser)
+            @test args["newssim"] == "/tmp/test.csv"
+            @test args["%COMMAND%"] == "build"
         end
 
         @testset "global flags: overrides parsed" begin

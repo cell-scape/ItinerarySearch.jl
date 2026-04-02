@@ -27,6 +27,12 @@ make bench
 
 # Run demo script
 make demo
+
+# NewSSIM CSV ingest (alternative to SSIM fixed-width)
+julia --project=. bin/itinsearch.jl --newssim data/demo/sample_newssim.csv.gz \
+    search ORD LHR 2026-06-15
+julia --project=. bin/itinsearch.jl --newssim data/input/schedule.csv --delimiter '|' \
+    build --date 2026-06-15
 ```
 
 Julia 1.10+ required.
@@ -41,7 +47,7 @@ The main module `ItinerarySearch` (`src/ItinerarySearch.jl`) uses standard `incl
   - `aliases.jl` — `InlineString`-based domain type aliases (`StationCode`, `AirlineCode`, etc.) for `isbits`-friendly fixed-width strings
   - `enums.jl` — `CEnum.@cenum` types (cabin, traffic restriction codes, etc.)
   - Additional struct types added in later tasks
-- **ingest/** — Streaming parsers for SSIM fixed-width files, MCT data, and reference tables. Designed for large files using `Mmap` and byte-range column specs.
+- **ingest/** — Streaming parsers for SSIM fixed-width files, MCT data, and reference tables. Designed for large files using `Mmap` and byte-range column specs. Also includes `newssim.jl` for CSV ingest of denormalized NewSSIM schedule files (`ingest_newssim!`, `detect_delimiter`).
 - **store/** — `DuckDBStore` singleton for ingest and query of all tables. SQL-based post-ingest pipeline (join, enrich, filter).
 - **graph/** — Struct-based connection graph (stations, legs, connect points). DFS itinerary search.
 - **api/** — High-level search interface and `SearchConfig` (JSON-configurable parameters).
@@ -61,26 +67,35 @@ The main module `ItinerarySearch` (`src/ItinerarySearch.jl`) uses standard `incl
 
 **SearchConfig** — JSON-configurable search parameters (window sizes, rule toggles, MCT overrides). Loaded via `JSON3` at startup or per-request.
 
-### Key Types (planned, added in subsequent tasks)
+### Key Types
 
 - `StationCode` / `AirlineCode` / `FlightNumber` — `InlineString` aliases
 - `MCT_DD` — Duration in minutes (Int16)
 - `Cabin` — CEnum for booking class (F/C/Y etc.)
-- `Leg` — Flight leg struct with ~40 fields
-- `Station` — Airport node with departures/arrivals/connections vectors
-- `ConnectPoint` — Connection between two legs with MCT, status bitmask
-- `Itinerary` — Sequence of ConnectPoints
+- `LegRecord` — Flight leg struct with 41 fields using canonical names: `carrier`, `flight_number`, `departure_station`, `arrival_station`, `passenger_departure_time`, `passenger_arrival_time`, `aircraft_type`, `distance`, etc.
+- `GraphStation` — Airport node with departures/arrivals/connections vectors
+- `GraphConnection` — Connection between two legs with MCT, status bitmask
+- `Itinerary` — Sequence of GraphConnections
 - `SearchConfig` — JSON-deserialized search parameters
 
 ### Data Pipeline
+
+**SSIM fixed-width path (default):**
 
 1. `ingest_ssim!()` — Stream SSIM fixed-width file into DuckDB
 2. `ingest_mct!()` — Stream MCT file into DuckDB
 3. `load_reference_tables!()` — Load airports, regions, aircraft from reference files
 4. SQL post-ingest pipeline — Join, enrich, filter in DuckDB
-5. `build_graph!()` — Materialize `Station`/`Leg` structs from DuckDB query results
-6. `build_connections!()` — Apply rule chain to build `ConnectPoint` graph
+5. `build_graph!(store, config, date)` — Materialize graph from DuckDB query results
+6. `build_connections!()` — Apply rule chain to build `GraphConnection` graph
 7. `search_itineraries()` — DFS search from origin to destinations
+
+**NewSSIM CSV path (alternative):**
+
+1. `ingest_newssim!(store, path; delimiter=nothing)` — Load denormalized CSV into DuckDB `newssim` table (auto-detects delimiter; supports .gz)
+2. `ingest_mct!()` — MCT ingest (same as SSIM path)
+3. `build_graph!(store, config, date; source=:newssim)` — Queries `newssim` table instead of SSIM pipeline tables
+4. Connection building and search proceed identically
 
 ## Development Notes
 

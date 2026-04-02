@@ -77,11 +77,13 @@ end
 Parse a SSIM Type 3 record and append one row to the `legs` Appender.
 
 Column order must match the `legs` DDL exactly:
-  row_id, record_serial, airline, flt_no, op_suffix, itin_var,
-  itin_var_overflow, leg_seq, svc_type, org, dst, pax_dep_mins, pax_arr_mins,
-  ac_dep_mins, ac_arr_mins, dep_utc_offset, arr_utc_offset, dep_date_var,
-  arr_date_var, dep_term, arr_term, eqp, body_type, aircraft_owner,
-  eff_date, disc_date, frequency, mct_dep, mct_arr, trc, trc_overflow,
+  row_id, record_serial, carrier, flight_number, op_suffix, itinerary_var_id,
+  itinerary_var_overflow, leg_sequence_number, service_type, departure_station, arrival_station,
+  passenger_departure_time, passenger_arrival_time, aircraft_departure_time, aircraft_arrival_time,
+  departure_utc_offset, arrival_utc_offset, departure_date_variation, arrival_date_variation,
+  departure_terminal, arrival_terminal, aircraft_type, body_type, aircraft_owner,
+  effective_date, discontinue_date, frequency, dep_intl_dom, arr_intl_dom,
+  traffic_restriction_for_leg, traffic_restriction_overflow,
   prbd, distance, wet_lease
 """
 function _append_type3!(appender, row_id::Int, line::String)
@@ -122,12 +124,13 @@ function _append_type3!(appender, row_id::Int, line::String)
     wet_lease        = (op_disclosure == 'Z' || op_disclosure == 'S')
 
     # ── Append in DDL column order ─────────────────────────────────────────
-    # row_id, record_serial, airline, flt_no, op_suffix, itin_var,
-    # itin_var_overflow, leg_seq, svc_type, org, dst,
-    # pax_dep_mins, pax_arr_mins, ac_dep_mins, ac_arr_mins,
-    # dep_utc_offset, arr_utc_offset, dep_date_var, arr_date_var,
-    # dep_term, arr_term, eqp, body_type, aircraft_owner,
-    # eff_date, disc_date, frequency, mct_dep, mct_arr, trc, trc_overflow,
+    # row_id, record_serial, carrier, flight_number, op_suffix, itinerary_var_id,
+    # itinerary_var_overflow, leg_sequence_number, service_type, departure_station, arrival_station,
+    # passenger_departure_time, passenger_arrival_time, aircraft_departure_time, aircraft_arrival_time,
+    # departure_utc_offset, arrival_utc_offset, departure_date_variation, arrival_date_variation,
+    # departure_terminal, arrival_terminal, aircraft_type, body_type, aircraft_owner,
+    # effective_date, discontinue_date, frequency, dep_intl_dom, arr_intl_dom,
+    # traffic_restriction_for_leg, traffic_restriction_overflow,
     # prbd, distance, wet_lease
     DuckDB.append(appender, row_id)
     DuckDB.append(appender, record_serial)

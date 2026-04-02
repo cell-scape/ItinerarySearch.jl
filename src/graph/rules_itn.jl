@@ -125,7 +125,7 @@ end
 # Description
 - Checks for itinerary-level suppression code 'I' on any leg in the itinerary
 - Code 'I' in SSIM8 indicates the leg is suppressed for itinerary building
-- Inspects `cp.from_leg.record.trc` at position `cp.from_leg.record.leg_seq`
+- Inspects `cp.from_leg.record.traffic_restriction_for_leg` at position `cp.from_leg.record.leg_sequence_number`
   for each connection in the itinerary
 
 # Arguments
@@ -138,8 +138,8 @@ end
 function check_itn_suppcodes(itn::Itinerary, ctx)::Int
     for cp in itn.connections
         from_l = cp.from_leg::GraphLeg
-        trc = from_l.record.trc
-        seq = Int(from_l.record.leg_seq)
+        trc = from_l.record.traffic_restriction_for_leg
+        seq = Int(from_l.record.leg_sequence_number)
         if seq > 0 && seq <= length(trc)
             trc[seq] == 'I' && return FAIL_ITN_SUPPCODE
         end

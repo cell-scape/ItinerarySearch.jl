@@ -150,26 +150,26 @@ end
     max_divergence_deg::Float64 = 120.0,
 )::Bool
     # Skip check when coordinates are unpopulated
-    (current.record.lat == 0.0 && current.record.lng == 0.0) && return true
-    (next_dst.record.lat == 0.0 && next_dst.record.lng == 0.0) && return true
-    (final_dst.record.lat == 0.0 && final_dst.record.lng == 0.0) && return true
+    (current.record.latitude == 0.0 && current.record.longitude == 0.0) && return true
+    (next_dst.record.latitude == 0.0 && next_dst.record.longitude == 0.0) && return true
+    (final_dst.record.latitude == 0.0 && final_dst.record.longitude == 0.0) && return true
 
     # Arriving at the destination is always acceptable
     next_dst.code == final_dst.code && return true
 
     # Bearing from current to final destination
     b1 = _bearing(
-        current.record.lat,
-        current.record.lng,
-        final_dst.record.lat,
-        final_dst.record.lng,
+        current.record.latitude,
+        current.record.longitude,
+        final_dst.record.latitude,
+        final_dst.record.longitude,
     )
     # Bearing from current to next station
     b2 = _bearing(
-        current.record.lat,
-        current.record.lng,
-        next_dst.record.lat,
-        next_dst.record.lng,
+        current.record.latitude,
+        current.record.longitude,
+        next_dst.record.latitude,
+        next_dst.record.longitude,
     )
 
     # Smallest angular difference (wrap at 180°)
@@ -218,9 +218,9 @@ function _compute_elapsed(itn::Itinerary)::Int32
     # from_leg === to_leg.  Accumulate first leg's UTC block time as the base.
     first_leg = itn.connections[1].from_leg::GraphLeg  # from_leg is AbstractGraphNode
     fr = first_leg.record
-    utc_dep_first = Int32(fr.pax_dep) - Int32(fr.dep_utc_offset)
+    utc_dep_first = Int32(fr.passenger_departure_time) - Int32(fr.departure_utc_offset)
     utc_arr_first =
-        Int32(fr.pax_arr) - Int32(fr.arr_utc_offset) + Int32(fr.arr_date_var) * Int32(1440)
+        Int32(fr.passenger_arrival_time) - Int32(fr.arrival_utc_offset) + Int32(fr.arrival_date_variation) * Int32(1440)
     total = utc_arr_first - utc_dep_first
 
     # For each subsequent connecting cp, add the ground time plus the outbound
@@ -230,9 +230,9 @@ function _compute_elapsed(itn::Itinerary)::Int32
         total += Int32(cp.cnx_time)
         to = cp.to_leg::GraphLeg  # to_leg is AbstractGraphNode
         tr = to.record
-        utc_dep = Int32(tr.pax_dep) - Int32(tr.dep_utc_offset)
+        utc_dep = Int32(tr.passenger_departure_time) - Int32(tr.departure_utc_offset)
         utc_arr =
-            Int32(tr.pax_arr) - Int32(tr.arr_utc_offset) + Int32(tr.arr_date_var) * Int32(1440)
+            Int32(tr.passenger_arrival_time) - Int32(tr.arrival_utc_offset) + Int32(tr.arrival_date_variation) * Int32(1440)
         total += utc_arr - utc_dep
     end
 
@@ -250,7 +250,7 @@ No-ops when `stn.code == NO_STATION` or a field is empty.
 function _add_station_geo!(metros, states, countries, regions, stn::GraphStation)
     stn.code == NO_STATION && return
     rec = stn.record
-    rec.metro_area != InlineString3("") && push!(metros, rec.metro_area)
+    rec.city != InlineString3("") && push!(metros, rec.city)
     rec.state != InlineString3("") && push!(states, rec.state)
     rec.country != InlineString3("") && push!(countries, rec.country)
     rec.region != InlineString3("") && push!(regions, rec.region)
@@ -410,10 +410,10 @@ function _split_and_commit_roundtrip!(itn::Itinerary, ctx::RuntimeContext)
         leg = (cp.to_leg === cp.from_leg ? cp.from_leg : cp.to_leg)::GraphLeg
         dst = leg.dst::GraphStation
         d = _haversine_distance(
-            origin.record.lat,
-            origin.record.lng,
-            dst.record.lat,
-            dst.record.lng,
+            origin.record.latitude,
+            origin.record.longitude,
+            dst.record.latitude,
+            dst.record.longitude,
         )
         if d > max_dist
             max_dist = d
@@ -476,10 +476,10 @@ function _commit_half!(conns::Vector{GraphConnection}, ctx::RuntimeContext)
             (last_cp.from_leg::GraphLeg).dst : (last_cp.to_leg::GraphLeg).dst)::GraphStation
     half.market_distance = Distance(
         _haversine_distance(
-            first_org.record.lat,
-            first_org.record.lng,
-            last_dst.record.lat,
-            last_dst.record.lng,
+            first_org.record.latitude,
+            first_org.record.longitude,
+            last_dst.record.latitude,
+            last_dst.record.longitude,
         ),
     )
     half.circuity = half.total_distance / max(half.market_distance, Distance(1))
@@ -501,6 +501,21 @@ function _commit_half!(conns::Vector{GraphConnection}, ctx::RuntimeContext)
 end
 
 # ── Layer 1 path helper ─────────────────────────────────────────────────────────
+
+# ── DFS helpers ──────────────────────────────────────────────────────────────────
+
+"""
+Check whether `station_code` appears as a departure station in any connection
+already in the itinerary path. Used to prevent station cycles in the DFS.
+"""
+@inline function _station_in_path(itn::Itinerary, station_code::StationCode)::Bool
+    for j in 1:length(itn.connections)
+        if (itn.connections[j].from_leg::GraphLeg).record.departure_station == station_code
+            return true
+        end
+    end
+    return false
+end
 
 # ── DFS core ────────────────────────────────────────────────────────────────────
 
@@ -558,9 +573,18 @@ function _dfs!(
 
         next_leg = cp.to_leg::GraphLeg  # to_leg is AbstractGraphNode
 
+        # Station cycle check — the connection-level backtrack rule catches
+        # immediate reversals (A→X→A), but longer cycles (A→X→Y→A) require
+        # path awareness. Scan the current path for the connecting station.
+        # O(depth) where depth ≤ max_stops; effectively free at depth 2-3.
+        if depth > 0
+            cnx_stn = (cp.station::GraphStation).code
+            _station_in_path(itn, cnx_stn) && continue
+        end
+
         # Elapsed-time pruning (UTC-based)
-        next_utc_arr = Int32(next_leg.record.pax_arr) - Int32(next_leg.record.arr_utc_offset) +
-                       Int32(next_leg.record.arr_date_var) * Int32(1440)
+        next_utc_arr = Int32(next_leg.record.passenger_arrival_time) - Int32(next_leg.record.arrival_utc_offset) +
+                       Int32(next_leg.record.arrival_date_variation) * Int32(1440)
         est_elapsed = next_utc_arr - ctx.utc_dep_origin
         est_elapsed > ctx._max_elapsed_threshold && continue
 
@@ -589,7 +613,7 @@ function _dfs!(
             ctx.search_stats.max_depth_reached, Int32(itn.num_stops))
 
         # Equipment-change detection (skip through-service legs)
-        if !cp.is_through && (cp.from_leg::GraphLeg).record.eqp != next_leg.record.eqp
+        if !cp.is_through && (cp.from_leg::GraphLeg).record.aircraft_type != next_leg.record.aircraft_type
             itn.num_eqp_changes += Int16(1)
         end
 
@@ -707,10 +731,10 @@ function search_itineraries(
     if market_dist < 0.0
         market_dist = _geodesic_distance(
             ctx.config,
-            org_stn.record.lat,
-            org_stn.record.lng,
-            dst_stn.record.lat,
-            dst_stn.record.lng,
+            org_stn.record.latitude,
+            org_stn.record.longitude,
+            dst_stn.record.latitude,
+            dst_stn.record.longitude,
         )
         ctx.gc_cache[gc_key] = market_dist
     end
@@ -727,7 +751,7 @@ function search_itineraries(
 
         # Validity check on the leg itself
         freq = StatusBits(dep_leg.record.frequency)
-        valid_date = dep_leg.record.eff_date <= packed <= dep_leg.record.disc_date
+        valid_date = dep_leg.record.effective_date <= packed <= dep_leg.record.discontinue_date
         valid_dow = (freq & dow) != StatusBits(0)
         (!valid_date || !valid_dow) && continue
 
@@ -737,7 +761,7 @@ function search_itineraries(
 
         # Record UTC departure of this origin leg for downstream use
         ctx.utc_dep_origin =
-            Int32(dep_leg.record.pax_dep) - Int32(dep_leg.record.dep_utc_offset)
+            Int32(dep_leg.record.passenger_departure_time) - Int32(dep_leg.record.departure_utc_offset)
 
         # Reset working itinerary for this departure
         empty!(working.connections)
@@ -775,14 +799,14 @@ function _utc_arrival(itn::Itinerary)::Int32
     last_cp = itn.connections[end]
     leg = ((last_cp.to_leg === last_cp.from_leg) ? last_cp.from_leg : last_cp.to_leg)::GraphLeg
     r = leg.record
-    Int32(r.pax_arr) - Int32(r.arr_utc_offset) + Int32(r.arr_date_var) * Int32(1440)
+    Int32(r.passenger_arrival_time) - Int32(r.arrival_utc_offset) + Int32(r.arrival_date_variation) * Int32(1440)
 end
 
 # UTC departure of the first leg in an itinerary (minutes from midnight of dep date)
 function _utc_departure(itn::Itinerary)::Int32
     isempty(itn.connections) && return Int32(0)
     r = (itn.connections[1].from_leg::GraphLeg).record
-    Int32(r.pax_dep) - Int32(r.dep_utc_offset)
+    Int32(r.passenger_departure_time) - Int32(r.departure_utc_offset)
 end
 
 # ── Trip scoring ─────────────────────────────────────────────────────────────
@@ -817,24 +841,24 @@ function score_trip(trip::Trip, weights::TripScoringWeights)::Float64
             if cp.from_leg === cp.to_leg
                 # Nonstop self-connection: accumulate first leg's block time + set carrier baseline
                 r = (cp.from_leg::GraphLeg).record
-                utc_dep = Float64(r.pax_dep) - Float64(r.dep_utc_offset)
-                utc_arr = Float64(r.pax_arr) - Float64(r.arr_utc_offset) + Float64(r.arr_date_var) * 1440.0
+                utc_dep = Float64(r.passenger_departure_time) - Float64(r.departure_utc_offset)
+                utc_arr = Float64(r.passenger_arrival_time) - Float64(r.arrival_utc_offset) + Float64(r.arrival_date_variation) * 1440.0
                 total_block += max(0.0, utc_arr - utc_dep)
-                prev_carrier = r.airline
-                prev_flt = r.flt_no
+                prev_carrier = r.carrier
+                prev_flt = r.flight_number
                 continue
             end
 
             r = (cp.to_leg::GraphLeg).record
 
             # Block time (UTC) for the departing leg
-            utc_dep = Float64(r.pax_dep) - Float64(r.dep_utc_offset)
-            utc_arr = Float64(r.pax_arr) - Float64(r.arr_utc_offset) + Float64(r.arr_date_var) * 1440.0
+            utc_dep = Float64(r.passenger_departure_time) - Float64(r.departure_utc_offset)
+            utc_arr = Float64(r.passenger_arrival_time) - Float64(r.arrival_utc_offset) + Float64(r.arrival_date_variation) * 1440.0
             total_block += max(0.0, utc_arr - utc_dep)
 
             # Carrier and flight number changes
-            curr_carrier = r.airline
-            curr_flt = r.flt_no
+            curr_carrier = r.carrier
+            curr_flt = r.flight_number
             if prev_carrier != NO_AIRLINE
                 curr_carrier != prev_carrier && (carrier_changes += 1)
                 curr_flt != prev_flt && (flt_no_changes += 1)

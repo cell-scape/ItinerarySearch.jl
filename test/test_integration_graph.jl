@@ -91,12 +91,12 @@ function _build_ssim_line(;
     line *= " "
     line *= org
     line *= dep
-    line *= dep     # ac_dep = pax_dep
+    line *= dep     # aircraft_departure_time = pax_dep
     line *= dep_utc
     line *= rpad(dep_term, 2)
     line *= dst
     line *= arr
-    line *= arr     # ac_arr = pax_arr
+    line *= arr     # aircraft_arrival_time = pax_arr
     line *= arr_utc
     line *= rpad(arr_term, 2)
     line *= rpad(eqp, 3)
@@ -175,9 +175,9 @@ function _inject_leg_distances!(store::DuckDBStore)
     DBInterface.execute(store.db, """
         UPDATE legs SET distance =
             CASE
-                WHEN org = 'ORD' AND dst = 'JFK' THEN 740.0
-                WHEN org = 'JFK' AND dst = 'LHR' THEN 3451.0
-                WHEN org = 'ORD' AND dst = 'LHR' THEN 3941.0
+                WHEN departure_station = 'ORD' AND arrival_station = 'JFK' THEN 740.0
+                WHEN departure_station = 'JFK' AND arrival_station = 'LHR' THEN 3451.0
+                WHEN departure_station = 'ORD' AND arrival_station = 'LHR' THEN 3941.0
                 ELSE 0.0
             END
     """)
@@ -236,7 +236,7 @@ end
 
         # Station coordinates populated from reference table
         ord_stn = graph.stations[StationCode("ORD")]
-        @test ord_stn.record.lat ≈ 41.9742 atol = 0.01
+        @test ord_stn.record.latitude ≈ 41.9742 atol = 0.01
         @test ord_stn.record.country == InlineString3("US")
 
         lhr_stn = graph.stations[StationCode("LHR")]
@@ -284,7 +284,7 @@ end
         @test !isempty(nonstops)
 
         # The nonstop ORD→LHR UTC elapsed:
-        #   dep_utc_offset=-300 (UTC-5), arr_utc_offset=0 (UTC+0)
+        #   departure_utc_offset=-300 (UTC-5), arrival_utc_offset=0 (UTC+0)
         #   utc_dep = 600 - (-300) = 900 (15:00 UTC)
         #   utc_arr = 1320 - 0    = 1320 (22:00 UTC)
         #   elapsed = 1320 - 900 = 420 min (7h block time)
@@ -342,8 +342,8 @@ end
         for row in long_rows
             @test row.itinerary_id >= 1
             @test row.leg_seq >= 1
-            @test !isempty(row.airline)
-            @test row.flt_no > 0
+            @test !isempty(row.carrier)
+            @test row.flight_number > 0
         end
 
         # SearchStats populated

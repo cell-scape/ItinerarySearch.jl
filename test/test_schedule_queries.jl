@@ -28,10 +28,10 @@ using Dates
         @test length(legs) == 1
 
         r = legs[1]
-        @test r.airline == AirlineCode("UA")
-        @test r.flt_no == Int16(1234)
-        @test r.org == StationCode("ORD")
-        @test r.dst == StationCode("LHR")
+        @test r.carrier == AirlineCode("UA")
+        @test r.flight_number == Int16(1234)
+        @test r.departure_station == StationCode("ORD")
+        @test r.arrival_station == StationCode("LHR")
 
         close(store)
     end
@@ -60,8 +60,8 @@ using Dates
         # day_of_week unused at schedule level
         @test r.day_of_week == UInt8(0)
         # eff_date and disc_date preserved
-        @test r.eff_date == pack_date(Date(2026, 3, 1))
-        @test r.disc_date == pack_date(Date(2026, 5, 31))
+        @test r.effective_date == pack_date(Date(2026, 3, 1))
+        @test r.discontinue_date == pack_date(Date(2026, 5, 31))
 
         close(store)
     end
@@ -133,7 +133,7 @@ using Dates
 
         legs = query_schedule_legs(store, Date(2026, 6, 1), Date(2026, 6, 30))
         @test length(legs) == 1
-        @test legs[1].flt_no == Int16(102)
+        @test legs[1].flight_number == Int16(102)
 
         close(store)
     end
@@ -169,7 +169,7 @@ using Dates
         r = legs[1]
         # DEI 50 join populates codeshare fields at schedule level
         # (the test SSIM includes a DEI 50 record)
-        @test r.codeshare_airline != AirlineCode("") || r.dei_10 != "" || true  # at least no crash
+        @test r.operating_carrier != AirlineCode("") || r.dei_10 != "" || true  # at least no crash
         # dei_10/dei_127 may or may not be populated depending on test SSIM data
         @test r.dei_10 isa String
         @test r.dei_127 isa String
@@ -199,11 +199,11 @@ end
         @test length(segs) == 1
 
         s = segs[1]
-        @test s.airline == AirlineCode("UA")
-        @test s.flt_no == Int16(1234)
+        @test s.carrier == AirlineCode("UA")
+        @test s.flight_number == Int16(1234)
         @test s.num_legs == UInt8(1)
-        @test s.segment_org == StationCode("ORD")
-        @test s.segment_dst == StationCode("LHR")
+        @test s.segment_departure_station == StationCode("ORD")
+        @test s.segment_arrival_station == StationCode("LHR")
         @test s.first_leg_seq == UInt8(1)
         @test s.last_leg_seq == UInt8(1)
 
@@ -247,7 +247,7 @@ end
             '', 3459.0, false
         )
         """)
-        # Leg 2: LHR → JNB (same flight number, leg_seq=2)
+        # Leg 2: LHR → JNB (same flight number, leg_sequence_number=2)
         DBInterface.execute(store.db, """
         INSERT INTO legs VALUES (
             2, 2, 'BA', 117, ' ', 1, ' ', 2, 'J',
@@ -265,11 +265,11 @@ end
         @test length(segs) == 1
 
         s = segs[1]
-        @test s.airline == AirlineCode("BA")
-        @test s.flt_no == Int16(117)
+        @test s.carrier == AirlineCode("BA")
+        @test s.flight_number == Int16(117)
         @test s.num_legs == UInt8(2)
-        @test s.segment_org == StationCode("JFK")
-        @test s.segment_dst == StationCode("JNB")
+        @test s.segment_departure_station == StationCode("JFK")
+        @test s.segment_arrival_station == StationCode("JNB")
         @test s.first_leg_seq == UInt8(1)
         @test s.last_leg_seq == UInt8(2)
         # flown_distance = sum of leg distances
@@ -304,7 +304,7 @@ end
         segs = query_schedule_segments(store, Date(2026, 6, 1), Date(2026, 6, 30))
         @test length(segs) == 2
 
-        airlines = Set(s.airline for s in segs)
+        airlines = Set(s.carrier for s in segs)
         @test AirlineCode("UA") ∈ airlines
         @test AirlineCode("DL") ∈ airlines
 
@@ -336,7 +336,7 @@ end
 
         segs = query_schedule_segments(store, Date(2026, 6, 1), Date(2026, 6, 30))
         @test length(segs) == 1
-        @test segs[1].flt_no == Int16(1)
+        @test segs[1].flight_number == Int16(1)
 
         close(store)
     end

@@ -7,69 +7,69 @@ using Dates
 
     # ── Test helpers ──────────────────────────────────────────────────────────
 
-    function _itn_station_record(code, country, region; lat=0.0, lng=0.0)
+    function _itn_station_record(code, country, region; latitude=0.0, longitude=0.0)
         StationRecord(
             code=StationCode(code),
             country=InlineString3(country),
             state=InlineString3(""),
-            metro_area=InlineString3(""),
+            city=InlineString3(""),
             region=InlineString3(region),
-            lat=lat,
-            lng=lng,
+            latitude=latitude,
+            longitude=longitude,
             utc_offset=Int16(0),
         )
     end
 
     function _itn_leg_record(;
-        airline="UA",
-        flt_no=100,
-        org="ORD",
-        dst="LHR",
-        pax_dep=Int16(540),
-        pax_arr=Int16(1320),
-        leg_seq=UInt8(1),
-        trc="",
+        carrier="UA",
+        flight_number=100,
+        departure_station="ORD",
+        arrival_station="LHR",
+        passenger_departure_time=Int16(540),
+        passenger_arrival_time=Int16(1320),
+        leg_sequence_number=UInt8(1),
+        traffic_restriction_for_leg="",
         distance=1000.0f0,
         frequency=0x7f,
     )
         LegRecord(
-            airline=AirlineCode(airline),
-            flt_no=Int16(flt_no),
+            carrier=AirlineCode(carrier),
+            flight_number=Int16(flight_number),
             operational_suffix=' ',
-            itin_var=UInt8(1),
-            itin_var_overflow=' ',
-            leg_seq=leg_seq,
-            svc_type='J',
-            org=StationCode(org),
-            dst=StationCode(dst),
-            pax_dep=Int16(pax_dep),
-            pax_arr=Int16(pax_arr),
-            ac_dep=Int16(pax_dep),
-            ac_arr=Int16(pax_arr),
-            dep_utc_offset=Int16(0),
-            arr_utc_offset=Int16(0),
-            dep_date_var=Int8(0),
-            arr_date_var=Int8(0),
-            eqp=InlineString7("738"),
+            itinerary_var_id=UInt8(1),
+            itinerary_var_overflow=' ',
+            leg_sequence_number=leg_sequence_number,
+            service_type='J',
+            departure_station=StationCode(departure_station),
+            arrival_station=StationCode(arrival_station),
+            passenger_departure_time=Int16(passenger_departure_time),
+            passenger_arrival_time=Int16(passenger_arrival_time),
+            aircraft_departure_time=Int16(passenger_departure_time),
+            aircraft_arrival_time=Int16(passenger_arrival_time),
+            departure_utc_offset=Int16(0),
+            arrival_utc_offset=Int16(0),
+            departure_date_variation=Int8(0),
+            arrival_date_variation=Int8(0),
+            aircraft_type=InlineString7("738"),
             body_type='N',
-            dep_term=InlineString3("1"),
-            arr_term=InlineString3("1"),
-            aircraft_owner=AirlineCode(airline),
+            departure_terminal=InlineString3("1"),
+            arrival_terminal=InlineString3("1"),
+            aircraft_owner=AirlineCode(carrier),
             operating_date=UInt32(20260101),
             day_of_week=UInt8(1),
-            eff_date=UInt32(20260101),
-            disc_date=UInt32(20261231),
+            effective_date=UInt32(20260101),
+            discontinue_date=UInt32(20261231),
             frequency=UInt8(frequency),
-            mct_status_dep='D',
-            mct_status_arr='D',
-            trc=InlineString15(trc),
-            trc_overflow=' ',
+            dep_intl_dom='D',
+            arr_intl_dom='D',
+            traffic_restriction_for_leg=InlineString15(traffic_restriction_for_leg),
+            traffic_restriction_overflow=' ',
             record_serial=UInt32(1),
             row_number=UInt64(1),
             segment_hash=UInt64(0),
             distance=Distance(distance),
-            codeshare_airline=AirlineCode(""),
-            codeshare_flt_no=Int16(0),
+            operating_carrier=AirlineCode(""),
+            operating_flight_number=Int16(0),
             dei_10="",
             wet_lease=false,
             dei_127="",
@@ -104,8 +104,8 @@ using Dates
         total_distance=Distance(2000.0f0),
         market_distance=Distance(1500.0f0),
         num_stops=Int16(1),
-        from_rec=_itn_leg_record(org="JFK", dst="ORD", distance=1000.0f0),
-        to_rec=_itn_leg_record(org="ORD", dst="LHR", distance=3000.0f0),
+        from_rec=_itn_leg_record(departure_station="JFK", arrival_station="ORD", distance=1000.0f0),
+        to_rec=_itn_leg_record(departure_station="ORD", arrival_station="LHR", distance=3000.0f0),
     )
         org_stn = GraphStation(_itn_station_record("JFK", "US", "NAM"))
         cnx_stn = GraphStation(_itn_station_record("ORD", "US", "NAM"))
@@ -262,28 +262,28 @@ using Dates
         end
 
         @testset "passes when TRC has no 'I' at leg_seq" begin
-            # leg_seq=1, trc[1]='A' — 'A' is suppressed for connections but not 'I'
-            leg_rec = _itn_leg_record(trc="A", leg_seq=UInt8(1))
+            # leg_sequence_number=1, trc[1]='A' — 'A' is suppressed for connections but not 'I'
+            leg_rec = _itn_leg_record(traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
             itn = _nonstop_itn(leg_rec=leg_rec)
             @test check_itn_suppcodes(itn, ctx) == PASS
         end
 
         @testset "fails when from_leg TRC has 'I' at leg_seq" begin
-            leg_rec = _itn_leg_record(trc="I", leg_seq=UInt8(1))
+            leg_rec = _itn_leg_record(traffic_restriction_for_leg="I", leg_sequence_number=UInt8(1))
             itn = _nonstop_itn(leg_rec=leg_rec)
             @test check_itn_suppcodes(itn, ctx) == FAIL_ITN_SUPPCODE
         end
 
         @testset "fails when a non-first leg has 'I' at its leg_seq" begin
-            clean_rec = _itn_leg_record(org="JFK", dst="ORD", trc="",  leg_seq=UInt8(1))
-            supp_rec  = _itn_leg_record(org="ORD", dst="LHR", trc="XI", leg_seq=UInt8(2))
+            clean_rec = _itn_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="",  leg_sequence_number=UInt8(1))
+            supp_rec  = _itn_leg_record(departure_station="ORD", arrival_station="LHR", traffic_restriction_for_leg="XI", leg_sequence_number=UInt8(2))
             itn = _oneStop_itn(from_rec=clean_rec, to_rec=supp_rec)
             @test check_itn_suppcodes(itn, ctx) == FAIL_ITN_SUPPCODE
         end
 
         @testset "passes when 'I' is at a different leg_seq position" begin
-            # trc="XI" but leg_seq=1 => trc[1]='X' => no suppression
-            leg_rec = _itn_leg_record(trc="XI", leg_seq=UInt8(1))
+            # traffic_restriction_for_leg="XI" but leg_sequence_number=1 => trc[1]='X' => no suppression
+            leg_rec = _itn_leg_record(traffic_restriction_for_leg="XI", leg_sequence_number=UInt8(1))
             itn = _nonstop_itn(leg_rec=leg_rec)
             @test check_itn_suppcodes(itn, ctx) == PASS
         end
@@ -335,8 +335,8 @@ using Dates
             #       = max(225, 30) + 240 + 120 = 585 min
             # legs: distance=1000 + 1000 => total_bt = 2*(1000/400)*60 = 300 min
             # 300 <= 585 => PASS
-            from_rec = _itn_leg_record(org="JFK", dst="ORD", distance=1000.0f0)
-            to_rec   = _itn_leg_record(org="ORD", dst="LHR", distance=1000.0f0)
+            from_rec = _itn_leg_record(departure_station="JFK", arrival_station="ORD", distance=1000.0f0)
+            to_rec   = _itn_leg_record(departure_station="ORD", arrival_station="LHR", distance=1000.0f0)
             itn = _oneStop_itn(
                 market_distance=Distance(1500.0f0),
                 total_distance=Distance(2000.0f0),

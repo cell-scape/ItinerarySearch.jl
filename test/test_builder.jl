@@ -103,7 +103,7 @@ end
         ord_stn = graph.stations[StationCode("ORD")]
         @test ord_stn.code == StationCode("ORD")
         @test ord_stn.record.country == InlineString3("US")
-        @test ord_stn.record.lat ≈ 41.9742 atol = 0.01
+        @test ord_stn.record.latitude ≈ 41.9742 atol = 0.01
 
         lhr_stn = graph.stations[StationCode("LHR")]
         @test lhr_stn.record.country == InlineString3("GB")
@@ -114,7 +114,7 @@ end
         # Each leg is linked to its station
         jfk_stn = graph.stations[StationCode("JFK")]
         @test length(jfk_stn.departures) == 1
-        @test (jfk_stn.departures[1]::GraphLeg).record.flt_no == Int16(200)
+        @test (jfk_stn.departures[1]::GraphLeg).record.flight_number == Int16(200)
 
         @test length(ord_stn.arrivals) == 1
         @test length(ord_stn.departures) == 1
@@ -188,7 +188,7 @@ end
         # Minimal station: code set, record fields zero/empty
         aaa = graph.stations[StationCode("AAA")]
         @test aaa.code == StationCode("AAA")
-        @test aaa.record.lat == 0.0
+        @test aaa.record.latitude == 0.0
 
         close(store)
     end

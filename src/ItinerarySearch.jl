@@ -33,6 +33,8 @@ include("store/schedule_queries.jl")
 include("ingest/ssim.jl")
 include("ingest/mct.jl")
 include("ingest/reference.jl")
+include("ingest/newssim.jl")
+include("ingest/newssim_materialize.jl")
 include("graph/mct_lookup.jl")
 include("graph/rules_cnx.jl")
 include("graph/rules_itn.jl")
@@ -103,6 +105,7 @@ export setup_logger
 # Exports — ingest
 export ingest_ssim!
 export ingest_mct!
+export ingest_newssim!, detect_delimiter
 export load_airports!, load_regions!, load_oa_control!, load_aircrafts!
 
 # Exports — store interface
@@ -128,13 +131,13 @@ export MCT_BIT_ARR_FLT_RNG, MCT_BIT_DEP_FLT_RNG
 export MCT_BIT_PRV_STATE, MCT_BIT_NXT_STATE
 
 # Exports — graph: connection rules
-export check_cnx_roundtrip, check_cnx_scope, check_cnx_interline
+export check_cnx_roundtrip, check_cnx_backtrack, check_cnx_scope, check_cnx_interline
 export check_cnx_opdays, check_cnx_suppcodes, check_cnx_trfrest
 export MCTRule, MAFTRule, CircuityRule
 export build_cnx_rules
 export PASS, FAIL_ROUNDTRIP, FAIL_SCOPE, FAIL_ONLINE, FAIL_CODESHARE, FAIL_INTERLINE
 export FAIL_TIME_MIN, FAIL_TIME_MAX, FAIL_OPDAYS, FAIL_SUPPCODE
-export FAIL_MAFT, FAIL_CIRCUITY, FAIL_TRFREST
+export FAIL_MAFT, FAIL_CIRCUITY, FAIL_TRFREST, FAIL_BACKTRACK
 
 # Exports — graph: itinerary rules
 export check_itn_scope, check_itn_opdays, check_itn_circuity
@@ -176,16 +179,16 @@ using PrecompileTools
         # Core type construction
         stn_rec = StationRecord(
             code=StationCode("ORD"), country=InlineString3("US"),
-            state=InlineString3("IL"), metro_area=InlineString3("CHI"),
-            region=InlineString3("NOA"), lat=41.97, lng=-87.91, utc_offset=Int16(-300))
+            state=InlineString3("IL"), city=InlineString3("CHI"),
+            region=InlineString3("NOA"), latitude=41.97, longitude=-87.91, utc_offset=Int16(-300))
         mct_result = MCTResult(
             time=Minutes(60), queried_status=MCT_DD, matched_status=MCT_DD,
             suppressed=false, source=SOURCE_GLOBAL_DEFAULT, specificity=UInt32(0))
         leg_key = LegKey(
             row_number=UInt64(1), record_serial=UInt32(1),
-            airline=AirlineCode("UA"), flt_no=FlightNumber(1234),
-            org=StationCode("ORD"), dst=StationCode("LHR"),
-            operating_date=UInt32(20260315), dep_time=Minutes(540))
+            carrier=AirlineCode("UA"), flight_number=FlightNumber(1234),
+            departure_station=StationCode("ORD"), arrival_station=StationCode("LHR"),
+            operating_date=UInt32(20260315), departure_time=Minutes(540))
         itn_ref = ItineraryRef(
             legs=[leg_key], num_stops=0, elapsed_minutes=Int32(480),
             flight_minutes=Int32(465), layover_minutes=Int32(0),

@@ -38,8 +38,8 @@ end
     `function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}`
 
 Flattens an `Itinerary` into a list of leg dicts suitable for JSON serialisation.
-Each dict contains `airline`, `flt_no`, `org`, `dst`, `dep_utc`, `arr_utc`,
-`eqp`, `distance`, `cnx_time`, and `mct`.
+Each dict contains `carrier`, `flight_number`, `departure_station`, `arrival_station`, `dep_utc`, `arr_utc`,
+`aircraft_type`, `distance`, `cnx_time`, and `mct`.
 """
 function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}
     result = Dict{String,Any}[]
@@ -51,41 +51,41 @@ function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}
 
         # Emit from_leg
         r = from_l.record
-        dep_utc = Int(r.pax_dep) - Int(r.dep_utc_offset)
-        arr_utc = Int(r.pax_arr) - Int(r.arr_utc_offset) + Int(r.arr_date_var) * 1440
+        dep_utc = Int(r.passenger_departure_time) - Int(r.departure_utc_offset)
+        arr_utc = Int(r.passenger_arrival_time) - Int(r.arrival_utc_offset) + Int(r.arrival_date_variation) * 1440
         push!(result, Dict{String,Any}(
-            "airline"   => strip(String(r.airline)),
-            "flt_no"    => Int(r.flt_no),
-            "flt_id"    => flight_id(r),
-            "org"       => strip(String(r.org)),
-            "dst"       => strip(String(r.dst)),
-            "dep_utc"   => dep_utc,
-            "arr_utc"   => arr_utc,
-            "eqp"       => strip(String(r.eqp)),
-            "distance"  => round(Float64(from_l.distance); digits=0),
-            "cnx_time"  => i > 1 ? Int(cp.cnx_time) : 0,
-            "mct"       => i > 1 ? Int(cp.mct) : 0,
-            "is_cnx"    => false,
+            "carrier"           => strip(String(r.carrier)),
+            "flight_number"     => Int(r.flight_number),
+            "flt_id"            => flight_id(r),
+            "departure_station" => strip(String(r.departure_station)),
+            "arrival_station"   => strip(String(r.arrival_station)),
+            "dep_utc"           => dep_utc,
+            "arr_utc"           => arr_utc,
+            "aircraft_type"     => strip(String(r.aircraft_type)),
+            "distance"          => round(Float64(from_l.distance); digits=0),
+            "cnx_time"          => i > 1 ? Int(cp.cnx_time) : 0,
+            "mct"               => i > 1 ? Int(cp.mct) : 0,
+            "is_cnx"            => false,
         ))
 
         # For the final connecting leg, emit to_leg as well
         if i == n_cnx && !is_nonstop_cp
             tr = to_l.record
-            t_dep_utc = Int(tr.pax_dep) - Int(tr.dep_utc_offset)
-            t_arr_utc = Int(tr.pax_arr) - Int(tr.arr_utc_offset) + Int(tr.arr_date_var) * 1440
+            t_dep_utc = Int(tr.passenger_departure_time) - Int(tr.departure_utc_offset)
+            t_arr_utc = Int(tr.passenger_arrival_time) - Int(tr.arrival_utc_offset) + Int(tr.arrival_date_variation) * 1440
             push!(result, Dict{String,Any}(
-                "airline"   => strip(String(tr.airline)),
-                "flt_no"    => Int(tr.flt_no),
-                "flt_id"    => flight_id(tr),
-                "org"       => strip(String(tr.org)),
-                "dst"       => strip(String(tr.dst)),
-                "dep_utc"   => t_dep_utc,
-                "arr_utc"   => t_arr_utc,
-                "eqp"       => strip(String(tr.eqp)),
-                "distance"  => round(Float64(to_l.distance); digits=0),
-                "cnx_time"  => Int(cp.cnx_time),
-                "mct"       => Int(cp.mct),
-                "is_cnx"    => false,
+                "carrier"           => strip(String(tr.carrier)),
+                "flight_number"     => Int(tr.flight_number),
+                "flt_id"            => flight_id(tr),
+                "departure_station" => strip(String(tr.departure_station)),
+                "arrival_station"   => strip(String(tr.arrival_station)),
+                "dep_utc"           => t_dep_utc,
+                "arr_utc"           => t_arr_utc,
+                "aircraft_type"     => strip(String(tr.aircraft_type)),
+                "distance"          => round(Float64(to_l.distance); digits=0),
+                "cnx_time"          => Int(cp.cnx_time),
+                "mct"               => Int(cp.mct),
+                "is_cnx"            => false,
             ))
         end
     end
@@ -139,8 +139,8 @@ function viz_network_map(
     # ── Collect station data ──────────────────────────────────────────────────
     stations_data = Dict{String,Any}[]
     for (code, stn) in graph.stations
-        lat = stn.record.lat
-        lng = stn.record.lng
+        lat = stn.record.latitude
+        lng = stn.record.longitude
         (lat == 0.0 && lng == 0.0) && continue
         push!(stations_data, Dict{String,Any}(
             "code"       => String(code),
@@ -159,25 +159,25 @@ function viz_network_map(
         org_stn = leg.org
         dst_stn = leg.dst
         (org_stn isa GraphStation && dst_stn isa GraphStation) || continue
-        org_lat = org_stn.record.lat
-        org_lng = org_stn.record.lng
-        dst_lat = dst_stn.record.lat
-        dst_lng = dst_stn.record.lng
+        org_lat = org_stn.record.latitude
+        org_lng = org_stn.record.longitude
+        dst_lat = dst_stn.record.latitude
+        dst_lng = dst_stn.record.longitude
         (org_lat == 0.0 && org_lng == 0.0) && continue
         (dst_lat == 0.0 && dst_lng == 0.0) && continue
         push!(legs_data, Dict{String,Any}(
-            "org"     => strip(String(leg.record.org)),
-            "dst"     => strip(String(leg.record.dst)),
+            "departure_station" => strip(String(leg.record.departure_station)),
+            "arrival_station"   => strip(String(leg.record.arrival_station)),
             "org_lat" => org_lat,
             "org_lng" => org_lng,
             "dst_lat" => dst_lat,
             "dst_lng" => dst_lng,
-            "airline" => strip(String(leg.record.airline)),
-            "flt_no"  => Int(leg.record.flt_no),
-            "flt_id"  => flight_id(leg.record),
-            "dist"    => round(Float64(leg.distance); digits=0),
-            "intl"    => is_international(leg.record.mct_status_dep == 'I' ||
-                         leg.record.mct_status_arr == 'I' ?
+            "carrier"        => strip(String(leg.record.carrier)),
+            "flight_number"  => Int(leg.record.flight_number),
+            "flt_id"         => flight_id(leg.record),
+            "dist"           => round(Float64(leg.distance); digits=0),
+            "intl"    => is_international(leg.record.dep_intl_dom == 'I' ||
+                         leg.record.arr_intl_dom == 'I' ?
                          STATUS_INTERNATIONAL : StatusBits(0)),
         ))
     end
@@ -198,15 +198,15 @@ function viz_network_map(
                 dst_stn = leg.dst
                 (org_stn isa GraphStation && dst_stn isa GraphStation) || return nothing
                 Dict{String,Any}(
-                    "itn_idx"  => itn_idx,
-                    "flt_id"   => flight_id(leg.record),
-                    "org"      => strip(String(leg.record.org)),
-                    "dst"      => strip(String(leg.record.dst)),
-                    "org_lat"  => org_stn.record.lat,
-                    "org_lng"  => org_stn.record.lng,
-                    "dst_lat"  => dst_stn.record.lat,
-                    "dst_lng"  => dst_stn.record.lng,
-                    "airline"  => strip(String(leg.record.airline)),
+                    "itn_idx"           => itn_idx,
+                    "flt_id"            => flight_id(leg.record),
+                    "departure_station" => strip(String(leg.record.departure_station)),
+                    "arrival_station"   => strip(String(leg.record.arrival_station)),
+                    "org_lat"           => org_stn.record.latitude,
+                    "org_lng"           => org_stn.record.longitude,
+                    "dst_lat"           => dst_stn.record.latitude,
+                    "dst_lng"           => dst_stn.record.longitude,
+                    "carrier"           => strip(String(leg.record.carrier)),
                 )
             end
 
@@ -296,7 +296,7 @@ function viz_network_map(
         { color: '#30363d', weight: 1, opacity: 0.6 }
       ).addTo(legGroup);
 
-      line.bindTooltip(`<div class="tooltip-box"><strong>\${leg.flt_id}</strong><br>\${leg.org} &rarr; \${leg.dst}<br>\${leg.dist.toLocaleString()} mi</div>`,
+      line.bindTooltip(`<div class="tooltip-box"><strong>\${leg.flt_id}</strong><br>\${leg.departure_station} &rarr; \${leg.arrival_station}<br>\${leg.dist.toLocaleString()} mi</div>`,
         { sticky: true });
     });
 
@@ -317,7 +317,7 @@ function viz_network_map(
         [[arc.org_lat, arc.org_lng], [cLat, cLng], [arc.dst_lat, arc.dst_lng]],
         { color: color, weight: 3, opacity: 0.9 }
       ).addTo(hilightGroup).bindTooltip(
-        `<div class="tooltip-box"><strong>\${arc.flt_id}</strong><br>\${arc.org} &rarr; \${arc.dst}<br>Itinerary #\${arc.itn_idx}</div>`,
+        `<div class="tooltip-box"><strong>\${arc.flt_id}</strong><br>\${arc.departure_station} &rarr; \${arc.arrival_station}<br>Itinerary #\${arc.itn_idx}</div>`,
         { sticky: true }
       );
     });
@@ -525,7 +525,7 @@ function viz_timeline(
         .call(gg => gg.select('.domain').remove());
 
       // ── Airline color scale ───────────────────────────────────────────────
-      const airlines = [...new Set(ROWS.flatMap(r => r.legs.map(l => l.airline)))];
+      const airlines = [...new Set(ROWS.flatMap(r => r.legs.map(l => l.carrier)))];
       const palette = ['#4e9af1','#f1a14e','#4ef17a','#f14e7a','#c34ef1',
                        '#f1e14e','#4ef1e1','#f14e4e','#7af14e','#f14ec3'];
       const colorMap = {};
@@ -559,7 +559,7 @@ function viz_timeline(
             .attr('width', gw)
             .attr('height', ROW_H - 8)
             .on('mousemove', ev => showTooltip(ev,
-              `<strong>Connection at \${curr.org}</strong><br>` +
+              `<strong>Connection at \${curr.departure_station}</strong><br>` +
               `Gap: \${curr.cnx_time} min · MCT: \${curr.mct} min`))
             .on('mouseleave', hideTooltip);
         }
@@ -568,7 +568,7 @@ function viz_timeline(
         row.legs.forEach(leg => {
           const lx = xScale(leg.dep_utc);
           const lw = Math.max(MIN_LEG_W, xScale(leg.arr_utc) - lx);
-          const color = colorMap[leg.airline] || '#4e9af1';
+          const color = colorMap[leg.carrier] || '#4e9af1';
 
           rowG.append('rect')
             .attr('class', 'leg-rect')
@@ -580,9 +580,9 @@ function viz_timeline(
             .attr('rx', 3)
             .on('mousemove', ev => showTooltip(ev,
               `<strong>\${leg.flt_id}</strong><br>` +
-              `\${leg.org} &rarr; \${leg.dst}<br>` +
+              `\${leg.departure_station} &rarr; \${leg.arrival_station}<br>` +
               `Dep: \${formatMin(leg.dep_utc)} UTC · Arr: \${formatMin(leg.arr_utc)} UTC<br>` +
-              `\${leg.eqp} · \${leg.distance.toLocaleString()} mi`))
+              `\${leg.aircraft_type} · \${leg.distance.toLocaleString()} mi`))
             .on('mouseleave', hideTooltip);
 
           // Flight label inside rect if wide enough
@@ -705,11 +705,11 @@ function viz_trip_comparison(
             for cp in itn.connections
                 cp.from_leg === cp.to_leg && continue
                 r = (cp.to_leg::GraphLeg).record
-                bt = Float64(r.pax_arr) - Float64(r.pax_dep) + Float64(r.arr_date_var) * 1440.0
+                bt = Float64(r.passenger_arrival_time) - Float64(r.passenger_departure_time) + Float64(r.arrival_date_variation) * 1440.0
                 if bt < 0.0; bt += 1440.0; end
                 total_block += bt
-                curr_carrier = r.airline
-                curr_flt     = r.flt_no
+                curr_carrier = r.carrier
+                curr_flt     = r.flight_number
                 if prev_carrier != NO_AIRLINE
                     curr_carrier != prev_carrier && (carrier_changes += 1)
                     curr_flt != prev_flt         && (flt_no_changes  += 1)
@@ -1012,12 +1012,12 @@ function _itinref_entry(itn::ItineraryRef, idx::Int; date::String="")
         "distance_miles"  => round(Float64(itn.distance_miles); digits=0),
         "circuity"        => round(Float64(itn.circuity); digits=2),
         "legs"            => [Dict{String,Any}(
-            "airline" => strip(String(k.airline)),
-            "flt_no"  => Int(k.flt_no),
-            "org"     => strip(String(k.org)),
-            "dst"     => strip(String(k.dst)),
-            "cs_al"   => strip(String(k.codeshare_airline)),
-            "cs_flt"  => Int(k.codeshare_flt_no),
+            "carrier"                             => strip(String(k.carrier)),
+            "flight_number"                       => Int(k.flight_number),
+            "departure_station"                   => strip(String(k.departure_station)),
+            "arrival_station"                     => strip(String(k.arrival_station)),
+            "operating_carrier"                   => strip(String(k.operating_carrier)),
+            "operating_flight_number"             => Int(k.operating_flight_number),
             "row_number" => Int(k.row_number),
             "record_serial" => Int(k.record_serial),
         ) for k in itn.legs],
@@ -1129,9 +1129,9 @@ function _write_itinref_html(path::String, json_data::String, title::String)
     "        if (expanded.has(key) && d.legs) {\n",
     "          d.legs.forEach(leg => {\n",
     "            const lr = document.createElement('tr'); lr.className='leg-detail';\n",
-    "            const isCS = leg.airline!==leg.cs_al||leg.flt_no!==leg.cs_flt;\n",
-    "            lr.innerHTML = '<td></td><td>'+leg.org+'</td><td>'+leg.dst+'</td>'+\n",
-    "              '<td>'+leg.airline+' '+leg.flt_no+(isCS?' (opr: '+leg.cs_al+' '+leg.cs_flt+')':'')+'</td>'+\n",
+    "            const isCS = leg.carrier!==leg.operating_carrier||leg.flight_number!==leg.operating_flight_number;\n",
+    "            lr.innerHTML = '<td></td><td>'+leg.departure_station+'</td><td>'+leg.arrival_station+'</td>'+\n",
+    "              '<td>'+leg.carrier+' '+leg.flight_number+(isCS?' (opr: '+leg.operating_carrier+' '+leg.operating_flight_number+')':'')+'</td>'+\n",
     "              '<td colspan=\"2\">row='+leg.row_number+' serial='+leg.record_serial+'</td><td colspan=\"5\"></td>';\n",
     "            tbody.appendChild(lr);\n",
     "          });\n",

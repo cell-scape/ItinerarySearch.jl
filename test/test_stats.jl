@@ -97,20 +97,20 @@ end
         code = StationCode("ORD"),
         country = InlineString3("US"),
         state = InlineString3("IL"),
-        metro_area = InlineString3("CHI"),
+        city = InlineString3("CHI"),
         region = InlineString3("NOA"),
-        lat = 41.97,
-        lng = -87.91,
+        latitude = 41.97,
+        longitude = -87.91,
         utc_offset = Int16(-300),
     )
     lhr_rec = StationRecord(
         code = StationCode("LHR"),
         country = InlineString3("GB"),
         state = InlineString3(""),
-        metro_area = InlineString3("LON"),
+        city = InlineString3("LON"),
         region = InlineString3("EUR"),
-        lat = 51.47,
-        lng = -0.45,
+        latitude = 51.47,
+        longitude = -0.45,
         utc_offset = Int16(0),
     )
 

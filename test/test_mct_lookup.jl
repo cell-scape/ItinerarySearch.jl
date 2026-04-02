@@ -779,7 +779,7 @@
         @test result_nodate.time == Minutes(33)
         @test result_nodate.source == SOURCE_EXCEPTION
 
-        # Undated record (eff_date = 0) always matches regardless of target_date
+        # Undated record (effective_date = 0) always matches regardless of target_date
         always_rec = MCTRecord(
             time      = Minutes(77),
             eff_date  = UInt32(0),

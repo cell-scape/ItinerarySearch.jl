@@ -112,7 +112,7 @@ function load_airports!(store::DuckDBStore, path::String)::Nothing
             # Skip records with no coordinate data
             (lat == 0.0 && lng == 0.0) && continue
 
-            # Column order matches stations DDL: code, country, state, metro_area, region, lat, lng, utc_offset
+            # Column order matches stations DDL: code, country, state, city, region, latitude, longitude, utc_offset
             DBInterface.execute(stmt, [code, country, state, metro_area, region, lat, lng, utc_minutes])
             loaded += 1
         end

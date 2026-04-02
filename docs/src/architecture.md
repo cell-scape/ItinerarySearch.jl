@@ -7,10 +7,11 @@ The system transforms raw airline schedule files into searchable itineraries thr
 ```mermaid
 graph TD
     SSIM[SSIM Schedule File] --> Ingest
+    NewSSIM[NewSSIM CSV File] -.-> Ingest
     MCT[MCT Data File] --> Ingest
     Refs[Reference Tables\nairports / regions / aircraft] --> Ingest
 
-    Ingest[load_schedule!] --> DuckDB[(DuckDB Store)]
+    Ingest[load_schedule! / ingest_newssim!] --> DuckDB[(DuckDB Store)]
 
     DuckDB --> |query_schedule_legs| GraphBuild[build_graph!]
     DuckDB --> |materialize_mct_lookup| MCTLookup[MCTLookup]
@@ -31,7 +32,7 @@ graph TD
     Itineraries --> |search_trip| Trips[Trip Search]
 
     LegIndex --> JSON[JSON Output]
-    LegIndex --> PSV[PSV Files]
+    LegIndex --> CSV[CSV Files]
     Trips --> TripOut[Trip Output / Scoring]
     Itineraries --> Viz[HTML Visualizations]
 ```
@@ -45,6 +46,8 @@ graph TD
 3. `load_airports!`, `load_regions!`, `load_aircrafts!`, `load_oa_control!` — populate reference tables
 
 A SQL post-ingest pipeline runs inside DuckDB to join codeshare data, build the `segments` table, and inject market distances from the `markets` table.
+
+**Alternative: NewSSIM CSV path.** `ingest_newssim!(store, path; delimiter=nothing)` loads a denormalized CSV file (comma, pipe, or tab-delimited; .gz supported) into the DuckDB `newssim` table. This bypasses SSIM parsing and reference table loading. MCT ingest still runs separately. Pass `source=:newssim` to `build_graph!` to query the `newssim` table instead of the SSIM pipeline tables.
 
 ### Stage 2: Graph Materialization
 
@@ -95,7 +98,7 @@ When a complete path reaches the destination, `_validate_and_commit!` runs the i
 
 The `itinerary_legs` / `itinerary_legs_multi` / `itinerary_legs_json` functions post-process `Vector{Itinerary}` results into the compact `ItineraryRef` index format: deduplicated (by leg-sequence fingerprint), sorted by stops → elapsed → distance, and wrapped with summary fields.
 
-PSV output (`write_legs`, `write_itineraries`, `write_trips`) flattens graph objects into pipe-delimited rows. Visualizations serialize graph and itinerary data to JSON embedded in self-contained HTML pages.
+CSV output (`write_legs`, `write_itineraries`, `write_trips`) flattens graph objects into comma-delimited rows with canonical column names. Visualizations serialize graph and itinerary data to JSON embedded in self-contained HTML pages.
 
 ### Observability
 
@@ -109,7 +112,7 @@ Both systems are configured via `SearchConfig` and can run simultaneously to dif
 
 ### CLI
 
-The `CLI` submodule (`src/cli.jl`) wraps the pipeline in an ArgParse.jl command interface with 5 commands: `search`, `trip`, `build`, `ingest`, `info`. Each command follows the same pattern: open store → ingest (if needed) → build graph (if needed) → execute → write JSON to stdout or file → close. Global flags provide per-invocation overrides for SearchConfig and ParameterSet fields. The `main(args)::Int` entry point returns exit codes and is PackageCompiler-ready.
+The `CLI` submodule (`src/cli.jl`) wraps the pipeline in an ArgParse.jl command interface with 6 commands: `search`, `trip`, `build`, `ingest`, `info`, `serve`. Each command follows the same pattern: open store → ingest (if needed) → build graph (if needed) → execute → write JSON to stdout or file → close. Global flags provide per-invocation overrides for SearchConfig and ParameterSet fields. The `--newssim` and `--delimiter` flags enable CSV-based ingest as an alternative to SSIM fixed-width. The `main(args)::Int` entry point returns exit codes and is PackageCompiler-ready.
 
 ### Compilation
 
@@ -117,7 +120,7 @@ The `CLI` submodule (`src/cli.jl`) wraps the pipeline in an ArgParse.jl command 
 
 ### REST API
 
-The `Server` submodule (`src/server.jl`) wraps the pipeline in an HTTP.jl service. A `ServerState` mutable struct holds the shared `FlightGraph`, `DuckDBStore`, `SearchConfig`, and synchronization primitives (`ReentrantLock` for graph swap, `Atomic{Bool}` for rebuild guard). The graph is built once at startup and shared read-only across concurrent request threads. Each request handler snapshots the graph reference under the lock (microsecond hold), creates a per-request `RuntimeContext`, executes the search, and returns JSON. `POST /rebuild` triggers a background `build_graph!` that atomically swaps the graph when complete — in-flight requests continue using their pre-swap snapshot. Five endpoints: `/search`, `/trip`, `/station/:code`, `/health`, `/rebuild`.
+The `Server` submodule (`src/server.jl`) wraps the pipeline in an HTTP.jl service. A `ServerState` mutable struct holds the shared `FlightGraph`, `DuckDBStore`, `SearchConfig`, and synchronization primitives (`ReentrantLock` for graph swap, `Atomic{Bool}` for rebuild guard). The graph is built once at startup and shared read-only across concurrent request threads. Each request handler snapshots the graph reference under the lock (microsecond hold), creates a per-request `RuntimeContext`, executes the search, and returns JSON. `POST /rebuild` triggers a background `build_graph!` that atomically swaps the graph when complete — in-flight requests continue using their pre-swap snapshot. Five endpoints: `/search`, `/trip`, `/station/:code`, `/health`, `/rebuild`. The `/rebuild` endpoint accepts an optional `"source"` field (`"newssim"`) to rebuild from the CSV pipeline.
 
 **PackageCompiler** — `build/build.jl` supports sysimage mode (0ms module load, ~236MB `.so`) and standalone app mode. A dedicated `build/precompile_workload.jl` runs the full pipeline (ingest, graph build, search, JSON output) with synthetic data, capturing all method specializations without requiring test-only dependencies.
 
@@ -128,15 +131,15 @@ The `Server` submodule (`src/server.jl`) wraps the pipeline in an HTTP.jl servic
 ```mermaid
 classDiagram
     class LegRecord {
-        +airline: AirlineCode
-        +flt_no: FlightNumber
-        +org, dst: StationCode
-        +pax_dep, pax_arr: Minutes
-        +ac_dep, ac_arr: Minutes
+        +carrier: AirlineCode
+        +flight_number: FlightNumber
+        +departure_station, arrival_station: StationCode
+        +passenger_departure_time, passenger_arrival_time: Minutes
+        +aircraft_departure_time, aircraft_arrival_time: Minutes
         +operating_date: UInt32
         +frequency: UInt8
-        +trc: InlineString15
-        +codeshare_airline: AirlineCode
+        +traffic_restriction_for_leg: InlineString15
+        +administrating_carrier: AirlineCode
         +distance: Distance
         ... 41 fields total
     }
@@ -148,8 +151,8 @@ classDiagram
     }
     class SegmentRecord {
         +segment_hash: UInt64
-        +airline, flt_no
-        +segment_org, segment_dst
+        +carrier, flight_number
+        +segment_departure_station, segment_arrival_station
         +flown_distance, market_distance
         +segment_circuity: Float32
     }
@@ -162,8 +165,10 @@ classDiagram
     class LegKey {
         +row_number: UInt64
         +record_serial: UInt32
-        +airline, flt_no
-        +org, dst: StationCode
+        +carrier, flight_number
+        +departure_station, arrival_station: StationCode
+        +operating_date: UInt32
+        +departure_time: Minutes
     }
     class ItineraryRef {
         +legs: Vector~LegKey~

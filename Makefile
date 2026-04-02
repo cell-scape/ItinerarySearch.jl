@@ -1,12 +1,16 @@
-.PHONY: test demo bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve sysimage app juliac
+.PHONY: test demo demo-newssim bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve sysimage app juliac
 
 # Run full test suite
 test:
 	julia --project=. -e 'using Pkg; Pkg.test()'
 
-# Full demo: load, search, PSV, JSON, visualizations (3 days)
+# Full demo: load, search, CSV, JSON, visualizations (3 days)
 demo:
 	julia --project=. scripts/demo.jl
+
+# Demo using NewSSIM CSV path (1 day, demo sample data)
+demo-newssim:
+	julia --project=. scripts/demo.jl --newssim
 
 # Benchmarks
 bench:
@@ -22,7 +26,7 @@ viz:
 json:
 	julia --project=. scripts/json_only.jl $(DATE) $(DAYS)
 
-# Single OD search with all outputs (PSV, JSON, HTML table, network map)
+# Single OD search with all outputs (CSV, JSON, HTML table, network map)
 # Usage: make search ORG=ORD DST=LHR DATE=2026-03-20
 #        make search ORG=ORD DATE=2026-03-20            (all destinations)
 search:

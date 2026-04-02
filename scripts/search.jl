@@ -44,33 +44,33 @@ for (_d, org_dict) in result, (_o, dst_dict) in org_dict, (_ds, itins) in dst_di
 end
 println("\nFound $(total_itins) itineraries across $(total_ods) OD pairs")
 
-# Write PSV files
+# Write CSV files
 legs_dir = joinpath(outdir, "legs_index")
 mkpath(legs_dir)
-psv_header = join(["itinerary", "leg_pos", "row_number", "record_serial",
-                    "airline", "flt_no", "operational_suffix", "itin_var",
-                    "itin_var_overflow", "leg_seq", "svc_type",
-                    "codeshare_airline", "codeshare_flt_no",
-                    "org", "dst"], "|")
+csv_header = join(["itinerary", "leg_pos", "row_number", "record_serial",
+                    "carrier", "flight_number", "operational_suffix", "itinerary_var_id",
+                    "itinerary_var_overflow", "leg_sequence_number", "service_type",
+                    "operating_carrier", "operating_flight_number",
+                    "departure_station", "arrival_station"], ",")
 for (dt, org_dict) in result
     for (org_s, dst_dict) in org_dict
         for (dst_s, itineraries) in dst_dict
-            fname = joinpath(legs_dir, "$(org_s)_$(dst_s)_$(dt).psv")
+            fname = joinpath(legs_dir, "$(org_s)_$(dst_s)_$(dt).csv")
             open(fname, "w") do io
-                println(io, psv_header)
+                println(io, csv_header)
                 for (itn_idx, itn_ref) in enumerate(itineraries)
                     for (leg_pos, k) in enumerate(itn_ref.legs)
                         println(io, join([itn_idx, leg_pos,
                                           Int(k.row_number), Int(k.record_serial),
-                                          strip(String(k.airline)), Int(k.flt_no),
-                                          k.operational_suffix, Int(k.itin_var),
-                                          k.itin_var_overflow, Int(k.leg_seq), k.svc_type,
-                                          strip(String(k.codeshare_airline)), Int(k.codeshare_flt_no),
-                                          strip(String(k.org)), strip(String(k.dst))], "|"))
+                                          strip(String(k.carrier)), Int(k.flight_number),
+                                          k.operational_suffix, Int(k.itinerary_var_id),
+                                          k.itinerary_var_overflow, Int(k.leg_sequence_number), k.service_type,
+                                          strip(String(k.operating_carrier)), Int(k.operating_flight_number),
+                                          strip(String(k.departure_station)), strip(String(k.arrival_station))], ","))
                     end
                 end
             end
-            println("  PSV: $(org_s)→$(dst_s) → $(fname)")
+            println("  CSV: $(org_s)→$(dst_s) → $(fname)")
         end
     end
 end

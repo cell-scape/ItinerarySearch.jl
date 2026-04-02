@@ -180,8 +180,8 @@ function _trips_to_json(trips)::Vector{Dict{String,Any}}
             last_leg_rec = last_leg_node.record
 
             push!(leg_summaries, Dict{String,Any}(
-                "origin"          => strip(String(first_leg_rec.org)),
-                "destination"     => strip(String(last_leg_rec.dst)),
+                "origin"          => strip(String(first_leg_rec.departure_station)),
+                "destination"     => strip(String(last_leg_rec.arrival_station)),
                 "num_stops"       => Int(itn.num_stops),
                 "elapsed_minutes" => Int(itn.elapsed_time),
                 "distance_miles"  => round(Float64(itn.total_distance); digits=0),
@@ -399,10 +399,10 @@ function _handle_station(
         "code"       => strip(String(rec.code)),
         "country"    => strip(String(rec.country)),
         "state"      => strip(String(rec.state)),
-        "metro_area" => strip(String(rec.metro_area)),
+        "city"       => strip(String(rec.city)),
         "region"     => strip(String(rec.region)),
-        "lat"        => rec.lat,
-        "lng"        => rec.lng,
+        "latitude"   => rec.latitude,
+        "longitude"  => rec.longitude,
         "utc_offset" => Int(rec.utc_offset),
     )
     return _json_response(200, data)
@@ -498,10 +498,30 @@ function _handle_rebuild(req::HTTP.Request, state::ServerState)::HTTP.Response
     _store  = state.store
     _config = state.config
 
+    # Parse optional source from body
+    _source = :ssim
+    if length(req.body) > 0
+        raw_body2 = try
+            JSON3.read(String(req.body))
+        catch
+            nothing
+        end
+        if raw_body2 isa JSON3.Object
+            body_obj2 = raw_body2::JSON3.Object
+            if haskey(body_obj2, :source)
+                src_val = body_obj2[:source]
+                if src_val isa String && src_val == "newssim"
+                    _source = :newssim
+                end
+            end
+        end
+    end
+
     _target = target  # immutable local capture
+    _source_local = _source
     Threads.@spawn begin
         try
-            new_graph = build_graph!(_store, _config, _target)
+            new_graph = build_graph!(_store, _config, _target; source=_source_local)
             lock(state.graph_lock) do
                 state.graph           = new_graph
                 state.target_date     = _target
