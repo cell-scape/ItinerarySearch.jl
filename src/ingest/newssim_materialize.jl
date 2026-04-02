@@ -151,7 +151,8 @@ end
 
 # Description
 - Query the `newssim` table for leg records within a date window
-- Filters to rows where `leg_or_seg = 'L'` or `leg_or_seg IS NULL` (legs only)
+- Filters strictly to leg records: `leg_or_seg = 'L'` only (segment records excluded)
+- Excludes rows with `num_of_legs_in_seg > 0` as an additional safety check
 - Constructs `LegRecord` instances with fields derived from CSV columns
 - This is the newssim equivalent of `query_schedule_legs`
 
@@ -178,7 +179,8 @@ function query_newssim_legs(
         """
         SELECT *
         FROM newssim
-        WHERE (leg_or_seg = 'L' OR leg_or_seg IS NULL)
+        WHERE leg_or_seg = 'L'
+          AND (CAST(num_of_legs_in_seg AS INT) = 0 OR num_of_legs_in_seg IS NULL)
           AND CAST(date AS DATE) >= CAST(? AS DATE)
           AND CAST(date AS DATE) <= CAST(? AS DATE)
         ORDER BY row_number
@@ -223,9 +225,12 @@ function query_newssim_legs(
             v === nothing ? flt_num : v
         end
 
-        # Itinerary var ID
+        # Itinerary var ID — the CSV value may encode both the variation (0-99)
+        # and the overflow (hundreds place). E.g., 102 → itin_var=2, overflow='1'.
         itin_var_raw = hasproperty(r, :itinerary_var_id) ? _safe_missing(r.itinerary_var_id, 1) : 1
-        itin_var = UInt8(itin_var_raw isa AbstractString ? (tryparse(Int, itin_var_raw) !== nothing ? parse(Int, itin_var_raw) : 1) : Int(itin_var_raw))
+        itin_var_full = itin_var_raw isa AbstractString ? (tryparse(Int, itin_var_raw) !== nothing ? parse(Int, itin_var_raw) : 1) : Int(itin_var_raw)
+        itin_var = UInt8(itin_var_full % 100)
+        itin_var_overflow = itin_var_full >= 100 ? Char('0' + (itin_var_full ÷ 100)) : ' '
 
         # Leg sequence number
         leg_seq_raw = hasproperty(r, :leg_sequence_number) ? _safe_missing(r.leg_sequence_number, 1) : 1
@@ -245,15 +250,15 @@ function query_newssim_legs(
         # Row number
         row_num = UInt64(_safe_missing(r.row_number, 0))
 
-        # Build segment hash from identity fields
-        seg_hash = hash(carrier_str, hash(flt_num, hash(itin_var, hash(packed_date))))
+        # Build segment hash from identity fields (must include overflow to match SSIM model)
+        seg_hash = hash(carrier_str, hash(flt_num, hash(itin_var, hash(itin_var_overflow, hash(packed_date)))))
 
         rec = LegRecord(
             carrier                          = AirlineCode(carrier_str),
             flight_number                    = flt_num,
             operational_suffix               = ' ',
             itinerary_var_id                 = itin_var,
-            itinerary_var_overflow           = ' ',
+            itinerary_var_overflow           = itin_var_overflow,
             leg_sequence_number              = leg_seq,
             service_type                     = _first_char(r.service_type, 'J'),
             departure_station                = StationCode(_safe_string(r.departure_station)),
@@ -328,7 +333,7 @@ function query_newssim_station(
 )::Union{StationRecord,Nothing}
     code_str = strip(String(code))
 
-    # Try departure side first
+    # Try departure side first — prefer rows with non-empty geo data
     result = DBInterface.execute(
         store.db,
         """
@@ -338,9 +343,13 @@ function query_newssim_station(
             departure_latitude AS latitude,
             departure_longitude AS longitude,
             departure_region AS region,
-            departure_city AS city
+            departure_city AS city,
+            departure_datetime AS local_dt,
+            departure_datetime_utc AS utc_dt
         FROM newssim
         WHERE departure_station = ?
+          AND departure_latitude IS NOT NULL
+          AND departure_latitude != ''
         LIMIT 1
         """,
         [code_str],
@@ -358,9 +367,13 @@ function query_newssim_station(
                 arrival_latitude AS latitude,
                 arrival_longitude AS longitude,
                 arrival_region AS region,
-                arrival_city AS city
+                arrival_city AS city,
+                arrival_datetime AS local_dt,
+                arrival_datetime_utc AS utc_dt
             FROM newssim
             WHERE arrival_station = ?
+              AND arrival_latitude IS NOT NULL
+              AND arrival_latitude != ''
             LIMIT 1
             """,
             [code_str],
@@ -378,12 +391,21 @@ function query_newssim_station(
     region_raw = _safe_string(r.region)
     city_str = _safe_string(r.city)
 
-    # Region may contain comma-separated values like "EUR, SCH" — take the first
-    region_str = first(split(region_raw, ','))
-    region_str = strip(region_str)
+    # Region may contain comma-separated values like "EUR, SCH". The more
+    # specific region takes precedence for MCT matching — Schengen (SCH)
+    # has different MCT rules than general European (EUR). Use the LAST
+    # element which is the most specific; fall back to the first if only one.
+    region_parts = strip.(split(region_raw, ','))
+    region_str = length(region_parts) > 1 ? region_parts[end] : region_parts[1]
 
     lat = parse_dms(lat_str)
     lng = parse_dms(lng_str)
+
+    # Derive UTC offset from the datetime pair if available
+    utc_off = _compute_utc_offset(
+        hasproperty(r, :local_dt) ? r.local_dt : nothing,
+        hasproperty(r, :utc_dt) ? r.utc_dt : nothing,
+    )
 
     return StationRecord(
         code       = StationCode(code_str),
@@ -393,6 +415,6 @@ function query_newssim_station(
         region     = InlineString3(length(region_str) > 3 ? region_str[1:3] : region_str),
         latitude   = lat,
         longitude  = lng,
-        utc_offset = Int16(0),  # not available in CSV; will be derived from datetime offsets
+        utc_offset = utc_off,
     )
 end
