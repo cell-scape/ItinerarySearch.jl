@@ -1,4 +1,4 @@
-.PHONY: test demo bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve sysimage app juliac
+.PHONY: test demo demo-newssim bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve sysimage app juliac
 
 # Run full test suite
 test:
@@ -7,6 +7,10 @@ test:
 # Full demo: load, search, PSV, JSON, visualizations (3 days)
 demo:
 	julia --project=. scripts/demo.jl
+
+# Demo using NewSSIM CSV path (1 day, demo sample data)
+demo-newssim:
+	julia --project=. scripts/demo.jl --newssim
 
 # Benchmarks
 bench:
