@@ -76,8 +76,8 @@ One row per leg per itinerary:
 | `is_nonstop` | Bool | True when this connection is a nonstop self-connection |
 | `cnx_time` | Int | Connection time at this leg's origin (minutes; 0 for first leg) |
 | `mct` | Int | Minimum connecting time (minutes; 0 for first leg) |
-| `dep_term` | String | Departure terminal code |
-| `arr_term` | String | Arrival terminal code |
+| `departure_terminal` | String | Departure terminal code |
+| `arrival_terminal` | String | Arrival terminal code |
 
 ### Wide Format Fields (`itinerary_wide_format`)
 
@@ -114,7 +114,7 @@ Comma-delimited, one row per leg per itinerary. Key columns beyond the long form
 | `cnx_type` | `L` = single nonstop leg, `S` = through-segment, `C` = connection |
 | `mct_id` | Primary key of the matched MCT rule (0 = global default) |
 | `is_operating` | True for the physical operating flight; false for codeshare |
-| `administrating_carrier`, `administrating_carrier_flight_number` | Operating carrier (from DEI 50) |
+| `operating_carrier`, `operating_flight_number` | Operating carrier (from DEI 50) |
 | `dei_10` | Commercial duplicate list |
 | `dei_127` | Operating airline disclosure |
 | `wet_lease` | True when operated under wet-lease |

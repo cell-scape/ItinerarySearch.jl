@@ -109,7 +109,7 @@ Each `ItineraryRef` contains:
 
 | Field / Accessor | Description |
 |-------|-------------|
-| `legs` | `Vector{LegKey}` — ordered leg references (each LegKey carries `operating_date` and `dep_time`) |
+| `legs` | `Vector{LegKey}` — ordered leg references (each LegKey carries `operating_date` and `departure_time`) |
 | `num_stops` | Number of intermediate stops (0 = nonstop) |
 | `elapsed_minutes` | Total elapsed time (minutes, UTC-corrected) |
 | `flight_minutes` | Total in-flight block time (minutes) |

@@ -42,10 +42,12 @@ Each `LegKey` contains the fields needed to cross-reference with the full schedu
 | `itinerary_var_overflow` | Itinerary variation overflow character |
 | `leg_sequence_number` | SSIM leg sequence number within the flight |
 | `service_type` | Service type code |
-| `administrating_carrier` | Operating carrier (same as `carrier` when operating) |
-| `administrating_carrier_flight_number` | Operating flight number (same as `flight_number` when operating) |
+| `operating_carrier` | Operating carrier (same as `carrier` when operating) |
+| `operating_flight_number` | Operating flight number (same as `flight_number` when operating) |
 | `departure_station` | Departure station IATA code |
 | `arrival_station` | Arrival station IATA code |
+| `operating_date` | Operating date (packed YYYYMMDD) |
+| `departure_time` | Scheduled departure time (minutes since midnight, local) |
 
 ## Functions
 
@@ -230,7 +232,7 @@ result = itinerary_legs_multi(graph.stations, ctx;
 header = join([
     "itinerary", "leg_pos", "row_number", "record_serial",
     "carrier", "flight_number", "operational_suffix", "itinerary_var_id",
-    "leg_sequence_number", "service_type", "administrating_carrier", "administrating_carrier_flight_number",
+    "leg_sequence_number", "service_type", "operating_carrier", "operating_flight_number",
     "departure_station", "arrival_station",
 ], ",")
 
@@ -248,8 +250,8 @@ for (date, org_dict) in result
                             strip(String(key.carrier)), key.flight_number,
                             key.operational_suffix, key.itinerary_var_id,
                             key.leg_sequence_number, key.service_type,
-                            strip(String(key.administrating_carrier)),
-                            key.administrating_carrier_flight_number,
+                            strip(String(key.operating_carrier)),
+                            key.operating_flight_number,
                             strip(String(key.departure_station)), strip(String(key.arrival_station)),
                         ], ","))
                     end
@@ -298,13 +300,13 @@ close(store)
 ## Example Output
 
 ```
-itinerary|leg_pos|row_number|record_serial|carrier|flight_number|departure_station|arrival_station
-1|1|8234|56789|UA|774|DEN|LAX
-2|1|8301|56812|UA|2240|DEN|LAX
-3|1|8156|56734|UA|1013|DEN|LAX
+itinerary,leg_pos,row_number,record_serial,carrier,flight_number,departure_station,arrival_station
+1,1,8234,56789,UA,774,DEN,LAX
+2,1,8301,56812,UA,2240,DEN,LAX
+3,1,8156,56734,UA,1013,DEN,LAX
 ...
-9|1|9102|61234|UA|526|DEN|LAS
-9|2|12456|78901|UA|1892|LAS|LAX
+9,1,9102,61234,UA,526,DEN,LAS
+9,2,12456,78901,UA,1892,LAS,LAX
 ```
 
 - Itineraries 1–8: nonstops (1 leg each) — DEN→LAX direct
@@ -320,6 +322,7 @@ itinerary|leg_pos|row_number|record_serial|carrier|flight_number|departure_stati
 | `make viz [DATE=2026-03-18]` | Regenerate HTML visualizations only |
 | `make json [DATE=2026-03-18] [DAYS=3]` | Write JSON output only (full + compact) |
 | `make demo` | Full end-to-end pipeline on demo dataset |
+| `make demo-newssim` | NewSSIM CSV ingest demo |
 
 ## Key Parameters
 

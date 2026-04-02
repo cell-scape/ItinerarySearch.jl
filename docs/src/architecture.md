@@ -70,6 +70,7 @@ A SQL post-ingest pipeline runs inside DuckDB to join codeshare data, build the 
 - `check_cnx_interline` — carrier interline mode filter
 - `check_cnx_opdays` — operating day intersection
 - `check_cnx_roundtrip` — roundtrip detection
+- `check_cnx_backtrack` — backtrack detection (arriving and departing to the same station)
 - `check_cnx_suppcodes` / `check_cnx_trfrest` — suppression codes and traffic restriction codes
 
 Rules return positive on pass, zero or negative on fail. A passing pair produces a `GraphConnection` edge added to both legs' `connect_to` / `connect_from` lists and the station's `connections` list. Nonstop self-connections are also created for every departing leg (used as the first edge in the DFS).
@@ -85,6 +86,7 @@ Rules return positive on pass, zero or negative on fail. A passing pair produces
 1. Retrieves the nonstop self-connection via `dep_leg.nonstop_cp` (direct field access, set during connection build) and pushes it as the first edge of the working `Itinerary`
 2. If the departure leg reaches the destination directly, calls `_validate_and_commit!`
 3. Otherwise calls `_dfs!` which recursively follows `GraphConnection` edges, applying:
+   - Cycle detection (station already visited in the current path)
    - Date / DOW validity check on each connection
    - Elapsed-time pruning (1.5 × `max_elapsed` threshold)
    - Cumulative circuity pruning
@@ -96,7 +98,7 @@ When a complete path reaches the destination, `_validate_and_commit!` runs the i
 
 ### Stage 5: Output
 
-The `itinerary_legs` / `itinerary_legs_multi` / `itinerary_legs_json` functions post-process `Vector{Itinerary}` results into the compact `ItineraryRef` index format: deduplicated (by leg-sequence fingerprint), sorted by stops → elapsed → distance, and wrapped with summary fields.
+The `itinerary_legs` / `itinerary_legs_multi` / `itinerary_legs_json` functions post-process `Vector{Itinerary}` results into the compact `ItineraryRef` index format: deduplicated (by leg-sequence fingerprint), sorted by stops → elapsed → distance (nonstops first), and wrapped with summary fields.
 
 CSV output (`write_legs`, `write_itineraries`, `write_trips`) flattens graph objects into comma-delimited rows with canonical column names. Visualizations serialize graph and itinerary data to JSON embedded in self-contained HTML pages.
 
@@ -139,14 +141,14 @@ classDiagram
         +operating_date: UInt32
         +frequency: UInt8
         +traffic_restriction_for_leg: InlineString15
-        +administrating_carrier: AirlineCode
+        +operating_carrier: AirlineCode
         +distance: Distance
         ... 41 fields total
     }
     class StationRecord {
         +code: StationCode
-        +country, state, region: InlineString3
-        +lat, lng: Float64
+        +country, state, city, region: InlineString3
+        +latitude, longitude: Float64
         +utc_offset: Int16
     }
     class SegmentRecord {

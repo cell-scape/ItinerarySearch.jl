@@ -28,6 +28,9 @@ make bench
 # Run demo script
 make demo
 
+# Run NewSSIM demo (CSV ingest path)
+make demo-newssim
+
 # NewSSIM CSV ingest (alternative to SSIM fixed-width)
 julia --project=. bin/itinsearch.jl --newssim data/demo/sample_newssim.csv.gz \
     search ORD LHR 2026-06-15
@@ -47,7 +50,7 @@ The main module `ItinerarySearch` (`src/ItinerarySearch.jl`) uses standard `incl
   - `aliases.jl` — `InlineString`-based domain type aliases (`StationCode`, `AirlineCode`, etc.) for `isbits`-friendly fixed-width strings
   - `enums.jl` — `CEnum.@cenum` types (cabin, traffic restriction codes, etc.)
   - Additional struct types added in later tasks
-- **ingest/** — Streaming parsers for SSIM fixed-width files, MCT data, and reference tables. Designed for large files using `Mmap` and byte-range column specs. Also includes `newssim.jl` for CSV ingest of denormalized NewSSIM schedule files (`ingest_newssim!`, `detect_delimiter`).
+- **ingest/** — Streaming parsers for SSIM fixed-width files, MCT data, and reference tables. Designed for large files using `Mmap` and byte-range column specs. Also includes `newssim.jl` for CSV ingest of denormalized NewSSIM schedule files (`ingest_newssim!`, `detect_delimiter`) and `newssim_materialize.jl` for materializing NewSSIM data into graph-ready leg records.
 - **store/** — `DuckDBStore` singleton for ingest and query of all tables. SQL-based post-ingest pipeline (join, enrich, filter).
 - **graph/** — Struct-based connection graph (stations, legs, connect points). DFS itinerary search.
 - **api/** — High-level search interface and `SearchConfig` (JSON-configurable parameters).

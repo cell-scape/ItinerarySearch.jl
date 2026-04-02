@@ -124,7 +124,7 @@ See [docs/src/architecture.md](docs/src/architecture.md) for the full Mermaid di
 | `StationRecord` | Airport reference data (coordinates, timezone, region) |
 | `SegmentRecord` | Precomputed segment-level aggregates |
 | `MCTResult` | MCT cascade result with source, specificity, and matched_fields |
-| `LegKey` | Compact cross-reference to a leg (row_number + flight identity + operating_date + dep_time) |
+| `LegKey` | Compact cross-reference to a leg (row_number + flight identity + operating_date + departure_time) |
 | `ItineraryRef` | Serializable itinerary summary with ordered `Vector{LegKey}` |
 
 **Graph layer** (mutable, pointer-linked):
@@ -185,6 +185,7 @@ Requires Julia 1.10+.
 ```bash
 make test           # run full test suite (1413 tests)
 make demo           # full pipeline on demo data (3 days, 5 OD pairs, all outputs)
+make demo-newssim   # NewSSIM CSV ingest demo
 make bench          # benchmarks
 
 # CLI

@@ -7,6 +7,7 @@ ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Ti
 ## Features
 
 - **SSIM ingest** — streaming fixed-width parser for OAG/SSIM Type 1-5 records, with EDF expansion, codeshare (DEI 50) resolution, and segment building
+- **NewSSIM CSV ingest** — alternative CSV-based ingest path (`ingest_newssim!`) for denormalized schedule files; auto-detects delimiter (comma, pipe, tab) and handles .gz compression
 - **MCT lookup** — Full SSIM8 Chapter 8 matching with 29-level specificity cascade, codeshare indicators, aircraft type, flight number ranges, state geography, date validity, suppression geography, and inter-station (multi-airport city) support
 - **Graph-based connection building** — O(n²) rule-chain pass producing `GraphConnection` edges at every station
 - **DFS search with pruning** — depth-first traversal with elapsed-time, circuity, direction, and stop-count pruning
@@ -14,7 +15,7 @@ ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Ti
 - **Multiple output formats** — CSV files, JSON (full and compact), `itinerary_long_format` / `itinerary_wide_format` tables
 - **Interactive visualizations** — self-contained HTML network map (Leaflet), timeline (D3 Gantt), and trip comparison chart
 - **Observability** — structured event log with typed events and JSONL sink, DynaTrace-compatible JSON logging via LoggingExtras TeeLogger, cooperative system metrics polling, Tier 1 instrumentation (rule counters, MCT cascade stats, geographic aggregation)
-- **CLI** — `itinsearch search ORD LHR 2026-03-20` with 5 commands (search, trip, build, ingest, info), global flags, per-invocation parameter overrides, JSON output to stdout or file
+- **CLI** — `itinsearch search ORD LHR 2026-03-20` with 6 commands (search, trip, build, ingest, info, serve), global flags (`--newssim`, `--delimiter`, etc.), per-invocation parameter overrides, JSON output to stdout or file
 - **REST API** — HTTP service with search, trip, station, health, and rebuild endpoints; concurrent request handling via HTTP.jl; lock-protected graph refresh; per-request constraint overrides
 - **Compilation** — PrecompileTools workload for fast first-use; PackageCompiler sysimage (0ms load) and standalone app builds
 
