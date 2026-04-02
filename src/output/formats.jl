@@ -686,10 +686,11 @@ function itinerary_legs(
         _operates_on(first_leg, date)
     end
 
-    # Sort by operating date (ascending), departure time, stops, elapsed, distance
+    # Sort by stops first (nonstop before 1-stop before 2-stop), then elapsed time,
+    # then departure time within each tier. This is the standard industry convention.
     sort!(itineraries; by=itn -> begin
         first_rec = (itn.connections[1].from_leg::GraphLeg).record
-        (first_rec.operating_date, first_rec.passenger_departure_time, itn.num_stops, itn.elapsed_time, itn.total_distance)
+        (first_rec.operating_date, itn.num_stops, itn.elapsed_time, first_rec.passenger_departure_time, itn.total_distance)
     end)
 
     # Deduplicate: two itineraries are identical if they use the same legs in the same order.
