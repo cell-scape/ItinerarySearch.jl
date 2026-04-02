@@ -150,7 +150,7 @@ for day_offset in 0:(n_days-1)
     println("[$(target)] $(length(graph.stations)) stations, $(length(graph.legs)) legs, built in $(build_ms)ms")
 
     # Write legs operating on this date
-    legs_file = joinpath(outdir, "legs_$(target).psv")
+    legs_file = joinpath(outdir, "legs_$(target).csv")
     n_legs = open(legs_file, "w") do io
         write_legs(io, graph, target)
     end
@@ -163,7 +163,7 @@ for day_offset in 0:(n_days-1)
         itn_rules=build_itn_rules(config),
     )
 
-    itns_file = joinpath(outdir, "itineraries_$(target).psv")
+    itns_file = joinpath(outdir, "itineraries_$(target).csv")
     total_itns = 0
     total_rows = 0
     open(itns_file, "w") do io
@@ -195,21 +195,21 @@ for day_offset in 0:(n_days-1)
         dates=target,
     )
 
-    # Write per-OD PSV files
+    # Write per-OD CSV files
     legs_dir = joinpath(outdir, "legs_index")
     mkpath(legs_dir)
-    psv_header = join(["itinerary", "leg_pos", "row_number", "record_serial",
+    csv_header = join(["itinerary", "leg_pos", "row_number", "record_serial",
             "carrier", "flight_number", "operational_suffix", "itinerary_var_id",
             "itinerary_var_overflow", "leg_sequence_number", "service_type",
             "administrating_carrier", "administrating_carrier_flight_number",
-            "departure_station", "arrival_station"], "|")
+            "departure_station", "arrival_station"], ",")
     for (dt, org_dict) in result
         for (org_s, dst_dict) in org_dict
             for (dst_s, itineraries) in dst_dict
-                fname = joinpath(legs_dir, "$(org_s)_$(dst_s)_$(dt).psv")
+                fname = joinpath(legs_dir, "$(org_s)_$(dst_s)_$(dt).csv")
                 n_rows = 0
                 open(fname, "w") do io
-                    println(io, psv_header)
+                    println(io, csv_header)
                     for (itn_idx, itn_ref) in enumerate(itineraries)
                         for (leg_pos, k) in enumerate(itn_ref.legs)
                             println(io, join([itn_idx, leg_pos,
@@ -218,7 +218,7 @@ for day_offset in 0:(n_days-1)
                                     k.operational_suffix, Int(k.itinerary_var_id),
                                     k.itinerary_var_overflow, Int(k.leg_sequence_number), k.service_type,
                                     strip(String(k.administrating_carrier)), Int(k.administrating_carrier_flight_number),
-                                    strip(String(k.departure_station)), strip(String(k.arrival_station))], "|"))
+                                    strip(String(k.departure_station)), strip(String(k.arrival_station))], ","))
                             n_rows += 1
                         end
                     end

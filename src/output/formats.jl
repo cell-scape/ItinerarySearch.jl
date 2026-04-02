@@ -341,7 +341,7 @@ end
 
 # ── Delimited file export ────────────────────────────────────────────────────
 
-const _DELIM = '|'
+const _DELIM = ','
 
 function _write_row(io::IO, vals)
     first = true
@@ -400,10 +400,10 @@ end
 ---
 
 # Description
-- Write all valid legs in the graph to a pipe-delimited file
+- Write all valid legs in the graph to a comma-delimited file
 - Includes both operating and codeshare (commercial duplicate) legs
 - `is_operating` = true when this is the physical flight; false for codeshare
-- Codeshare legs have `codeshare_airline`/`codeshare_flt_no` pointing to the
+- Codeshare legs have `administrating_carrier`/`administrating_carrier_flight_number` pointing to the
   operating carrier (from DEI 50); on operating legs these fields are empty
 
 # Arguments
@@ -417,13 +417,13 @@ end
 function write_legs(io::IO, graph::FlightGraph, date::Date)::Int
     _write_row(io, [
         "record_serial", "row_number",
-        "airline", "flt_no", "operational_suffix", "itin_var", "leg_seq", "svc_type",
-        "codeshare_airline", "codeshare_flt_no", "is_operating",
-        "org", "dst", "market",
-        "dep_date", "dep_time", "arr_time", "arr_date_var",
-        "eqp", "body_type", "dep_term", "arr_term",
+        "carrier", "flight_number", "operational_suffix", "itinerary_var_id", "leg_sequence_number", "service_type",
+        "administrating_carrier", "administrating_carrier_flight_number", "is_operating",
+        "departure_station", "arrival_station", "market",
+        "dep_date", "dep_time", "arr_time", "arrival_date_variation",
+        "aircraft_type", "body_type", "departure_terminal", "arrival_terminal",
         "distance_miles",
-        "mct_status_dep", "mct_status_arr",
+        "dep_intl_dom", "arr_intl_dom",
         "dei_10", "dei_127", "wet_lease", "aircraft_owner",
     ])
 
@@ -457,9 +457,9 @@ end
 ---
 
 # Description
-- Write itineraries to a pipe-delimited file (one row per leg per itinerary)
+- Write itineraries to a comma-delimited file (one row per leg per itinerary)
 - `is_operating` = true for operating legs; codeshare legs reference the
-  operating flight via `codeshare_airline`/`codeshare_flt_no` (DEI 50)
+  operating flight via `administrating_carrier`/`administrating_carrier_flight_number` (DEI 50)
 - `cnx_type`: L = single-leg nonstop, S = through-segment, C = connection
 
 # Arguments
@@ -475,11 +475,11 @@ function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::Flight
         _write_row(io, [
             "itinerary_id", "leg_seq",
             "record_serial", "row_number",
-            "airline", "flt_no", "operational_suffix", "itin_var", "leg_seq_ssim", "svc_type",
-            "codeshare_airline", "codeshare_flt_no", "is_operating",
-            "org", "dst", "market",
-            "dep_date", "dep_time", "arr_time", "arr_date_var",
-            "eqp", "body_type", "dep_term", "arr_term",
+            "carrier", "flight_number", "operational_suffix", "itinerary_var_id", "leg_sequence_number_ssim", "service_type",
+            "administrating_carrier", "administrating_carrier_flight_number", "is_operating",
+            "departure_station", "arrival_station", "market",
+            "dep_date", "dep_time", "arr_time", "arrival_date_variation",
+            "aircraft_type", "body_type", "departure_terminal", "arrival_terminal",
             "distance_miles",
             "dei_10", "dei_127", "wet_lease", "aircraft_owner",
             "cnx_type", "cnx_time", "mct", "mct_id",
@@ -557,7 +557,7 @@ end
 ---
 
 # Description
-- Write trips to a pipe-delimited file (one row per leg per itinerary per trip)
+- Write trips to a comma-delimited file (one row per leg per itinerary per trip)
 - Prepends `trip_id`, `trip_type`, `itinerary_seq` to the standard itinerary leg columns
 
 # Arguments
@@ -575,11 +575,11 @@ function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date
             "trip_id", "trip_type", "itinerary_seq",
             "itinerary_id", "leg_seq",
             "record_serial", "row_number",
-            "airline", "flt_no", "operational_suffix", "itin_var", "leg_seq_ssim", "svc_type",
-            "codeshare_airline", "codeshare_flt_no", "is_operating",
-            "org", "dst", "market",
-            "dep_date", "dep_time", "arr_time", "arr_date_var",
-            "eqp", "body_type", "dep_term", "arr_term",
+            "carrier", "flight_number", "operational_suffix", "itinerary_var_id", "leg_sequence_number_ssim", "service_type",
+            "administrating_carrier", "administrating_carrier_flight_number", "is_operating",
+            "departure_station", "arrival_station", "market",
+            "dep_date", "dep_time", "arr_time", "arrival_date_variation",
+            "aircraft_type", "body_type", "departure_terminal", "arrival_terminal",
             "distance_miles",
             "dei_10", "dei_127", "wet_lease", "aircraft_owner",
             "cnx_type", "cnx_time", "mct", "mct_id",
