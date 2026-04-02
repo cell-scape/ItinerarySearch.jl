@@ -189,7 +189,7 @@ for day_offset in 0:(n_days-1)
     origins = [o for (o, _) in od_pairs]
     dests = [d for (_, d) in od_pairs]
 
-    result = itinerary_legs_multi(graph.stations, ctx;
+    local result = itinerary_legs_multi(graph.stations, ctx;
         origins=origins,
         destinations=dests,
         dates=target,
