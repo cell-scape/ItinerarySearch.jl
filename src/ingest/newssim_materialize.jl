@@ -146,6 +146,44 @@ function _compute_date_variation(dt_val, base_date::Date)::Int8
 end
 
 """
+    `_correct_arrival_datetime(dep_utc_val, arr_utc_val)::Any`
+
+Correct arrival UTC datetime for data producer errors where the arrival date
+is not properly adjusted for day crossings. Some upstream SSIM parsers anchor
+the arrival datetime to the operating date without applying the date variation
+(+1/+2 days for overnight or transpacific flights).
+
+Detection: if `arr_utc <= dep_utc`, the arrival datetime is clearly wrong
+(a flight cannot arrive before it departs in UTC). Correction: add days to
+the arrival until `arr_utc > dep_utc` and blocktime is <= 24 hours.
+
+Returns the corrected arrival value, or the original if no correction needed.
+"""
+function _correct_arrival_datetime(dep_utc_val, arr_utc_val)
+    (dep_utc_val === nothing || dep_utc_val === missing) && return arr_utc_val
+    (arr_utc_val === nothing || arr_utc_val === missing) && return arr_utc_val
+
+    dep_dt = _parse_datetime(dep_utc_val)
+    arr_dt = _parse_datetime(arr_utc_val)
+    (dep_dt === nothing || arr_dt === nothing) && return arr_utc_val
+
+    # If arrival is already after departure, no correction needed
+    arr_dt > dep_dt && return arr_utc_val
+
+    # Add days until arrival > departure with reasonable blocktime (< 24h)
+    for days in 1:3
+        corrected = arr_dt + Day(days)
+        diff_minutes = Dates.value(corrected - dep_dt) ÷ 60_000
+        if diff_minutes > 0 && diff_minutes <= 1440
+            return corrected
+        end
+    end
+
+    # Fallback: +1 day even if blocktime > 24h (ultra-long-haul)
+    return arr_dt + Day(1)
+end
+
+"""
     `function query_newssim_legs(store::DuckDBStore, window_start::Date, window_end::Date)::Vector{LegRecord}`
 ---
 
@@ -201,13 +239,19 @@ function query_newssim_legs(
         pax_dep = _parse_time_to_minutes(r.passenger_departure_time)
         pax_arr = _parse_time_to_minutes(r.passenger_arrival_time)
 
+        # Correct arrival datetimes for day-crossing errors in source data.
+        # Some upstream SSIM parsers don't apply date variation to the arrival
+        # datetime, causing arr_utc to be before dep_utc for overnight flights.
+        arr_dt_corrected = _correct_arrival_datetime(r.departure_datetime_utc, r.arrival_datetime_utc)
+        arr_local_corrected = _correct_arrival_datetime(r.departure_datetime, r.arrival_datetime)
+
         # UTC offsets from datetime comparisons
         dep_utc = _compute_utc_offset(r.departure_datetime, r.departure_datetime_utc)
-        arr_utc = _compute_utc_offset(r.arrival_datetime, r.arrival_datetime_utc)
+        arr_utc = _compute_utc_offset(arr_local_corrected, arr_dt_corrected)
 
         # Date variations
         dep_date_var = _compute_date_variation(r.departure_datetime, op_date)
-        arr_date_var = _compute_date_variation(r.arrival_datetime, op_date)
+        arr_date_var = _compute_date_variation(arr_local_corrected, op_date)
 
         # Carrier and flight number
         carrier_str = _safe_string(r.carrier)
