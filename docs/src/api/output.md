@@ -29,9 +29,9 @@ itinerary_long_format
 itinerary_wide_format
 ```
 
-## PSV File Writers
+## CSV File Writers
 
-Write pipe-delimited files with full schedule fields. All writers return the number of rows written.
+Write comma-delimited files with canonical column names. All writers return the number of rows written.
 
 ```@docs
 write_legs
@@ -105,9 +105,9 @@ One row per itinerary:
 | `num_countries` | Int | Distinct countries traversed |
 | `num_regions` | Int | Distinct IATA regions traversed |
 
-### PSV Itinerary Leg Columns (`write_itineraries`)
+### CSV Itinerary Leg Columns (`write_itineraries`)
 
-Pipe-delimited, one row per leg per itinerary. Key columns beyond the long format:
+Comma-delimited, one row per leg per itinerary. Key columns beyond the long format:
 
 | Column | Description |
 |--------|-------------|

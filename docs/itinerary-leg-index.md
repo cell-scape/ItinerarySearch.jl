@@ -258,7 +258,7 @@ od_pairs = [
 result = itinerary_legs_multi(graph.stations, od_pairs, ctx)
 ```
 
-### Step 5: Write PSV Files
+### Step 5: Write CSV Files
 
 ```julia
 outdir = "data/output/legs_index"
@@ -274,9 +274,9 @@ result = itinerary_legs_multi(graph.stations, ctx;
 for (date, org_dict) in result
     for (org, dst_dict) in org_dict
         for (dst, itinerary_refs) in dst_dict
-            fname = joinpath(outdir, "$(org)_$(dst)_$(date).psv")
+            fname = joinpath(outdir, "$(org)_$(dst)_$(date).csv")
             open(fname, "w") do io
-                println(io, "itinerary|leg_pos|row_number|record_serial|carrier|flight_number|departure_station|arrival_station")
+                println(io, "itinerary,leg_pos,row_number,record_serial,carrier,flight_number,departure_station,arrival_station")
                 for (itn_idx, ref) in enumerate(itinerary_refs)
                     for (leg_pos, key) in enumerate(ref.legs)
                         println(io, join([
@@ -284,7 +284,7 @@ for (date, org_dict) in result
                             key.row_number, key.record_serial,
                             strip(String(key.carrier)), key.flight_number,
                             strip(String(key.departure_station)), strip(String(key.arrival_station)),
-                        ], "|"))
+                        ], ","))
                     end
                 end
             end
@@ -352,7 +352,7 @@ itinerary|leg_pos|row_number|record_serial|carrier|flight_number|departure_stati
 
 | Command | Description |
 |---------|-------------|
-| `make search ORG=ORD DST=LHR DATE=2026-03-20` | Single O-D search: PSV, JSON, HTML table, network map |
+| `make search ORG=ORD DST=LHR DATE=2026-03-20` | Single O-D search: CSV, JSON, HTML table, network map |
 | `make search ORG=ORD DATE=2026-03-20` | All destinations from ORG |
 | `make viz [DATE=2026-03-18]` | Regenerate HTML visualizations only |
 | `make json [DATE=2026-03-18] [DAYS=3]` | Write JSON output only (full + compact) |

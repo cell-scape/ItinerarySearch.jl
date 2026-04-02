@@ -32,7 +32,7 @@ graph TD
     Itineraries --> |search_trip| Trips[Trip Search]
 
     LegIndex --> JSON[JSON Output]
-    LegIndex --> PSV[PSV Files]
+    LegIndex --> CSV[CSV Files]
     Trips --> TripOut[Trip Output / Scoring]
     Itineraries --> Viz[HTML Visualizations]
 ```
@@ -98,7 +98,7 @@ When a complete path reaches the destination, `_validate_and_commit!` runs the i
 
 The `itinerary_legs` / `itinerary_legs_multi` / `itinerary_legs_json` functions post-process `Vector{Itinerary}` results into the compact `ItineraryRef` index format: deduplicated (by leg-sequence fingerprint), sorted by stops → elapsed → distance, and wrapped with summary fields.
 
-PSV output (`write_legs`, `write_itineraries`, `write_trips`) flattens graph objects into pipe-delimited rows. Visualizations serialize graph and itinerary data to JSON embedded in self-contained HTML pages.
+CSV output (`write_legs`, `write_itineraries`, `write_trips`) flattens graph objects into comma-delimited rows with canonical column names. Visualizations serialize graph and itinerary data to JSON embedded in self-contained HTML pages.
 
 ### Observability
 

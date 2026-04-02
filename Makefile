@@ -4,7 +4,7 @@
 test:
 	julia --project=. -e 'using Pkg; Pkg.test()'
 
-# Full demo: load, search, PSV, JSON, visualizations (3 days)
+# Full demo: load, search, CSV, JSON, visualizations (3 days)
 demo:
 	julia --project=. scripts/demo.jl
 
@@ -26,7 +26,7 @@ viz:
 json:
 	julia --project=. scripts/json_only.jl $(DATE) $(DAYS)
 
-# Single OD search with all outputs (PSV, JSON, HTML table, network map)
+# Single OD search with all outputs (CSV, JSON, HTML table, network map)
 # Usage: make search ORG=ORD DST=LHR DATE=2026-03-20
 #        make search ORG=ORD DATE=2026-03-20            (all destinations)
 search:

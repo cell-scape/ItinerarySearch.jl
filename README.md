@@ -12,7 +12,7 @@ ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Ti
 - **Graph-based connection building** — O(n²) rule-chain pass producing `GraphConnection` edges at every station; Tuple-dispatched rules for fully specialized compilation
 - **DFS search with pruning** — depth-first traversal with elapsed-time, circuity, direction, and stop-count pruning
 - **Trip search with scoring** — multi-leg trip pairing with configurable weighted scoring (`TripScoringWeights`)
-- **Multiple output formats** — PSV files, JSON (full and compact with `ItineraryRef` summary), `itinerary_long_format` / `itinerary_wide_format` tables
+- **Multiple output formats** — CSV files, JSON (full and compact with `ItineraryRef` summary), `itinerary_long_format` / `itinerary_wide_format` tables
 - **Interactive visualizations** — self-contained HTML network map (Leaflet), timeline (D3 Gantt), and trip comparison (D3 stacked bar)
 - **Observability** — structured event log with typed events and JSONL sink, DynaTrace-compatible JSON logging via LoggingExtras TeeLogger, cooperative system metrics polling, Tier 1 instrumentation (rule counters, MCT cascade stats, geographic aggregation)
 - **CLI** — `itinsearch` with 6 commands (search, trip, build, ingest, info, serve), global flags, per-invocation parameter overrides
@@ -107,7 +107,7 @@ curl -X POST http://localhost:8080/rebuild -d '{"source":"newssim"}'
 ```
 SSIM file ──┐
 NewSSIM CSV ┼──► DuckDB Store ──► FlightGraph ──► DFS Search ──► Output
-MCT file  ──┤                                                     ├── JSON / PSV
+MCT file  ──┤                                                     ├── JSON / CSV
 Ref tables ─┘                                                     ├── CLI (stdout)
                                                                   └── REST API (HTTP)
 ```

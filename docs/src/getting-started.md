@@ -246,7 +246,7 @@ all_legs = resolve_legs(ref, graph)   # Vector{Union{GraphLeg, Nothing}}
 all_records = resolve_legs(ref, store) # Vector{Union{LegRecord, Nothing}}
 ```
 
-## Step 6: Write PSV Files
+## Step 6: Write CSV Files
 
 ```julia
 outdir = "data/output/legs_index"
@@ -261,9 +261,9 @@ result = itinerary_legs_multi(graph.stations, ctx;
 for (date, org_dict) in result
     for (org, dst_dict) in org_dict
         for (dst, itinerary_refs) in dst_dict
-            fname = joinpath(outdir, "$(org)_$(dst)_$(date).psv")
+            fname = joinpath(outdir, "$(org)_$(dst)_$(date).csv")
             open(fname, "w") do io
-                println(io, "itinerary|leg_pos|row_number|record_serial|carrier|flight_number|departure_station|arrival_station")
+                println(io, "itinerary,leg_pos,row_number,record_serial,carrier,flight_number,departure_station,arrival_station")
                 for (itn_idx, ref) in enumerate(itinerary_refs)
                     for (leg_pos, key) in enumerate(ref.legs)
                         println(io, join([
@@ -271,7 +271,7 @@ for (date, org_dict) in result
                             key.row_number, key.record_serial,
                             strip(String(key.carrier)), key.flight_number,
                             strip(String(key.departure_station)), strip(String(key.arrival_station)),
-                        ], "|"))
+                        ], ","))
                     end
                 end
             end
@@ -280,10 +280,10 @@ for (date, org_dict) in result
 end
 ```
 
-Alternatively, use `write_legs` and `write_itineraries` for the full PSV format with all schedule fields:
+Alternatively, use `write_legs` and `write_itineraries` for the full CSV format with all schedule fields:
 
 ```julia
-open("data/output/legs_$(target_date).psv", "w") do io
+open("data/output/legs_$(target_date).csv", "w") do io
     n = write_legs(io, graph, target_date)
     println("Wrote $n legs")
 end
@@ -296,7 +296,7 @@ itineraries = copy(search_itineraries(
     ctx,
 ))
 
-open("data/output/itineraries_ord_lhr.psv", "w") do io
+open("data/output/itineraries_ord_lhr.csv", "w") do io
     n = write_itineraries(io, itineraries, graph, target_date)
     println("Wrote $n rows")
 end
@@ -351,7 +351,7 @@ end
 Write trip results:
 
 ```julia
-open("data/output/trips_ord_lhr.psv", "w") do io
+open("data/output/trips_ord_lhr.csv", "w") do io
     n = write_trips(io, trips, graph, Date(2026, 3, 20))
     println("Wrote $n rows")
 end
