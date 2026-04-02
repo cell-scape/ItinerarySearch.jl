@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Itinerary Timeline (SSIM) — 2026-02-26</title>
+  <script src="https://unpkg.com/d3@7.9.0/dist/d3.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', monospace; }
+    #header { padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d; }
+    #header h1 { font-size: 15px; font-weight: 600; color: #f0f6fc; }
+    #header p  { font-size: 12px; color: #8b949e; margin-top: 2px; }
+    #chart-container { padding: 16px 20px; overflow-x: auto; }
+    .row-label { font-size: 11px; fill: #8b949e; }
+    .leg-rect  { cursor: pointer; }
+    .leg-rect:hover { opacity: 0.85; }
+    .cnx-rect  { fill: #21262d; stroke: #388bfd; stroke-dasharray: 3,2; stroke-width: 1; opacity: 0.7; }
+    .axis path, .axis line { stroke: #30363d; }
+    .axis text { fill: #8b949e; font-size: 10px; }
+    .grid line { stroke: #21262d; stroke-opacity: 0.8; }
+    #tooltip {
+      position: fixed; pointer-events: none; display: none;
+      background: #161b22; border: 1px solid #30363d; border-radius: 4px;
+      padding: 8px 12px; font-size: 12px; color: #c9d1d9; line-height: 1.7;
+      max-width: 260px; z-index: 100;
+    }
+    #tooltip strong { color: #f0f6fc; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>Itinerary Timeline (SSIM) — 2026-02-26</h1>
+    <p id="subtitle"></p>
+  </div>
+  <div id="chart-container"><svg id="chart"></svg></div>
+  <div id="tooltip"></div>
+  <script>
+    const ROWS = [{"intl":false,"stops":2,"id":1,"elapsed":948,"circ":1.89,"dist":1629.0,"legs":[{"dep_utc":1498,"mct":0,"arr_utc":1675,"flt_id":"UA   9","aircraft_type":"21N","cnx_time":0,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":9},{"dep_utc":1498,"mct":35,"arr_utc":1675,"flt_id":"UA   9","aircraft_type":"21N","cnx_time":174,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":9},{"dep_utc":1849,"mct":25,"arr_utc":1917,"flt_id":"UA1757","aircraft_type":"73Y","cnx_time":409,"departure_station":"SFO","is_cnx":false,"distance":193.0,"carrier":"UA","arrival_station":"RNO","flight_number":1757},{"dep_utc":886,"mct":25,"arr_utc":1006,"flt_id":"UA5621","aircraft_type":"E7Q","cnx_time":409,"departure_station":"RNO","is_cnx":false,"distance":209.0,"carrier":"UA","arrival_station":"LAX","flight_number":5621}]},{"intl":false,"stops":2,"id":2,"elapsed":870,"circ":1.99,"dist":1715.0,"legs":[{"dep_utc":1498,"mct":0,"arr_utc":1675,"flt_id":"UA   9","aircraft_type":"21N","cnx_time":0,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":9},{"dep_utc":1498,"mct":35,"arr_utc":1675,"flt_id":"UA   9","aircraft_type":"21N","cnx_time":175,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":9},{"dep_utc":1850,"mct":30,"arr_utc":1949,"flt_id":"UA2142","aircraft_type":"37K","cnx_time":346,"departure_station":"SFO","is_cnx":false,"distance":397.0,"carrier":"UA","arrival_station":"SAN","flight_number":2142},{"dep_utc":855,"mct":30,"arr_utc":928,"flt_id":"UA4723","aircraft_type":"E7Q","cnx_time":346,"departure_station":"SAN","is_cnx":false,"distance":93.0,"carrier":"UA","arrival_station":"LAX","flight_number":4723}]},{"intl":false,"stops":1,"id":3,"elapsed":452,"circ":1.78,"dist":1530.0,"legs":[{"dep_utc":1498,"mct":0,"arr_utc":1675,"flt_id":"UA   9","aircraft_type":"21N","cnx_time":0,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":9},{"dep_utc":1498,"mct":35,"arr_utc":1675,"flt_id":"UA   9","aircraft_type":"21N","cnx_time":182,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":9},{"dep_utc":1857,"mct":35,"arr_utc":1950,"flt_id":"UA2179","aircraft_type":"20S","cnx_time":182,"departure_station":"SFO","is_cnx":false,"distance":304.0,"carrier":"UA","arrival_station":"LAX","flight_number":2179}]},{"intl":false,"stops":2,"id":4,"elapsed":878,"circ":2.28,"dist":1961.0,"legs":[{"dep_utc":1498,"mct":0,"arr_utc":1675,"flt_id":"UA   9","aircraft_type":"21N","cnx_time":0,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":9},{"dep_utc":1498,"mct":35,"arr_utc":1675,"flt_id":"UA   9","aircraft_type":"21N","cnx_time":185,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":9},{"dep_utc":1860,"mct":30,"arr_utc":1963,"flt_id":"UA2400","aircraft_type":"37E","cnx_time":332,"departure_station":"SFO","is_cnx":false,"distance":502.0,"carrier":"UA","arrival_station":"LAS","flight_number":2400},{"dep_utc":855,"mct":30,"arr_utc":936,"flt_id":"UA2039","aircraft_type":"73Y","cnx_time":332,"departure_station":"LAS","is_cnx":false,"distance":233.0,"carrier":"UA","arrival_station":"LAX","flight_number":2039}]},{"intl":false,"stops":2,"id":5,"elapsed":963,"circ":2.28,"dist":1961.0,"legs":[{"dep_utc":1498,"mct":0,"arr_utc":1675,"flt_id":"UA   9","aircraft_type":"21N","cnx_time":0,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":9},{"dep_utc":1498,"mct":35,"arr_utc":1675,"flt_id":"UA   9","aircraft_type":"21N","cnx_time":185,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":9},{"dep_utc":1860,"mct":30,"arr_utc":1963,"flt_id":"UA2400","aircraft_type":"37E","cnx_time":417,"departure_station":"SFO","is_cnx":false,"distance":502.0,"carrier":"UA","arrival_station":"LAS","flight_number":2400},{"dep_utc":940,"mct":30,"arr_utc":1021,"flt_id":"UA2667","aircraft_type":"37E","cnx_time":417,"departure_station":"LAS","is_cnx":false,"distance":233.0,"carrier":"UA","arrival_station":"LAX","flight_number":2667}]},{"intl":false,"stops":1,"id":6,"elapsed":530,"circ":1.29,"dist":2386.0,"legs":[{"dep_utc":1015,"mct":0,"arr_utc":1201,"flt_id":"UA 211","aircraft_type":"20S","cnx_time":0,"departure_station":"ORD","is_cnx":false,"distance":680.0,"carrier":"UA","arrival_station":"AUS","flight_number":211},{"dep_utc":1015,"mct":30,"arr_utc":1201,"flt_id":"UA 211","aircraft_type":"20S","cnx_time":94,"departure_station":"ORD","is_cnx":false,"distance":680.0,"carrier":"UA","arrival_station":"AUS","flight_number":211},{"dep_utc":1295,"mct":30,"arr_utc":1545,"flt_id":"UA 261","aircraft_type":"20S","cnx_time":94,"departure_station":"AUS","is_cnx":false,"distance":1706.0,"carrier":"UA","arrival_station":"SFO","flight_number":261}]},{"intl":false,"stops":1,"id":7,"elapsed":671,"circ":1.29,"dist":2386.0,"legs":[{"dep_utc":1015,"mct":0,"arr_utc":1201,"flt_id":"UA 211","aircraft_type":"20S","cnx_time":0,"departure_station":"ORD","is_cnx":false,"distance":680.0,"carrier":"UA","arrival_station":"AUS","flight_number":211},{"dep_utc":1015,"mct":30,"arr_utc":1201,"flt_id":"UA 211","aircraft_type":"20S","cnx_time":237,"departure_station":"ORD","is_cnx":false,"distance":680.0,"carrier":"UA","arrival_station":"AUS","flight_number":211},{"dep_utc":1438,"mct":30,"arr_utc":1686,"flt_id":"UA 292","aircraft_type":"37E","cnx_time":237,"departure_station":"AUS","is_cnx":false,"distance":1706.0,"carrier":"UA","arrival_station":"SFO","flight_number":292}]},{"intl":false,"stops":2,"id":8,"elapsed":862,"circ":1.3,"dist":2397.0,"legs":[{"dep_utc":1015,"mct":0,"arr_utc":1201,"flt_id":"UA 211","aircraft_type":"20S","cnx_time":0,"departure_station":"ORD","is_cnx":false,"distance":680.0,"carrier":"UA","arrival_station":"AUS","flight_number":211},{"dep_utc":1015,"mct":30,"arr_utc":1201,"flt_id":"UA 211","aircraft_type":"20S","cnx_time":258,"departure_station":"ORD","is_cnx":false,"distance":680.0,"carrier":"UA","arrival_station":"AUS","flight_number":211},{"dep_utc":1459,"mct":40,"arr_utc":1604,"flt_id":"UA 439","aircraft_type":"19F","cnx_time":96,"departure_station":"AUS","is_cnx":false,"distance":491.0,"carrier":"UA","arrival_station":"DEN","flight_number":439},{"dep_utc":1700,"mct":40,"arr_utc":1877,"flt_id":"UA2123","aircraft_type":"75E","cnx_time":96,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":2123}]},{"intl":false,"stops":2,"id":9,"elapsed":1343,"circ":1.3,"dist":2397.0,"legs":[{"dep_utc":1015,"mct":0,"arr_utc":1201,"flt_id":"UA 211","aircraft_type":"20S","cnx_time":0,"departure_station":"ORD","is_cnx":false,"distance":680.0,"carrier":"UA","arrival_station":"AUS","flight_number":211},{"dep_utc":1015,"mct":30,"arr_utc":1201,"flt_id":"UA 211","aircraft_type":"20S","cnx_time":358,"departure_station":"ORD","is_cnx":false,"distance":680.0,"carrier":"UA","arrival_station":"AUS","flight_number":211},{"dep_utc":1559,"mct":40,"arr_utc":1705,"flt_id":"UA1186","aircraft_type":"20S","cnx_time":475,"departure_station":"AUS","is_cnx":false,"distance":491.0,"carrier":"UA","arrival_station":"DEN","flight_number":1186},{"dep_utc":740,"mct":40,"arr_utc":918,"flt_id":"UA2367","aircraft_type":"37K","cnx_time":475,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":2367}]},{"intl":false,"stops":2,"id":10,"elapsed":763,"circ":1.3,"dist":2397.0,"legs":[{"dep_utc":1015,"mct":0,"arr_utc":1201,"flt_id":"UA 211","aircraft_type":"20S","cnx_time":0,"departure_station":"ORD","is_cnx":false,"distance":680.0,"carrier":"UA","arrival_station":"AUS","flight_number":211},{"dep_utc":1015,"mct":30,"arr_utc":1201,"flt_id":"UA 211","aircraft_type":"20S","cnx_time":171,"departure_station":"ORD","is_cnx":false,"distance":680.0,"carrier":"UA","arrival_station":"AUS","flight_number":211},{"dep_utc":1372,"mct":40,"arr_utc":1517,"flt_id":"UA2447","aircraft_type":"73Y","cnx_time":86,"departure_station":"AUS","is_cnx":false,"distance":491.0,"carrier":"UA","arrival_station":"DEN","flight_number":2447},{"dep_utc":1603,"mct":40,"arr_utc":1778,"flt_id":"UA1224","aircraft_type":"75E","cnx_time":86,"departure_station":"DEN","is_cnx":false,"distance":1226.0,"carrier":"UA","arrival_station":"SFO","flight_number":1224}]},{"intl":false,"stops":1,"id":11,"elapsed":255,"circ":1.05,"dist":1463.0,"legs":[{"dep_utc":1340,"mct":0,"arr_utc":1461,"flt_id":"UA 222","aircraft_type":"73G","cnx_time":0,"departure_station":"IAH","is_cnx":false,"distance":598.0,"carrier":"UA","arrival_station":"BNA","flight_number":222},{"dep_utc":1340,"mct":-1,"arr_utc":1461,"flt_id":"UA 222","aircraft_type":"73G","cnx_time":0,"departure_station":"IAH","is_cnx":false,"distance":598.0,"carrier":"UA","arrival_station":"BNA","flight_number":222},{"dep_utc":1560,"mct":-1,"arr_utc":1694,"flt_id":"UA 222","aircraft_type":"73G","cnx_time":0,"departure_station":"BNA","is_cnx":false,"distance":865.0,"carrier":"UA","arrival_station":"EWR","flight_number":222}]},{"intl":false,"stops":2,"id":12,"elapsed":1005,"circ":1.97,"dist":2760.0,"legs":[{"dep_utc":1352,"mct":0,"arr_utc":1516,"flt_id":"UA 270","aircraft_type":"75E","cnx_time":0,"departure_station":"IAH","is_cnx":false,"distance":653.0,"carrier":"UA","arrival_station":"DEN","flight_number":270},{"dep_utc":1352,"mct":40,"arr_utc":1516,"flt_id":"UA 270","aircraft_type":"75E","cnx_time":134,"departure_station":"IAH","is_cnx":false,"distance":653.0,"carrier":"UA","arrival_station":"DEN","flight_number":270},{"dep_utc":1650,"mct":35,"arr_utc":1799,"flt_id":"UA 377","aircraft_type":"37K","cnx_time":431,"departure_station":"DEN","is_cnx":false,"distance":1158.0,"carrier":"UA","arrival_station":"ORD","flight_number":377},{"dep_utc":790,"mct":35,"arr_utc":917,"flt_id":"UA 563","aircraft_type":"37K","cnx_time":431,"departure_station":"ORD","is_cnx":false,"distance":949.0,"carrier":"UA","arrival_station":"EWR","flight_number":563}]},{"intl":false,"stops":2,"id":13,"elapsed":935,"circ":1.97,"dist":2760.0,"legs":[{"dep_utc":1352,"mct":0,"arr_utc":1516,"flt_id":"UA 270","aircraft_type":"75E","cnx_time":0,"departure_station":"IAH","is_cnx":false,"distance":653.0,"carrier":"UA","arrival_station":"DEN","flight_number":270},{"dep_utc":1352,"mct":40,"arr_utc":1516,"flt_id":"UA 270","aircraft_type":"75E","cnx_time":134,"departure_station":"IAH","is_cnx":false,"distance":653.0,"carrier":"UA","arrival_station":"DEN","flight_number":270},{"dep_utc":1650,"mct":35,"arr_utc":1799,"flt_id":"UA 377","aircraft_type":"37K","cnx_time":361,"departure_station":"DEN","is_cnx":false,"distance":1158.0,"carrier":"UA","arrival_station":"ORD","flight_number":377},{"dep_utc":720,"mct":35,"arr_utc":847,"flt_id":"UA1658","aircraft_type":"37K","cnx_time":361,"departure_station":"ORD","is_cnx":false,"distance":949.0,"carrier":"UA","arrival_station":"EWR","flight_number":1658}]},{"intl":false,"stops":2,"id":14,"elapsed":1256,"circ":2.0,"dist":2802.0,"legs":[{"dep_utc":1352,"mct":0,"arr_utc":1516,"flt_id":"UA 270","aircraft_type":"75E","cnx_time":0,"departure_station":"IAH","is_cnx":false,"distance":653.0,"carrier":"UA","arrival_station":"DEN","flight_number":270},{"dep_utc":1352,"mct":40,"arr_utc":1516,"flt_id":"UA 270","aircraft_type":"75E","cnx_time":343,"departure_station":"IAH","is_cnx":false,"distance":653.0,"carrier":"UA","arrival_station":"DEN","flight_number":270},{"dep_utc":1859,"mct":25,"arr_utc":2092,"flt_id":"UA1225","aircraft_type":"37E","cnx_time":332,"departure_station":"DEN","is_cnx":false,"distance":1681.0,"carrier":"UA","arrival_station":"FLL","flight_number":1225},{"dep_utc":984,"mct":25,"arr_utc":1168,"flt_id":"UA 234","aircraft_type":"37K","cnx_time":332,"departure_station":"FLL","is_cnx":false,"distance":468.0,"carrier":"UA","arrival_station":"EWR","flight_number":234}]},{"intl":false,"stops":2,"id":15,"elapsed":1386,"circ":2.0,"dist":2802.0,"legs":[{"dep_utc":1352,"mct":0,"arr_utc":1516,"flt_id":"UA 270","aircraft_type":"75E","cnx_time":0,"departure_station":"IAH","is_cnx":false,"distance":653.0,"carrier":"UA","arrival_station":"DEN","flight_number":270},{"dep_utc":1352,"mct":40,"arr_utc":1516,"flt_id":"UA 270","aircraft_type":"75E","cnx_time":343,"departure_station":"IAH","is_cnx":false,"distance":653.0,"carrier":"UA","arrival_station":"DEN","flight_number":270},{"dep_utc":1859,"mct":25,"arr_utc":2092,"flt_id":"UA1225","aircraft_type":"37E","cnx_time":460,"departure_station":"DEN","is_cnx":false,"distance":1681.0,"carrier":"UA","arrival_station":"FLL","flight_number":1225},{"dep_utc":1112,"mct":25,"arr_utc":1298,"flt_id":"UA 793","aircraft_type":"37E","cnx_time":460,"departure_station":"FLL","is_cnx":false,"distance":468.0,"carrier":"UA","arrival_station":"EWR","flight_number":793}]},{"intl":true,"stops":2,"id":16,"elapsed":1040,"circ":1.87,"dist":7379.0,"legs":[{"dep_utc":1015,"mct":0,"arr_utc":1201,"flt_id":"UA 211","aircraft_type":"20S","cnx_time":0,"departure_station":"ORD","is_cnx":false,"distance":680.0,"carrier":"UA","arrival_station":"AUS","flight_number":211},{"dep_utc":1015,"mct":30,"arr_utc":1201,"flt_id":"UA 211","aircraft_type":"20S","cnx_time":137,"departure_station":"ORD","is_cnx":false,"distance":680.0,"carrier":"UA","arrival_station":"AUS","flight_number":211},{"dep_utc":1338,"mct":40,"arr_utc":1405,"flt_id":"UA 685","aircraft_type":"19F","cnx_time":100,"departure_station":"AUS","is_cnx":false,"distance":169.0,"carrier":"UA","arrival_station":"IAH","flight_number":685},{"dep_utc":1505,"mct":40,"arr_utc":2055,"flt_id":"UA   5","aircraft_type":"77U","cnx_time":100,"departure_station":"IAH","is_cnx":false,"distance":6530.0,"carrier":"UA","arrival_station":"LHR","flight_number":5}]},{"intl":true,"stops":2,"id":17,"elapsed":1105,"circ":1.55,"dist":6122.0,"legs":[{"dep_utc":1000,"mct":0,"arr_utc":1195,"flt_id":"UA 279","aircraft_type":"75E","cnx_time":0,"departure_station":"ORD","is_cnx":false,"distance":542.0,"carrier":"UA","arrival_station":"FLL","flight_number":279},{"dep_utc":1000,"mct":25,"arr_utc":1195,"flt_id":"UA 279","aircraft_type":"75E","cnx_time":181,"departure_station":"ORD","is_cnx":false,"distance":542.0,"carrier":"UA","arrival_station":"FLL","flight_number":279},{"dep_utc":1376,"mct":50,"arr_utc":1560,"flt_id":"UA1067","aircraft_type":"37K","cnx_time":100,"departure_station":"FLL","is_cnx":false,"distance":468.0,"carrier":"UA","arrival_station":"EWR","flight_number":1067},{"dep_utc":1660,"mct":50,"arr_utc":2105,"flt_id":"UA 146","aircraft_type":"76L","cnx_time":100,"departure_station":"EWR","is_cnx":false,"distance":5113.0,"carrier":"UA","arrival_station":"LHR","flight_number":146}]},{"intl":true,"stops":2,"id":18,"elapsed":1065,"circ":1.55,"dist":6122.0,"legs":[{"dep_utc":1000,"mct":0,"arr_utc":1195,"flt_id":"UA 279","aircraft_type":"75E","cnx_time":0,"departure_station":"ORD","is_cnx":false,"distance":542.0,"carrier":"UA","arrival_station":"FLL","flight_number":279},{"dep_utc":1000,"mct":25,"arr_utc":1195,"flt_id":"UA 279","aircraft_type":"75E","cnx_time":181,"departure_station":"ORD","is_cnx":false,"distance":542.0,"carrier":"UA","arrival_station":"FLL","flight_number":279},{"dep_utc":1376,"mct":50,"arr_utc":1560,"flt_id":"UA1067","aircraft_type":"37K","cnx_time":60,"departure_station":"FLL","is_cnx":false,"distance":468.0,"carrier":"UA","arrival_station":"EWR","flight_number":1067},{"dep_utc":1620,"mct":50,"arr_utc":2065,"flt_id":"UA 940","aircraft_type":"76L","cnx_time":60,"departure_station":"EWR","is_cnx":false,"distance":5113.0,"carrier":"UA","arrival_station":"LHR","flight_number":940}]},{"intl":true,"stops":2,"id":19,"elapsed":945,"circ":1.55,"dist":6122.0,"legs":[{"dep_utc":1000,"mct":0,"arr_utc":1195,"flt_id":"UA 279","aircraft_type":"75E","cnx_time":0,"departure_station":"ORD","is_cnx":false,"distance":542.0,"carrier":"UA","arrival_station":"FLL","flight_number":279},{"dep_utc":1000,"mct":25,"arr_utc":1195,"flt_id":"UA 279","aircraft_type":"75E","cnx_time":29,"departure_station":"ORD","is_cnx":false,"distance":542.0,"carrier":"UA","arrival_station":"FLL","flight_number":279},{"dep_utc":1224,"mct":50,"arr_utc":1409,"flt_id":"UA1469","aircraft_type":"37X","cnx_time":91,"departure_station":"FLL","is_cnx":false,"distance":468.0,"carrier":"UA","arrival_station":"EWR","flight_number":1469},{"dep_utc":1500,"mct":50,"arr_utc":1945,"flt_id":"UA  14","aircraft_type":"76L","cnx_time":91,"departure_station":"EWR","is_cnx":false,"distance":5113.0,"carrier":"UA","arrival_station":"LHR","flight_number":14}]},{"intl":true,"stops":2,"id":20,"elapsed":1105,"circ":1.55,"dist":6122.0,"legs":[{"dep_utc":1000,"mct":0,"arr_utc":1195,"flt_id":"UA 279","aircraft_type":"75E","cnx_time":0,"departure_station":"ORD","is_cnx":false,"distance":542.0,"carrier":"UA","arrival_station":"FLL","flight_number":279},{"dep_utc":1000,"mct":25,"arr_utc":1195,"flt_id":"UA 279","aircraft_type":"75E","cnx_time":29,"departure_station":"ORD","is_cnx":false,"distance":542.0,"carrier":"UA","arrival_station":"FLL","flight_number":279},{"dep_utc":1224,"mct":50,"arr_utc":1409,"flt_id":"UA1469","aircraft_type":"37X","cnx_time":251,"departure_station":"FLL","is_cnx":false,"distance":468.0,"carrier":"UA","arrival_station":"EWR","flight_number":1469},{"dep_utc":1660,"mct":50,"arr_utc":2105,"flt_id":"UA 146","aircraft_type":"76L","cnx_time":251,"departure_station":"EWR","is_cnx":false,"distance":5113.0,"carrier":"UA","arrival_station":"LHR","flight_number":146}]}];
+
+    const ROW_H   = 36;
+    const ROW_PAD = 6;
+    const LABEL_W = 90;
+    const MARGIN  = { top: 30, right: 20, bottom: 40, left: LABEL_W };
+    const MIN_LEG_W = 4;
+
+    const container = document.getElementById('chart-container');
+    const tooltip   = document.getElementById('tooltip');
+    document.getElementById('subtitle').textContent =
+      `${ROWS.length} itineraries`;
+
+    if (ROWS.length === 0) {
+      document.getElementById('subtitle').textContent = 'No itineraries to display';
+    } else {
+      // ── Compute global UTC time range ──────────────────────────────────────
+      let globalMin = Infinity, globalMax = -Infinity;
+      ROWS.forEach(row => {
+        row.legs.forEach(leg => {
+          if (leg.dep_utc < globalMin) globalMin = leg.dep_utc;
+          if (leg.arr_utc > globalMax) globalMax = leg.arr_utc;
+        });
+      });
+      const span = globalMax - globalMin;
+
+      const svgW = Math.max(800, container.clientWidth - 40);
+      const innerW = svgW - MARGIN.left - MARGIN.right;
+      const innerH = ROWS.length * (ROW_H + ROW_PAD);
+      const svgH = innerH + MARGIN.top + MARGIN.bottom;
+
+      const svg = d3.select('#chart')
+        .attr('width', svgW)
+        .attr('height', svgH);
+
+      const g = svg.append('g')
+        .attr('transform', `translate(${MARGIN.left},${MARGIN.top})`);
+
+      const xScale = d3.scaleLinear()
+        .domain([globalMin, globalMax])
+        .range([0, innerW]);
+
+      // ── X axis with HH:MM labels ───────────────────────────────────────────
+      const formatMin = m => {
+        const h = Math.floor(Math.abs(m) / 60) % 24;
+        const mn = Math.abs(m) % 60;
+        return String(h).padStart(2,'0') + ':' + String(mn).padStart(2,'0');
+      };
+      const xAxis = d3.axisBottom(xScale)
+        .ticks(10)
+        .tickFormat(formatMin);
+
+      g.append('g')
+        .attr('class', 'axis')
+        .attr('transform', `translate(0,${innerH})`)
+        .call(xAxis);
+
+      // ── Grid lines ────────────────────────────────────────────────────────
+      g.append('g')
+        .attr('class', 'grid')
+        .attr('transform', `translate(0,${innerH})`)
+        .call(d3.axisBottom(xScale).ticks(10).tickSize(-innerH).tickFormat(''))
+        .call(gg => gg.select('.domain').remove());
+
+      // ── Airline color scale ───────────────────────────────────────────────
+      const airlines = [...new Set(ROWS.flatMap(r => r.legs.map(l => l.carrier)))];
+      const palette = ['#4e9af1','#f1a14e','#4ef17a','#f14e7a','#c34ef1',
+                       '#f1e14e','#4ef1e1','#f14e4e','#7af14e','#f14ec3'];
+      const colorMap = {};
+      airlines.forEach((al, i) => { colorMap[al] = palette[i % palette.length]; });
+
+      // ── Rows ──────────────────────────────────────────────────────────────
+      ROWS.forEach((row, ri) => {
+        const y = ri * (ROW_H + ROW_PAD);
+        const rowG = g.append('g').attr('transform', `translate(0,${y})`);
+
+        // Row label
+        rowG.append('text')
+          .attr('class', 'row-label')
+          .attr('x', -6)
+          .attr('y', ROW_H / 2 + 4)
+          .attr('text-anchor', 'end')
+          .text(`#${row.id} (${row.stops}s)`);
+
+        // ── Legs ────────────────────────────────────────────────────────────
+        // Connection gap rectangles (drawn behind legs)
+        for (let i = 1; i < row.legs.length; i++) {
+          const prev = row.legs[i - 1];
+          const curr = row.legs[i];
+          const gx  = xScale(prev.arr_utc);
+          const gx2 = xScale(curr.dep_utc);
+          const gw  = Math.max(2, gx2 - gx);
+          rowG.append('rect')
+            .attr('class', 'cnx-rect')
+            .attr('x', gx)
+            .attr('y', 4)
+            .attr('width', gw)
+            .attr('height', ROW_H - 8)
+            .on('mousemove', ev => showTooltip(ev,
+              `<strong>Connection at ${curr.departure_station}</strong><br>` +
+              `Gap: ${curr.cnx_time} min · MCT: ${curr.mct} min`))
+            .on('mouseleave', hideTooltip);
+        }
+
+        // Leg rectangles
+        row.legs.forEach(leg => {
+          const lx = xScale(leg.dep_utc);
+          const lw = Math.max(MIN_LEG_W, xScale(leg.arr_utc) - lx);
+          const color = colorMap[leg.carrier] || '#4e9af1';
+
+          rowG.append('rect')
+            .attr('class', 'leg-rect')
+            .attr('x', lx)
+            .attr('y', 2)
+            .attr('width', lw)
+            .attr('height', ROW_H - 4)
+            .attr('fill', color)
+            .attr('rx', 3)
+            .on('mousemove', ev => showTooltip(ev,
+              `<strong>${leg.flt_id}</strong><br>` +
+              `${leg.departure_station} &rarr; ${leg.arrival_station}<br>` +
+              `Dep: ${formatMin(leg.dep_utc)} UTC · Arr: ${formatMin(leg.arr_utc)} UTC<br>` +
+              `${leg.aircraft_type} · ${leg.distance.toLocaleString()} mi`))
+            .on('mouseleave', hideTooltip);
+
+          // Flight label inside rect if wide enough
+          if (lw > 40) {
+            rowG.append('text')
+              .attr('x', lx + lw / 2)
+              .attr('y', ROW_H / 2 + 4)
+              .attr('text-anchor', 'middle')
+              .attr('font-size', 10)
+              .attr('fill', '#0d1117')
+              .attr('pointer-events', 'none')
+              .text(leg.flt_id);
+          }
+        });
+      });
+
+      function showTooltip(ev, html) {
+        tooltip.innerHTML = html;
+        tooltip.style.display = 'block';
+        tooltip.style.left = (ev.clientX + 12) + 'px';
+        tooltip.style.top  = (ev.clientY + 12) + 'px';
+      }
+      function hideTooltip() {
+        tooltip.style.display = 'none';
+      }
+      // Move tooltip with mouse
+      document.addEventListener('mousemove', ev => {
+        if (tooltip.style.display !== 'none') {
+          tooltip.style.left = (ev.clientX + 12) + 'px';
+          tooltip.style.top  = (ev.clientY + 12) + 'px';
+        }
+      });
+    }
+  </script>
+</body>
+</html>

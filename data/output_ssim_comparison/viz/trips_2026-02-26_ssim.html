@@ -1,0 +1,170 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Trip Comparison (SSIM): ORD↔SFO — 2026-02-26</title>
+  <script src="https://unpkg.com/d3@7.9.0/dist/d3.min.js"></script>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { background: #0d1117; color: #c9d1d9; font-family: 'Segoe UI', sans-serif; }
+    #header { padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d; }
+    #header h1 { font-size: 15px; font-weight: 600; color: #f0f6fc; }
+    #header p  { font-size: 12px; color: #8b949e; margin-top: 2px; }
+    #legend { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 20px; background: #161b22; border-bottom: 1px solid #30363d; }
+    .legend-item { display: flex; align-items: center; gap: 5px; font-size: 11px; color: #8b949e; }
+    .legend-swatch { width: 12px; height: 12px; border-radius: 2px; flex-shrink: 0; }
+    #chart-container { padding: 16px 20px; overflow-x: auto; }
+    .bar-label { font-size: 11px; fill: #8b949e; cursor: default; }
+    .bar-label:hover { fill: #f0f6fc; }
+    .axis path, .axis line { stroke: #30363d; }
+    .axis text { fill: #8b949e; font-size: 10px; }
+    .grid line { stroke: #21262d; stroke-opacity: 0.8; }
+    .score-text { font-size: 10px; fill: #8b949e; }
+    #tooltip {
+      position: fixed; pointer-events: none; display: none;
+      background: #161b22; border: 1px solid #30363d; border-radius: 4px;
+      padding: 8px 12px; font-size: 12px; color: #c9d1d9; line-height: 1.7;
+      max-width: 280px; z-index: 100;
+    }
+    #tooltip strong { color: #f0f6fc; }
+    #tooltip .dim  { color: #8b949e; font-size: 11px; }
+  </style>
+</head>
+<body>
+  <div id="header">
+    <h1>Trip Comparison (SSIM): ORD↔SFO — 2026-02-26</h1>
+    <p id="subtitle"></p>
+  </div>
+  <div id="legend"></div>
+  <div id="chart-container"><svg id="chart"></svg></div>
+  <div id="tooltip"></div>
+  <script>
+    const CRITERIA = [["stops","Stops","#f14e4e"],["eqp_changes","Eqp Changes","#f1a14e"],["carrier_changes","Carrier Changes","#f1e14e"],["flt_no_changes","Flt# Changes","#4ef17a"],["elapsed","Elapsed Time","#4e9af1"],["block_time","Block Time","#4ef1e1"],["layover","Layover","#c34ef1"],["distance","Distance","#7af14e"],["circuity","Circuity","#f14ec3"]];
+    const TRIPS    = [{"rank":1,"score":15.33,"route":"ORD → ORD","total_dist":4765.0,"trip_id":1,"n_itineraries":2,"contributions":[{"key":"stops","label":"Stops","weight":10.0,"raw":0.0,"color":"#f14e4e","weighted":0.0},{"key":"eqp_changes","label":"Eqp Changes","weight":5.0,"raw":0.0,"color":"#f1a14e","weighted":0.0},{"key":"carrier_changes","label":"Carrier Changes","weight":5.0,"raw":0.0,"color":"#f1e14e","weighted":0.0},{"key":"flt_no_changes","label":"Flt# Changes","weight":2.0,"raw":0.0,"color":"#4ef17a","weighted":0.0},{"key":"elapsed","label":"Elapsed Time","weight":1.0,"raw":9.32,"color":"#4e9af1","weighted":9.317},{"key":"block_time","label":"Block Time","weight":0.5,"raw":0.0,"color":"#4ef1e1","weighted":0.0},{"key":"layover","label":"Layover","weight":0.5,"raw":9.32,"color":"#c34ef1","weighted":4.658},{"key":"distance","label":"Distance","weight":0.1,"raw":4.76,"color":"#7af14e","weighted":0.476},{"key":"circuity","label":"Circuity","weight":3.0,"raw":0.29,"color":"#f14ec3","weighted":0.879}],"trip_type":"roundtrip","total_elapsed":559},{"rank":2,"score":15.33,"route":"ORD → ORD","total_dist":4765.0,"trip_id":2,"n_itineraries":2,"contributions":[{"key":"stops","label":"Stops","weight":10.0,"raw":0.0,"color":"#f14e4e","weighted":0.0},{"key":"eqp_changes","label":"Eqp Changes","weight":5.0,"raw":0.0,"color":"#f1a14e","weighted":0.0},{"key":"carrier_changes","label":"Carrier Changes","weight":5.0,"raw":0.0,"color":"#f1e14e","weighted":0.0},{"key":"flt_no_changes","label":"Flt# Changes","weight":2.0,"raw":0.0,"color":"#4ef17a","weighted":0.0},{"key":"elapsed","label":"Elapsed Time","weight":1.0,"raw":9.32,"color":"#4e9af1","weighted":9.317},{"key":"block_time","label":"Block Time","weight":0.5,"raw":0.0,"color":"#4ef1e1","weighted":0.0},{"key":"layover","label":"Layover","weight":0.5,"raw":9.32,"color":"#c34ef1","weighted":4.658},{"key":"distance","label":"Distance","weight":0.1,"raw":4.76,"color":"#7af14e","weighted":0.476},{"key":"circuity","label":"Circuity","weight":3.0,"raw":0.29,"color":"#f14ec3","weighted":0.879}],"trip_type":"roundtrip","total_elapsed":559},{"rank":3,"score":15.33,"route":"ORD → ORD","total_dist":4765.0,"trip_id":3,"n_itineraries":2,"contributions":[{"key":"stops","label":"Stops","weight":10.0,"raw":0.0,"color":"#f14e4e","weighted":0.0},{"key":"eqp_changes","label":"Eqp Changes","weight":5.0,"raw":0.0,"color":"#f1a14e","weighted":0.0},{"key":"carrier_changes","label":"Carrier Changes","weight":5.0,"raw":0.0,"color":"#f1e14e","weighted":0.0},{"key":"flt_no_changes","label":"Flt# Changes","weight":2.0,"raw":0.0,"color":"#4ef17a","weighted":0.0},{"key":"elapsed","label":"Elapsed Time","weight":1.0,"raw":9.32,"color":"#4e9af1","weighted":9.317},{"key":"block_time","label":"Block Time","weight":0.5,"raw":0.0,"color":"#4ef1e1","weighted":0.0},{"key":"layover","label":"Layover","weight":0.5,"raw":9.32,"color":"#c34ef1","weighted":4.658},{"key":"distance","label":"Distance","weight":0.1,"raw":4.76,"color":"#7af14e","weighted":0.476},{"key":"circuity","label":"Circuity","weight":3.0,"raw":0.29,"color":"#f14ec3","weighted":0.879}],"trip_type":"roundtrip","total_elapsed":559},{"rank":4,"score":15.33,"route":"ORD → ORD","total_dist":4765.0,"trip_id":4,"n_itineraries":2,"contributions":[{"key":"stops","label":"Stops","weight":10.0,"raw":0.0,"color":"#f14e4e","weighted":0.0},{"key":"eqp_changes","label":"Eqp Changes","weight":5.0,"raw":0.0,"color":"#f1a14e","weighted":0.0},{"key":"carrier_changes","label":"Carrier Changes","weight":5.0,"raw":0.0,"color":"#f1e14e","weighted":0.0},{"key":"flt_no_changes","label":"Flt# Changes","weight":2.0,"raw":0.0,"color":"#4ef17a","weighted":0.0},{"key":"elapsed","label":"Elapsed Time","weight":1.0,"raw":9.32,"color":"#4e9af1","weighted":9.317},{"key":"block_time","label":"Block Time","weight":0.5,"raw":0.0,"color":"#4ef1e1","weighted":0.0},{"key":"layover","label":"Layover","weight":0.5,"raw":9.32,"color":"#c34ef1","weighted":4.658},{"key":"distance","label":"Distance","weight":0.1,"raw":4.76,"color":"#7af14e","weighted":0.476},{"key":"circuity","label":"Circuity","weight":3.0,"raw":0.29,"color":"#f14ec3","weighted":0.879}],"trip_type":"roundtrip","total_elapsed":559},{"rank":5,"score":15.355,"route":"ORD → ORD","total_dist":4765.0,"trip_id":5,"n_itineraries":2,"contributions":[{"key":"stops","label":"Stops","weight":10.0,"raw":0.0,"color":"#f14e4e","weighted":0.0},{"key":"eqp_changes","label":"Eqp Changes","weight":5.0,"raw":0.0,"color":"#f1a14e","weighted":0.0},{"key":"carrier_changes","label":"Carrier Changes","weight":5.0,"raw":0.0,"color":"#f1e14e","weighted":0.0},{"key":"flt_no_changes","label":"Flt# Changes","weight":2.0,"raw":0.0,"color":"#4ef17a","weighted":0.0},{"key":"elapsed","label":"Elapsed Time","weight":1.0,"raw":9.33,"color":"#4e9af1","weighted":9.333},{"key":"block_time","label":"Block Time","weight":0.5,"raw":0.0,"color":"#4ef1e1","weighted":0.0},{"key":"layover","label":"Layover","weight":0.5,"raw":9.33,"color":"#c34ef1","weighted":4.667},{"key":"distance","label":"Distance","weight":0.1,"raw":4.76,"color":"#7af14e","weighted":0.476},{"key":"circuity","label":"Circuity","weight":3.0,"raw":0.29,"color":"#f14ec3","weighted":0.879}],"trip_type":"roundtrip","total_elapsed":560},{"rank":6,"score":15.355,"route":"ORD → ORD","total_dist":4765.0,"trip_id":6,"n_itineraries":2,"contributions":[{"key":"stops","label":"Stops","weight":10.0,"raw":0.0,"color":"#f14e4e","weighted":0.0},{"key":"eqp_changes","label":"Eqp Changes","weight":5.0,"raw":0.0,"color":"#f1a14e","weighted":0.0},{"key":"carrier_changes","label":"Carrier Changes","weight":5.0,"raw":0.0,"color":"#f1e14e","weighted":0.0},{"key":"flt_no_changes","label":"Flt# Changes","weight":2.0,"raw":0.0,"color":"#4ef17a","weighted":0.0},{"key":"elapsed","label":"Elapsed Time","weight":1.0,"raw":9.33,"color":"#4e9af1","weighted":9.333},{"key":"block_time","label":"Block Time","weight":0.5,"raw":0.0,"color":"#4ef1e1","weighted":0.0},{"key":"layover","label":"Layover","weight":0.5,"raw":9.33,"color":"#c34ef1","weighted":4.667},{"key":"distance","label":"Distance","weight":0.1,"raw":4.76,"color":"#7af14e","weighted":0.476},{"key":"circuity","label":"Circuity","weight":3.0,"raw":0.29,"color":"#f14ec3","weighted":0.879}],"trip_type":"roundtrip","total_elapsed":560},{"rank":7,"score":15.355,"route":"ORD → ORD","total_dist":4765.0,"trip_id":7,"n_itineraries":2,"contributions":[{"key":"stops","label":"Stops","weight":10.0,"raw":0.0,"color":"#f14e4e","weighted":0.0},{"key":"eqp_changes","label":"Eqp Changes","weight":5.0,"raw":0.0,"color":"#f1a14e","weighted":0.0},{"key":"carrier_changes","label":"Carrier Changes","weight":5.0,"raw":0.0,"color":"#f1e14e","weighted":0.0},{"key":"flt_no_changes","label":"Flt# Changes","weight":2.0,"raw":0.0,"color":"#4ef17a","weighted":0.0},{"key":"elapsed","label":"Elapsed Time","weight":1.0,"raw":9.33,"color":"#4e9af1","weighted":9.333},{"key":"block_time","label":"Block Time","weight":0.5,"raw":0.0,"color":"#4ef1e1","weighted":0.0},{"key":"layover","label":"Layover","weight":0.5,"raw":9.33,"color":"#c34ef1","weighted":4.667},{"key":"distance","label":"Distance","weight":0.1,"raw":4.76,"color":"#7af14e","weighted":0.476},{"key":"circuity","label":"Circuity","weight":3.0,"raw":0.29,"color":"#f14ec3","weighted":0.879}],"trip_type":"roundtrip","total_elapsed":560},{"rank":8,"score":15.355,"route":"ORD → ORD","total_dist":4765.0,"trip_id":8,"n_itineraries":2,"contributions":[{"key":"stops","label":"Stops","weight":10.0,"raw":0.0,"color":"#f14e4e","weighted":0.0},{"key":"eqp_changes","label":"Eqp Changes","weight":5.0,"raw":0.0,"color":"#f1a14e","weighted":0.0},{"key":"carrier_changes","label":"Carrier Changes","weight":5.0,"raw":0.0,"color":"#f1e14e","weighted":0.0},{"key":"flt_no_changes","label":"Flt# Changes","weight":2.0,"raw":0.0,"color":"#4ef17a","weighted":0.0},{"key":"elapsed","label":"Elapsed Time","weight":1.0,"raw":9.33,"color":"#4e9af1","weighted":9.333},{"key":"block_time","label":"Block Time","weight":0.5,"raw":0.0,"color":"#4ef1e1","weighted":0.0},{"key":"layover","label":"Layover","weight":0.5,"raw":9.33,"color":"#c34ef1","weighted":4.667},{"key":"distance","label":"Distance","weight":0.1,"raw":4.76,"color":"#7af14e","weighted":0.476},{"key":"circuity","label":"Circuity","weight":3.0,"raw":0.29,"color":"#f14ec3","weighted":0.879}],"trip_type":"roundtrip","total_elapsed":560},{"rank":9,"score":15.355,"route":"ORD → ORD","total_dist":4765.0,"trip_id":9,"n_itineraries":2,"contributions":[{"key":"stops","label":"Stops","weight":10.0,"raw":0.0,"color":"#f14e4e","weighted":0.0},{"key":"eqp_changes","label":"Eqp Changes","weight":5.0,"raw":0.0,"color":"#f1a14e","weighted":0.0},{"key":"carrier_changes","label":"Carrier Changes","weight":5.0,"raw":0.0,"color":"#f1e14e","weighted":0.0},{"key":"flt_no_changes","label":"Flt# Changes","weight":2.0,"raw":0.0,"color":"#4ef17a","weighted":0.0},{"key":"elapsed","label":"Elapsed Time","weight":1.0,"raw":9.33,"color":"#4e9af1","weighted":9.333},{"key":"block_time","label":"Block Time","weight":0.5,"raw":0.0,"color":"#4ef1e1","weighted":0.0},{"key":"layover","label":"Layover","weight":0.5,"raw":9.33,"color":"#c34ef1","weighted":4.667},{"key":"distance","label":"Distance","weight":0.1,"raw":4.76,"color":"#7af14e","weighted":0.476},{"key":"circuity","label":"Circuity","weight":3.0,"raw":0.29,"color":"#f14ec3","weighted":0.879}],"trip_type":"roundtrip","total_elapsed":560},{"rank":10,"score":15.355,"route":"ORD → ORD","total_dist":4765.0,"trip_id":10,"n_itineraries":2,"contributions":[{"key":"stops","label":"Stops","weight":10.0,"raw":0.0,"color":"#f14e4e","weighted":0.0},{"key":"eqp_changes","label":"Eqp Changes","weight":5.0,"raw":0.0,"color":"#f1a14e","weighted":0.0},{"key":"carrier_changes","label":"Carrier Changes","weight":5.0,"raw":0.0,"color":"#f1e14e","weighted":0.0},{"key":"flt_no_changes","label":"Flt# Changes","weight":2.0,"raw":0.0,"color":"#4ef17a","weighted":0.0},{"key":"elapsed","label":"Elapsed Time","weight":1.0,"raw":9.33,"color":"#4e9af1","weighted":9.333},{"key":"block_time","label":"Block Time","weight":0.5,"raw":0.0,"color":"#4ef1e1","weighted":0.0},{"key":"layover","label":"Layover","weight":0.5,"raw":9.33,"color":"#c34ef1","weighted":4.667},{"key":"distance","label":"Distance","weight":0.1,"raw":4.76,"color":"#7af14e","weighted":0.476},{"key":"circuity","label":"Circuity","weight":3.0,"raw":0.29,"color":"#f14ec3","weighted":0.879}],"trip_type":"roundtrip","total_elapsed":560}];
+
+    const tooltip = document.getElementById('tooltip');
+    document.getElementById('subtitle').textContent =
+      `${TRIPS.length} trip${TRIPS.length !== 1 ? 's' : ''} · lower score = better`;
+
+    // ── Legend ────────────────────────────────────────────────────────────────
+    const legendEl = document.getElementById('legend');
+    CRITERIA.forEach(([key, label, color]) => {
+      const item = document.createElement('div');
+      item.className = 'legend-item';
+      item.innerHTML = `<div class="legend-swatch" style="background:${color}"></div>${label}`;
+      legendEl.appendChild(item);
+    });
+
+    if (TRIPS.length === 0) {
+      document.getElementById('subtitle').textContent = 'No trips to display';
+    } else {
+      const BAR_H   = 28;
+      const BAR_PAD = 10;
+      const LABEL_W = 140;
+      const SCORE_W = 60;
+      const MARGIN  = { top: 20, right: SCORE_W + 20, bottom: 40, left: LABEL_W };
+
+      const container = document.getElementById('chart-container');
+      const svgW    = Math.max(800, container.clientWidth - 40);
+      const innerW  = svgW - MARGIN.left - MARGIN.right;
+      const innerH  = TRIPS.length * (BAR_H + BAR_PAD);
+      const svgH    = innerH + MARGIN.top + MARGIN.bottom;
+
+      const svg = d3.select('#chart')
+        .attr('width', svgW)
+        .attr('height', svgH);
+
+      const g = svg.append('g')
+        .attr('transform', `translate(${MARGIN.left},${MARGIN.top})`);
+
+      // ── X scale based on max total score ────────────────────────────────
+      const maxScore = d3.max(TRIPS, t => t.score);
+      const xScale = d3.scaleLinear().domain([0, maxScore * 1.05]).range([0, innerW]);
+
+      const xAxis = d3.axisBottom(xScale).ticks(8);
+      g.append('g')
+        .attr('class', 'axis')
+        .attr('transform', `translate(0,${innerH})`)
+        .call(xAxis);
+
+      g.append('g')
+        .attr('class', 'grid')
+        .attr('transform', `translate(0,${innerH})`)
+        .call(d3.axisBottom(xScale).ticks(8).tickSize(-innerH).tickFormat(''))
+        .call(gg => gg.select('.domain').remove());
+
+      g.append('text')
+        .attr('x', innerW / 2)
+        .attr('y', innerH + 36)
+        .attr('text-anchor', 'middle')
+        .attr('font-size', 11)
+        .attr('fill', '#8b949e')
+        .text('Weighted Score (lower = better)');
+
+      // ── Trip bars ─────────────────────────────────────────────────────────
+      TRIPS.forEach((trip, ti) => {
+        const y = ti * (BAR_H + BAR_PAD);
+        const rowG = g.append('g').attr('transform', `translate(0,${y})`);
+
+        // Label
+        const labelText = `#${trip.rank} ${trip.route}`;
+        rowG.append('text')
+          .attr('class', 'bar-label')
+          .attr('x', -8)
+          .attr('y', BAR_H / 2 + 4)
+          .attr('text-anchor', 'end')
+          .text(labelText)
+          .on('mousemove', ev => showTooltip(ev,
+            `<strong>${trip.route}</strong><br>` +
+            `<span class="dim">Type: ${trip.trip_type} · ID: ${trip.trip_id}</span><br>` +
+            `Score: ${trip.score}<br>` +
+            `Elapsed: ${trip.total_elapsed} min · Dist: ${trip.total_dist.toLocaleString()} mi`))
+          .on('mouseleave', hideTooltip);
+
+        // Stacked segments
+        let cursor = 0;
+        trip.contributions.forEach(c => {
+          if (c.weighted <= 0) return;
+          const segW = xScale(c.weighted);
+          rowG.append('rect')
+            .attr('x', cursor)
+            .attr('y', 2)
+            .attr('width', segW)
+            .attr('height', BAR_H - 4)
+            .attr('fill', c.color)
+            .attr('rx', 2)
+            .on('mousemove', ev => showTooltip(ev,
+              `<strong>${c.label}</strong><br>` +
+              `Raw: ${c.raw}<br>` +
+              `Weight: ${c.weight}<br>` +
+              `Contribution: ${c.weighted}`))
+            .on('mouseleave', hideTooltip);
+          cursor += segW;
+        });
+
+        // Score label at end of bar
+        rowG.append('text')
+          .attr('class', 'score-text')
+          .attr('x', xScale(trip.score) + 4)
+          .attr('y', BAR_H / 2 + 4)
+          .text(trip.score.toFixed(1));
+      });
+
+      function showTooltip(ev, html) {
+        tooltip.innerHTML = html;
+        tooltip.style.display = 'block';
+        tooltip.style.left = (ev.clientX + 12) + 'px';
+        tooltip.style.top  = (ev.clientY + 12) + 'px';
+      }
+      function hideTooltip() { tooltip.style.display = 'none'; }
+      document.addEventListener('mousemove', ev => {
+        if (tooltip.style.display !== 'none') {
+          tooltip.style.left = (ev.clientX + 12) + 'px';
+          tooltip.style.top  = (ev.clientY + 12) + 'px';
+        }
+      });
+    }
+  </script>
+</body>
+</html>
