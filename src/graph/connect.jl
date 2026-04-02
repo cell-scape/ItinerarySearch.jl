@@ -45,11 +45,11 @@ function _set_connection_status!(
 
     # Interline vs codeshare: compare marketing carriers first
     if arr_leg.record.carrier != dep_leg.record.carrier
-        # Resolve operating carriers (administrating_carrier is non-empty when set)
-        arr_op = arr_leg.record.administrating_carrier != NO_AIRLINE ?
-            arr_leg.record.administrating_carrier : arr_leg.record.carrier
-        dep_op = dep_leg.record.administrating_carrier != NO_AIRLINE ?
-            dep_leg.record.administrating_carrier : dep_leg.record.carrier
+        # Resolve operating carriers (operating_carrier is non-empty when set)
+        arr_op = arr_leg.record.operating_carrier != NO_AIRLINE ?
+            arr_leg.record.operating_carrier : arr_leg.record.carrier
+        dep_op = dep_leg.record.operating_carrier != NO_AIRLINE ?
+            dep_leg.record.operating_carrier : dep_leg.record.carrier
         if arr_op == dep_op
             cp.status |= STATUS_CODESHARE
         else

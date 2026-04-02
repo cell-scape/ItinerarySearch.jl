@@ -157,9 +157,9 @@ from the first leg.
 function _resolve_codeshare!(seg::GraphSegment)::Nothing
     for leg_node in seg.legs
         leg = leg_node::GraphLeg  # legs is Vector{AbstractGraphNode}
-        if leg.record.administrating_carrier != NO_AIRLINE
-            seg.operating_airline = leg.record.administrating_carrier
-            seg.operating_flt_no = leg.record.administrating_carrier_flight_number
+        if leg.record.operating_carrier != NO_AIRLINE
+            seg.operating_airline = leg.record.operating_carrier
+            seg.operating_flt_no = leg.record.operating_flight_number
             seg.is_codeshare = true
             return nothing
         end

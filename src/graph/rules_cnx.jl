@@ -324,13 +324,13 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
     from_rec = from_leg.record
     to_rec = to_leg.record
 
-    arr_is_codeshare = from_rec.administrating_carrier != NO_AIRLINE &&
-                       from_rec.administrating_carrier != from_rec.carrier
-    arr_op_carrier = arr_is_codeshare ? from_rec.administrating_carrier : from_rec.carrier
+    arr_is_codeshare = from_rec.operating_carrier != NO_AIRLINE &&
+                       from_rec.operating_carrier != from_rec.carrier
+    arr_op_carrier = arr_is_codeshare ? from_rec.operating_carrier : from_rec.carrier
 
-    dep_is_codeshare = to_rec.administrating_carrier != NO_AIRLINE &&
-                       to_rec.administrating_carrier != to_rec.carrier
-    dep_op_carrier = dep_is_codeshare ? to_rec.administrating_carrier : to_rec.carrier
+    dep_is_codeshare = to_rec.operating_carrier != NO_AIRLINE &&
+                       to_rec.operating_carrier != to_rec.carrier
+    dep_op_carrier = dep_is_codeshare ? to_rec.operating_carrier : to_rec.carrier
 
     # ── Geographic context from origin/destination station records ────────────
     prv_stn_rec = (from_leg.org::GraphStation).record

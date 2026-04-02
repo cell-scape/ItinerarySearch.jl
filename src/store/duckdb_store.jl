@@ -417,8 +417,8 @@ function _create_codeshare_view!(store::DuckDBStore)
     _exec(store, """
     CREATE VIEW legs_with_operating AS
     SELECT l.*,
-        TRIM(SUBSTRING(dei50.data, 1, 3)) AS administrating_carrier,
-        CAST(NULLIF(TRIM(SUBSTRING(dei50.data, 4, 4)), '') AS SMALLINT) AS administrating_carrier_flight_number,
+        TRIM(SUBSTRING(dei50.data, 1, 3)) AS operating_carrier,
+        CAST(NULLIF(TRIM(SUBSTRING(dei50.data, 4, 4)), '') AS SMALLINT) AS operating_flight_number,
         dei10.data AS dei_10,
         dei127.data AS dei_127
     FROM expanded_legs l
@@ -685,8 +685,8 @@ function _row_to_leg(r)::LegRecord
         # segment_hash not in legs_with_operating — populated via segments join in Subsystem 2
         segment_hash         = UInt64(0),
         distance             = Float32(_safe_missing(r.distance, 0.0)),
-        administrating_carrier = AirlineCode(_safe_string(hasproperty(r, :administrating_carrier) ? r.administrating_carrier : nothing)),
-        administrating_carrier_flight_number = Int16(_safe_missing(hasproperty(r, :administrating_carrier_flight_number) ? r.administrating_carrier_flight_number : nothing, 0)),
+        operating_carrier = AirlineCode(_safe_string(hasproperty(r, :operating_carrier) ? r.operating_carrier : nothing)),
+        operating_flight_number = Int16(_safe_missing(hasproperty(r, :operating_flight_number) ? r.operating_flight_number : nothing, 0)),
         dei_10               = _safe_string(hasproperty(r, :dei_10) ? r.dei_10 : nothing),
         wet_lease            = Bool(_safe_missing(r.wet_lease, false)),
         dei_127              = _safe_string(hasproperty(r, :dei_127) ? r.dei_127 : nothing),

@@ -11,7 +11,7 @@ handles the columns present only in `legs` (`aircraft_departure_time`, `aircraft
 - `operating_date` is set to `effective_date` (representative schedule date)
 - `day_of_week` is set to 0 (unused at schedule level; `frequency` is authoritative)
 
-Administrating carrier fields (`administrating_carrier`, `administrating_carrier_flight_number`,
+Operating carrier fields (`operating_carrier`, `operating_flight_number`,
 `dei_10`, `dei_127`) are left as empty/zero because DEI join is omitted at schedule level.
 """
 function _row_to_schedule_leg(r)::LegRecord
@@ -57,8 +57,8 @@ function _row_to_schedule_leg(r)::LegRecord
         row_number           = UInt64(_safe_missing(r.row_id, 0)),
         segment_hash         = UInt64(0),
         distance             = Float32(_safe_missing(r.distance, 0.0)),
-        administrating_carrier = AirlineCode(_safe_string(hasproperty(r, :administrating_carrier) ? r.administrating_carrier : nothing)),
-        administrating_carrier_flight_number = Int16(_safe_missing(hasproperty(r, :administrating_carrier_flight_number) ? r.administrating_carrier_flight_number : nothing, 0)),
+        operating_carrier = AirlineCode(_safe_string(hasproperty(r, :operating_carrier) ? r.operating_carrier : nothing)),
+        operating_flight_number = Int16(_safe_missing(hasproperty(r, :operating_flight_number) ? r.operating_flight_number : nothing, 0)),
         dei_10               = _safe_string(hasproperty(r, :dei_10) ? r.dei_10 : nothing),
         wet_lease            = Bool(_safe_missing(r.wet_lease, false)),
         dei_127              = _safe_string(hasproperty(r, :dei_127) ? r.dei_127 : nothing),
@@ -101,8 +101,8 @@ function query_schedule_legs(
         store.db,
         """
         SELECT l.*,
-            TRIM(SUBSTRING(dei50.data, 1, 3)) AS administrating_carrier,
-            CAST(NULLIF(TRIM(SUBSTRING(dei50.data, 4, 4)), '') AS SMALLINT) AS administrating_carrier_flight_number,
+            TRIM(SUBSTRING(dei50.data, 1, 3)) AS operating_carrier,
+            CAST(NULLIF(TRIM(SUBSTRING(dei50.data, 4, 4)), '') AS SMALLINT) AS operating_flight_number,
             dei10.data AS dei_10,
             dei127.data AS dei_127
         FROM legs l

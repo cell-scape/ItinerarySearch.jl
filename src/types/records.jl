@@ -80,9 +80,9 @@ uniquely identifies a record in the SSIM schedule. Dropping
     segment_hash::UInt64            # hash of segment identity fields
     distance::Distance
 
-    # ── Administrating Carrier (from DEI supplements) ──
-    administrating_carrier::AirlineCode     # DEI 50
-    administrating_carrier_flight_number::FlightNumber  # DEI 50
+    # ── Operating Carrier (DEI 50 / DEI 127: operating airline disclosure) ──
+    operating_carrier::AirlineCode          # DEI 50
+    operating_flight_number::FlightNumber   # DEI 50
     dei_10::String                  # DEI 10: commercial duplicate list (variable length)
     wet_lease::Bool                 # byte 149: 'Z' or 'S'
     dei_127::String                 # DEI 127: operating airline disclosure (variable length)
@@ -105,7 +105,7 @@ flight_id(r::LegRecord) = "$(r.carrier)$(lpad(r.flight_number, 4))"
 
 Compact reference to a leg in the schedule. Contains the SSIM Type 3 flight
 identifier fields plus the database row ID and record serial for cross-referencing.
-Administrating carrier fields default to self when the leg is operating.
+Operating carrier fields default to self when the leg is operating.
 """
 @kwdef struct LegKey
     # ── Cross-reference IDs ──
@@ -121,9 +121,9 @@ Administrating carrier fields default to self when the leg is operating.
     leg_sequence_number::UInt8 = UInt8(1)
     service_type::Char = 'J'
 
-    # ── Administrating Carrier (from DEI 50) ──
-    administrating_carrier::AirlineCode = AirlineCode("")
-    administrating_carrier_flight_number::FlightNumber = FlightNumber(0)
+    # ── Operating Carrier (DEI 50 / DEI 127: operating airline disclosure) ──
+    operating_carrier::AirlineCode = AirlineCode("")
+    operating_flight_number::FlightNumber = FlightNumber(0)
 
     # ── Station Pair ──
     departure_station::StationCode = StationCode("")
@@ -138,10 +138,10 @@ end
     `LegKey(r::LegRecord)::LegKey`
 
 Construct a `LegKey` from a full `LegRecord`, copying identity fields.
-Administrating carrier fields default to self when the leg is operating.
+Operating carrier fields default to self when the leg is operating.
 """
 function LegKey(r::LegRecord)
-    cs_al = strip(String(r.administrating_carrier))
+    cs_al = strip(String(r.operating_carrier))
     carrier_s = strip(String(r.carrier))
     LegKey(
         row_number                          = r.row_number,
@@ -153,8 +153,8 @@ function LegKey(r::LegRecord)
         itinerary_var_overflow              = r.itinerary_var_overflow,
         leg_sequence_number                 = r.leg_sequence_number,
         service_type                        = r.service_type,
-        administrating_carrier              = (cs_al == "" || cs_al == carrier_s) ? r.carrier : r.administrating_carrier,
-        administrating_carrier_flight_number = (cs_al == "" || cs_al == carrier_s) ? r.flight_number : r.administrating_carrier_flight_number,
+        operating_carrier                   = (cs_al == "" || cs_al == carrier_s) ? r.carrier : r.operating_carrier,
+        operating_flight_number             = (cs_al == "" || cs_al == carrier_s) ? r.flight_number : r.operating_flight_number,
         departure_station                   = r.departure_station,
         arrival_station                     = r.arrival_station,
         operating_date                      = r.operating_date,

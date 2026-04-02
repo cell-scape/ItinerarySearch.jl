@@ -201,7 +201,7 @@ for day_offset in 0:(n_days-1)
     csv_header = join(["itinerary", "leg_pos", "row_number", "record_serial",
             "carrier", "flight_number", "operational_suffix", "itinerary_var_id",
             "itinerary_var_overflow", "leg_sequence_number", "service_type",
-            "administrating_carrier", "administrating_carrier_flight_number",
+            "operating_carrier", "operating_flight_number",
             "departure_station", "arrival_station"], ",")
     for (dt, org_dict) in result
         for (org_s, dst_dict) in org_dict
@@ -217,7 +217,7 @@ for day_offset in 0:(n_days-1)
                                     strip(String(k.carrier)), Int(k.flight_number),
                                     k.operational_suffix, Int(k.itinerary_var_id),
                                     k.itinerary_var_overflow, Int(k.leg_sequence_number), k.service_type,
-                                    strip(String(k.administrating_carrier)), Int(k.administrating_carrier_flight_number),
+                                    strip(String(k.operating_carrier)), Int(k.operating_flight_number),
                                     strip(String(k.departure_station)), strip(String(k.arrival_station))], ","))
                             n_rows += 1
                         end

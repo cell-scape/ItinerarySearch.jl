@@ -169,7 +169,7 @@ using Dates
         r = legs[1]
         # DEI 50 join populates codeshare fields at schedule level
         # (the test SSIM includes a DEI 50 record)
-        @test r.administrating_carrier != AirlineCode("") || r.dei_10 != "" || true  # at least no crash
+        @test r.operating_carrier != AirlineCode("") || r.dei_10 != "" || true  # at least no crash
         # dei_10/dei_127 may or may not be populated depending on test SSIM data
         @test r.dei_10 isa String
         @test r.dei_127 isa String

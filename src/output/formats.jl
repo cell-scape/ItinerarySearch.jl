@@ -362,8 +362,8 @@ _format_time(m::Integer) = lpad(div(m, 60), 2, '0') * ":" * lpad(mod(m, 60), 2, 
 function _resolve_flags(r)
     airline = strip(String(r.carrier))
     flt_no = Int(r.flight_number)
-    cs_al = strip(String(r.administrating_carrier))
-    cs_flt = Int(r.administrating_carrier_flight_number)
+    cs_al = strip(String(r.operating_carrier))
+    cs_flt = Int(r.operating_flight_number)
     is_operating = cs_al == "" || cs_al == airline
     # Default codeshare fields to self when operating
     cs_al = is_operating ? airline : cs_al
@@ -403,7 +403,7 @@ end
 - Write all valid legs in the graph to a comma-delimited file
 - Includes both operating and codeshare (commercial duplicate) legs
 - `is_operating` = true when this is the physical flight; false for codeshare
-- Codeshare legs have `administrating_carrier`/`administrating_carrier_flight_number` pointing to the
+- Codeshare legs have `operating_carrier`/`operating_flight_number` pointing to the
   operating carrier (from DEI 50); on operating legs these fields are empty
 
 # Arguments
@@ -418,7 +418,7 @@ function write_legs(io::IO, graph::FlightGraph, date::Date)::Int
     _write_row(io, [
         "record_serial", "row_number",
         "carrier", "flight_number", "operational_suffix", "itinerary_var_id", "leg_sequence_number", "service_type",
-        "administrating_carrier", "administrating_carrier_flight_number", "is_operating",
+        "operating_carrier", "operating_flight_number", "is_operating",
         "departure_station", "arrival_station", "market",
         "dep_date", "dep_time", "arr_time", "arrival_date_variation",
         "aircraft_type", "body_type", "departure_terminal", "arrival_terminal",
@@ -459,7 +459,7 @@ end
 # Description
 - Write itineraries to a comma-delimited file (one row per leg per itinerary)
 - `is_operating` = true for operating legs; codeshare legs reference the
-  operating flight via `administrating_carrier`/`administrating_carrier_flight_number` (DEI 50)
+  operating flight via `operating_carrier`/`operating_flight_number` (DEI 50)
 - `cnx_type`: L = single-leg nonstop, S = through-segment, C = connection
 
 # Arguments
@@ -476,7 +476,7 @@ function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::Flight
             "itinerary_id", "leg_seq",
             "record_serial", "row_number",
             "carrier", "flight_number", "operational_suffix", "itinerary_var_id", "leg_sequence_number_ssim", "service_type",
-            "administrating_carrier", "administrating_carrier_flight_number", "is_operating",
+            "operating_carrier", "operating_flight_number", "is_operating",
             "departure_station", "arrival_station", "market",
             "dep_date", "dep_time", "arr_time", "arrival_date_variation",
             "aircraft_type", "body_type", "departure_terminal", "arrival_terminal",
@@ -533,7 +533,7 @@ function _write_itn_leg_row(io::IO, itn_idx, leg_seq, leg::GraphLeg,
         Int(r.record_serial), Int(r.row_number),
         strip(String(r.carrier)), Int(r.flight_number), r.operational_suffix,
         Int(r.itinerary_var_id), Int(r.leg_sequence_number), r.service_type,
-        strip(String(r.administrating_carrier)), Int(r.administrating_carrier_flight_number), flags.is_operating,
+        strip(String(r.operating_carrier)), Int(r.operating_flight_number), flags.is_operating,
         org, dst, _market(org, dst),
         date, _format_time(r.aircraft_departure_time), _format_time(r.aircraft_arrival_time), Int(r.arrival_date_variation),
         String(r.aircraft_type), r.body_type, strip(String(r.departure_terminal)), strip(String(r.arrival_terminal)),
@@ -576,7 +576,7 @@ function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date
             "itinerary_id", "leg_seq",
             "record_serial", "row_number",
             "carrier", "flight_number", "operational_suffix", "itinerary_var_id", "leg_sequence_number_ssim", "service_type",
-            "administrating_carrier", "administrating_carrier_flight_number", "is_operating",
+            "operating_carrier", "operating_flight_number", "is_operating",
             "departure_station", "arrival_station", "market",
             "dep_date", "dep_time", "arr_time", "arrival_date_variation",
             "aircraft_type", "body_type", "departure_terminal", "arrival_terminal",
@@ -1034,8 +1034,8 @@ function _legkey_to_dict(k::LegKey)::Dict{String,Any}
         "itinerary_var_overflow"              => string(k.itinerary_var_overflow),
         "leg_sequence_number"                 => Int(k.leg_sequence_number),
         "service_type"                        => string(k.service_type),
-        "administrating_carrier"              => strip(String(k.administrating_carrier)),
-        "administrating_carrier_flight_number" => Int(k.administrating_carrier_flight_number),
+        "operating_carrier"                   => strip(String(k.operating_carrier)),
+        "operating_flight_number"             => Int(k.operating_flight_number),
         "departure_station"                   => strip(String(k.departure_station)),
         "arrival_station"                     => strip(String(k.arrival_station)),
     )
@@ -1073,8 +1073,8 @@ function _write_legkey_json(io::IOBuffer, k::LegKey)
               ",\"itinerary_var_overflow\":\"", k.itinerary_var_overflow, "\"",
               ",\"leg_sequence_number\":", Int(k.leg_sequence_number),
               ",\"service_type\":\"", k.service_type, "\"",
-              ",\"administrating_carrier\":\"", strip(String(k.administrating_carrier)), "\"",
-              ",\"administrating_carrier_flight_number\":", Int(k.administrating_carrier_flight_number),
+              ",\"operating_carrier\":\"", strip(String(k.operating_carrier)), "\"",
+              ",\"operating_flight_number\":", Int(k.operating_flight_number),
               ",\"departure_station\":\"", strip(String(k.departure_station)), "\"",
               ",\"arrival_station\":\"", strip(String(k.arrival_station)), "\"",
               ",\"operating_date\":", Int(k.operating_date),

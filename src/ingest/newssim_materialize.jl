@@ -396,7 +396,7 @@ function query_newssim_legs(
         carrier_str = _safe_string(r.carrier)
         flt_num = Int16(_safe_missing(r.flight_number, 0))
 
-        # Administrating carrier (default to marketing carrier)
+        # Operating carrier (default to marketing carrier; CSV column still called administrating_carrier)
         admin_carrier_str = _safe_string(hasproperty(r, :administrating_carrier) ? r.administrating_carrier : nothing)
         admin_carrier = isempty(admin_carrier_str) ? AirlineCode(carrier_str) : AirlineCode(admin_carrier_str)
         admin_flt_raw = hasproperty(r, :administrating_carrier_flight_number) ?
@@ -472,8 +472,8 @@ function query_newssim_legs(
             row_number                       = row_num,
             segment_hash                     = UInt64(seg_hash),
             distance                         = Float32(0),   # gap-filled from geodesic
-            administrating_carrier           = admin_carrier,
-            administrating_carrier_flight_number = admin_flt,
+            operating_carrier                = admin_carrier,
+            operating_flight_number          = admin_flt,
             dei_10                           = "",
             wet_lease                        = false,
             dei_127                          = dei_127_str,
