@@ -51,6 +51,61 @@ write("data/output/itineraries.json", json)
 close(store)
 ```
 
+### NewSSIM Library Usage
+
+The `search_markets` convenience wrapper handles store creation, ingest, graph building, and cleanup in one call — just supply files, markets, dates, and any `SearchConfig` overrides:
+
+```julia
+using ItinerarySearch
+using Dates
+
+results = search_markets("data/demo/sample_newssim.csv.gz";
+    markets  = [("ORD","LHR"), ("DEN","LAX"), ("IAH","EWR")],
+    dates    = [Date(2026, 2, 26)],
+    mct_path = "data/demo/mct_demo.dat",
+    max_stops = 2,
+)
+
+# Results are keyed by (origin, dest, date)
+for ((org, dst, date), itns) in results
+    println("$(org)→$(dst) $(date): $(length(itns)) itineraries")
+    for itn in itns
+        println("  $(itn.num_stops)-stop, $(itn.elapsed_time) min, circuity $(round(itn.circuity; digits=2))x")
+    end
+end
+```
+
+For finer control (reusing a store, customising constraints, or searching the same graph repeatedly), use the lower-level API directly:
+
+```julia
+using ItinerarySearch
+using Dates
+
+config = SearchConfig(max_stops=2)
+store  = DuckDBStore()
+
+ingest_newssim!(store, "data/demo/sample_newssim.csv.gz")
+ingest_mct!(store, "data/demo/mct_demo.dat")
+
+ctx = RuntimeContext(
+    config=config, constraints=SearchConstraints(),
+    itn_rules=build_itn_rules(config),
+)
+
+for target in [Date(2026, 2, 26)]
+    graph = build_graph!(store, config, target; source=:newssim)
+    for (origin, dest) in [(StationCode("ORD"), StationCode("LHR")),
+                           (StationCode("DEN"), StationCode("LAX"))]
+        itns = search_itineraries(graph.stations, origin, dest, target, ctx)
+        println("$(origin)→$(dest) $(target): $(length(itns)) itineraries")
+    end
+end
+
+close(store)
+```
+
+> **Note:** `search_itineraries` returns a reference to `ctx.results` — call `copy(itns)` if you need to retain results across multiple search calls.
+
 ### CLI
 
 ```bash

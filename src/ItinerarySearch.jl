@@ -46,122 +46,35 @@ include("output/viz.jl")
 include("server.jl")
 include("cli.jl")
 
-# Exports — type aliases
-export StationCode, AirlineCode, FlightNumber, Minutes, Distance, StatusBits
+# ── Public API ────────────────────────────────────────────────────────────────
+# Only types and functions that library consumers need are exported.
+# Everything else is accessible via ItinerarySearch.name or
+# import ItinerarySearch: name.
 
-# Exports — status bits
-export DOW_MON, DOW_TUE, DOW_WED, DOW_THU, DOW_FRI, DOW_SAT, DOW_SUN, DOW_MASK
-export STATUS_INTERNATIONAL, STATUS_INTERLINE, STATUS_ROUNDTRIP
-export STATUS_CODESHARE, STATUS_THROUGH, STATUS_WETLEASE
-export is_international, is_interline, is_codeshare, is_roundtrip, is_through, is_wetlease
-export dow_bit
-export WILDCARD_STATION, WILDCARD_AIRLINE, WILDCARD_COUNTRY, WILDCARD_REGION, WILDCARD_FLIGHTNO
-export NO_STATION, NO_AIRLINE, NO_MINUTES, NO_DISTANCE, NO_FLIGHTNO
+# Types
+export StationCode, Itinerary, Trip, TripLeg, FlightGraph
 
-# Exports — enums
-export MCTStatus, MCT_DD, MCT_DI, MCT_ID, MCT_II
-export MCTSource, SOURCE_EXCEPTION, SOURCE_STATION_STANDARD, SOURCE_GLOBAL_DEFAULT
-export Cabin, CABIN_J, CABIN_O, CABIN_Y
+# Config
+export SearchConfig, load_config
 export ScopeMode, SCOPE_ALL, SCOPE_DOM, SCOPE_INTL
 export InterlineMode, INTERLINE_ONLINE, INTERLINE_CODESHARE, INTERLINE_ALL
-export parse_mct_status, MCT_DEFAULTS
 
-# Exports — record types
-export LegKey, ItineraryRef, LegRecord, StationRecord, MCTResult, SegmentRecord
-export origin, destination, stops, flights, flights_str, route_str
-export flight_id, segment_id, full_id
-export pack_date, unpack_date
+# Store
+export DuckDBStore, table_stats, load_schedule!
 
-# Exports — stats types (Subsystem 2 instrumentation)
-export StationStats, BuildStats, SearchStats, MCTSelectionRow
-export merge_build_stats!, merge_station_stats!
-export GeoStats, aggregate_geo_stats
+# Ingest
+export ingest_ssim!, ingest_mct!, ingest_newssim!
 
-# Exports — constraints
-export ParameterSet, MarketOverride, SearchConstraints
-export resolve_params
+# Build & search
+export build_graph!, search, search_markets
+export search_itineraries, search_trip
+export RuntimeContext, SearchConstraints, build_itn_rules
 
-# Exports — graph types (Subsystem 2)
-export AbstractGraphNode, AbstractGraphEdge
-export GraphStation, GraphLeg, GraphSegment, GraphConnection, Itinerary, Trip
-export TripLeg, TripScoringWeights
-export nonstop_connection
-
-# Exports — config
-export SearchConfig, load_config
-
-# Exports — observe: event types
-export SystemMetricsEvent, PhaseEvent, BuildSnapshotEvent, SearchSnapshotEvent, CustomEvent
-
-# Exports — observe: event log
-export EventLog, emit!, checkpoint!, with_phase, collect_system_metrics
-
-# Exports — observe: sinks
-export JsonlSink, stdout_sink
-
-# Exports — observe: logging
-export setup_logger
-
-# Exports — ingest
-export ingest_ssim!
-export ingest_mct!
-export ingest_newssim!, detect_delimiter
-export load_airports!, load_regions!, load_oa_control!, load_aircrafts!
-
-# Exports — store interface
-export AbstractStore, JuliaStore, DuckDBStore
-export load_schedule!, query_legs, query_station, query_mct
-export get_departures, get_arrivals
-export query_market_distance, query_segment, query_segment_stops, table_stats
-export post_ingest_sql!
-export query_schedule_legs, query_schedule_segments
-
-# Exports — graph: MCT lookup
-export MCTRecord, MCTLookup, MCTCacheKey, lookup_mct, materialize_mct_lookup
-export MCT_BIT_ARR_CARRIER, MCT_BIT_DEP_CARRIER
-export MCT_BIT_ARR_TERM, MCT_BIT_DEP_TERM
-export MCT_BIT_PRV_STN, MCT_BIT_NXT_STN
-export MCT_BIT_PRV_COUNTRY, MCT_BIT_NXT_COUNTRY
-export MCT_BIT_PRV_REGION, MCT_BIT_NXT_REGION
-export MCT_BIT_DEP_BODY, MCT_BIT_ARR_BODY
-export MCT_BIT_ARR_CS_IND, MCT_BIT_ARR_CS_OP
-export MCT_BIT_DEP_CS_IND, MCT_BIT_DEP_CS_OP
-export MCT_BIT_ARR_ACFT_TYPE, MCT_BIT_DEP_ACFT_TYPE
-export MCT_BIT_ARR_FLT_RNG, MCT_BIT_DEP_FLT_RNG
-export MCT_BIT_PRV_STATE, MCT_BIT_NXT_STATE
-
-# Exports — graph: connection rules
-export check_cnx_roundtrip, check_cnx_backtrack, check_cnx_scope, check_cnx_interline
-export check_cnx_opdays, check_cnx_suppcodes, check_cnx_trfrest
-export MCTRule, MAFTRule, CircuityRule
-export build_cnx_rules
-export PASS, FAIL_ROUNDTRIP, FAIL_SCOPE, FAIL_ONLINE, FAIL_CODESHARE, FAIL_INTERLINE
-export FAIL_TIME_MIN, FAIL_TIME_MAX, FAIL_OPDAYS, FAIL_SUPPCODE
-export FAIL_MAFT, FAIL_CIRCUITY, FAIL_TRFREST, FAIL_BACKTRACK
-
-# Exports — graph: itinerary rules
-export check_itn_scope, check_itn_opdays, check_itn_circuity
-export check_itn_suppcodes, check_itn_maft
-export build_itn_rules
-export FAIL_ITN_SCOPE, FAIL_ITN_OPDAYS, FAIL_ITN_CIRCUITY
-export FAIL_ITN_SUPPCODE, FAIL_ITN_MAFT
-
-# Exports — graph: connection builder
-export build_connections_at_station!, build_connections!
-
-# Exports — graph: DFS search
-export RuntimeContext, search_itineraries, search_trip, score_trip
-
-# Exports — graph: builder and FlightGraph
-export FlightGraph, build_graph!, search
-
-# Exports — output formats
-export itinerary_long_format, itinerary_wide_format
+# Output
 export write_legs, write_itineraries, write_trips
 export itinerary_legs, itinerary_legs_multi, itinerary_legs_json
-export resolve_leg, resolve_segment, resolve_legs
 
-# Exports — visualizations
+# Visualization
 export viz_network_map, viz_timeline, viz_trip_comparison, viz_itinerary_refs
 
 # ── Precompilation workload ────────────────────────────────────────────────────

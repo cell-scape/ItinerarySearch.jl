@@ -84,7 +84,7 @@ println("="^50)
 if use_newssim
     stn = ItinerarySearch.query_newssim_station(store, StationCode("ORD"))
 else
-    stn = query_station(store, StationCode("ORD"))
+    stn = ItinerarySearch.query_station(store, StationCode("ORD"))
 end
 if stn !== nothing
     println("\nStation ORD: $(stn.city), $(stn.country) ($(stn.latitude), $(stn.longitude))")
@@ -92,7 +92,7 @@ end
 
 # Market distance (only available in SSIM path)
 if !use_newssim
-    mkt_dist = query_market_distance(store, StationCode("ORD"), StationCode("LHR"))
+    mkt_dist = ItinerarySearch.query_market_distance(store, StationCode("ORD"), StationCode("LHR"))
     if mkt_dist !== nothing
         println("ORD↔LHR market distance: $(round(mkt_dist; digits=1)) miles")
     end

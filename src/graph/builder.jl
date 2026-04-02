@@ -540,3 +540,84 @@ function search(
     # Return a copy — ctx.results is reused on subsequent searches
     return copy(results)
 end
+
+# ── Multi-market convenience search ───────────────────────────────────────────
+
+"""
+    `function search_markets(newssim_path::AbstractString; markets, dates, mct_path="", kwargs...)::Dict{Tuple{String,String,Date}, Vector{Itinerary}}`
+---
+
+# Description
+- All-in-one convenience wrapper: ingest → build → search for every market × date
+- Creates an in-memory `DuckDBStore`, ingests the NewSSIM CSV and optional MCT
+  file, then iterates over every `(origin, dest, date)` combination
+- The graph is rebuilt once per date (schedule window shifts with the target day)
+- Returns deep-copied itineraries keyed by `(origin, dest, date)` strings, safe
+  to retain indefinitely
+- The store is closed automatically on return (or on error)
+
+# Arguments
+1. `newssim_path::AbstractString`: path to a NewSSIM CSV file (.csv or .csv.gz)
+
+# Keyword Arguments
+- `markets`: vector of `(origin, dest)` string pairs, e.g. `[("ORD","LHR")]`
+- `dates::Union{Date, AbstractVector{Date}}`: one or more target travel dates
+- `mct_path::AbstractString=""`: optional path to MCT file; omit for global defaults
+- All remaining keyword arguments are forwarded to `SearchConfig()`
+
+# Returns
+- `::Dict{Tuple{String,String,Date}, Vector{Itinerary}}`: results keyed by
+  `(origin_string, dest_string, date)` — index with `results["ORD","LHR",date]`
+
+# Examples
+```julia
+julia> results = search_markets("data/demo/sample_newssim.csv.gz";
+           markets=[("ORD","LHR"), ("DEN","LAX")],
+           dates=Date(2026,2,26),
+           mct_path="data/demo/mct_demo.dat",
+           max_stops=2);
+julia> results["ORD","LHR",Date(2026,2,26)] isa Vector{Itinerary}
+true
+```
+"""
+function search_markets(
+    newssim_path::AbstractString;
+    markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
+    dates::Union{Date,AbstractVector{Date}},
+    mct_path::AbstractString = "",
+    kwargs...,
+)::Dict{Tuple{String,String,Date},Vector{Itinerary}}
+    config = SearchConfig(; kwargs...)
+    store = DuckDBStore()
+
+    try
+        ingest_newssim!(store, newssim_path)
+        if !isempty(mct_path)
+            ingest_mct!(store, mct_path)
+        end
+
+        date_vec = dates isa Date ? [dates] : collect(dates)
+
+        ctx = RuntimeContext(
+            config = config,
+            constraints = SearchConstraints(),
+            itn_rules = build_itn_rules(config),
+        )
+
+        results = Dict{Tuple{String,String,Date},Vector{Itinerary}}()
+
+        for target in date_vec
+            graph = build_graph!(store, config, target; source = :newssim)
+            for (org, dst) in markets
+                origin = StationCode(org)
+                dest = StationCode(dst)
+                itns = search_itineraries(graph.stations, origin, dest, target, ctx)
+                results[(String(org), String(dst), target)] = copy(itns)
+            end
+        end
+
+        return results
+    finally
+        close(store)
+    end
+end
