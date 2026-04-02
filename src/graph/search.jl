@@ -577,8 +577,10 @@ function _dfs!(
         # immediate reversals (A→X→A), but longer cycles (A→X→Y→A) require
         # path awareness. Scan the current path for the connecting station.
         # O(depth) where depth ≤ max_stops; effectively free at depth 2-3.
-        cnx_stn = (cp.station::GraphStation).code
-        _station_in_path(itn, cnx_stn) && continue
+        if depth > 0
+            cnx_stn = (cp.station::GraphStation).code
+            _station_in_path(itn, cnx_stn) && continue
+        end
 
         # Elapsed-time pruning (UTC-based)
         next_utc_arr = Int32(next_leg.record.passenger_arrival_time) - Int32(next_leg.record.arrival_utc_offset) +
