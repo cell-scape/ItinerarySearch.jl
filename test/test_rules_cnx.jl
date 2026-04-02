@@ -693,23 +693,24 @@ using Dates
         lookup      = MCTLookup()
         rules = build_cnx_rules(config, constraints, lookup)
 
-        @test length(rules) == 9
+        @test length(rules) == 10
         @test rules[1] === check_cnx_roundtrip
-        @test rules[2] === check_cnx_scope
-        @test rules[3] === check_cnx_interline
-        @test rules[4] isa MCTRule
-        @test rules[5] === check_cnx_opdays
-        @test rules[6] === check_cnx_suppcodes
-        @test rules[7] isa MAFTRule
-        @test rules[8] isa CircuityRule
-        @test rules[9] === check_cnx_trfrest
+        @test rules[2] === check_cnx_backtrack
+        @test rules[3] === check_cnx_scope
+        @test rules[4] === check_cnx_interline
+        @test rules[5] isa MCTRule
+        @test rules[6] === check_cnx_opdays
+        @test rules[7] === check_cnx_suppcodes
+        @test rules[8] isa MAFTRule
+        @test rules[9] isa CircuityRule
+        @test rules[10] === check_cnx_trfrest
         # All elements are callable
         @test all(r -> applicable(r, GraphConnection(), (config=config, constraints=constraints, gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(), mct_cache=Dict{UInt64,MCTResult}(), build_stats=BuildStats(), mct_selections=MCTSelectionRow[])), rules)
 
         # Verify CircuityRule picks up defaults from constraints
-        rule8 = rules[8]::CircuityRule
-        @test rule8.factor == constraints.defaults.circuity_factor
-        @test rule8.extra_miles == constraints.defaults.circuity_extra_miles
+        rule9 = rules[9]::CircuityRule
+        @test rule9.factor == constraints.defaults.circuity_factor
+        @test rule9.extra_miles == constraints.defaults.circuity_extra_miles
     end
 
     # ── Allocation regression test ────────────────────────────────────────────

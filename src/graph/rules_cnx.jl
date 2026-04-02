@@ -53,6 +53,7 @@ const FAIL_SUPPCODE = Int(-8)
 const FAIL_MAFT     = Int(-9)
 const FAIL_CIRCUITY = Int(-10)
 const FAIL_TRFREST  = Int(-11)
+const FAIL_BACKTRACK = Int(-12)
 
 # ── Rule 1: Roundtrip tagger ──────────────────────────────────────────────────
 
@@ -82,7 +83,33 @@ function check_cnx_roundtrip(cp::GraphConnection, ctx)::Int
     return PASS
 end
 
-# ── Rule 2: Scope filter ───────────────────────────────────────────────────────
+# ── Rule 2: Backtrack rejection ────────────────────────────────────────────────
+
+"""
+    `function check_cnx_backtrack(cp::GraphConnection, ctx)::Int`
+---
+
+# Description
+- Rejects connections where the departing leg returns to the arriving leg's
+  origin station (trivial cycle / backtrack)
+- Example: DEN→CPR connecting to CPR→DEN is rejected because
+  from_leg.departure_station (DEN) == to_leg.arrival_station (DEN)
+- This prevents pointless backtracks at the connection level rather than
+  needing cycle detection during search
+
+# Arguments
+1. `cp::GraphConnection`: the connection to evaluate
+
+# Returns
+- `::Int`: `PASS` or `FAIL_BACKTRACK`
+"""
+function check_cnx_backtrack(cp::GraphConnection, ctx)::Int
+    from_dep = (cp.from_leg::GraphLeg).record.departure_station
+    to_arr = (cp.to_leg::GraphLeg).record.arrival_station
+    return from_dep == to_arr ? FAIL_BACKTRACK : PASS
+end
+
+# ── Rule 3: Scope filter ───────────────────────────────────────────────────────
 
 """
     `function check_cnx_scope(cp::GraphConnection, ctx)::Int`
@@ -819,6 +846,7 @@ function build_cnx_rules(
 )
     return (
         check_cnx_roundtrip,
+        check_cnx_backtrack,
         check_cnx_scope,
         check_cnx_interline,
         MCTRule(mct_lookup),

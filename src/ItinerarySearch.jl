@@ -131,13 +131,13 @@ export MCT_BIT_ARR_FLT_RNG, MCT_BIT_DEP_FLT_RNG
 export MCT_BIT_PRV_STATE, MCT_BIT_NXT_STATE
 
 # Exports — graph: connection rules
-export check_cnx_roundtrip, check_cnx_scope, check_cnx_interline
+export check_cnx_roundtrip, check_cnx_backtrack, check_cnx_scope, check_cnx_interline
 export check_cnx_opdays, check_cnx_suppcodes, check_cnx_trfrest
 export MCTRule, MAFTRule, CircuityRule
 export build_cnx_rules
 export PASS, FAIL_ROUNDTRIP, FAIL_SCOPE, FAIL_ONLINE, FAIL_CODESHARE, FAIL_INTERLINE
 export FAIL_TIME_MIN, FAIL_TIME_MAX, FAIL_OPDAYS, FAIL_SUPPCODE
-export FAIL_MAFT, FAIL_CIRCUITY, FAIL_TRFREST
+export FAIL_MAFT, FAIL_CIRCUITY, FAIL_TRFREST, FAIL_BACKTRACK
 
 # Exports — graph: itinerary rules
 export check_itn_scope, check_itn_opdays, check_itn_circuity

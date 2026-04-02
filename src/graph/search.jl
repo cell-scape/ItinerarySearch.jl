@@ -558,19 +558,6 @@ function _dfs!(
 
         next_leg = cp.to_leg::GraphLeg  # to_leg is AbstractGraphNode
 
-        # Station cycle check — reject connections that revisit a station
-        # already in the current path. O(depth) scan; depth ≤ max_stops (2-3).
-        cnx_stn = (cp.station::GraphStation).code
-        cycle = false
-        for j in 1:length(itn.connections)
-            prev_cp = itn.connections[j]
-            if (prev_cp.from_leg::GraphLeg).record.departure_station == cnx_stn
-                cycle = true
-                break
-            end
-        end
-        cycle && continue
-
         # Elapsed-time pruning (UTC-based)
         next_utc_arr = Int32(next_leg.record.passenger_arrival_time) - Int32(next_leg.record.arrival_utc_offset) +
                        Int32(next_leg.record.arrival_date_variation) * Int32(1440)
