@@ -1,0 +1,15 @@
+J:C*A*D*Y*
+JN:YN*Y*
+C:D*A*Y*
+Z:Y*
+ZN:HN*Y*
+P:Y*
+PN:Y*
+PZ:Y*
+IN:XN*Y*
+I:X*Y*
+O:Y*
+ON:Y*
+A:Y*
+R:Y*
+RN:YN*

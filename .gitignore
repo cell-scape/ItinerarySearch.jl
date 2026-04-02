@@ -5,6 +5,8 @@ docs/superpowers/
 docs/build/
 .DS_Store
 data/input/*
+!data/input/airports_tab.txt
+!data/input/classmaptable.txt
 data/output/*
 data/viz/*
 build/*.so
