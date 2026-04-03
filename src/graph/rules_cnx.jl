@@ -222,11 +222,15 @@ end
 # Returns
 - `::Int`: `PASS`, `FAIL_TIME_MIN`, or `FAIL_TIME_MAX`
 """
-# Low-level MCT lookup with explicit carrier arguments. Called by the
-# codeshare resolution layer with different carrier combinations.
+# Low-level MCT lookup with explicit carrier and flight number arguments.
+# Called by the codeshare resolution layer with different carrier/flight
+# number combinations. Per SSIM Ch. 8 (p. 400): flight number ranges apply
+# to the carrier field they accompany — marketing flight number with
+# marketing carrier, operating flight number with operating carrier.
 @inline function _mct_direct_lookup(
     r::MCTRule, ctx,
     arr_carrier::AirlineCode, dep_carrier::AirlineCode,
+    arr_flt_no::FlightNumber, dep_flt_no::FlightNumber,
     stn_code, mct_status, from_rec, to_rec,
     arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare,
     prv_stn_rec, nxt_stn_rec,
@@ -247,8 +251,8 @@ end
         dep_is_codeshare = dep_is_codeshare,
         arr_acft_type = from_rec.aircraft_type,
         dep_acft_type = to_rec.aircraft_type,
-        arr_flt_no = from_rec.flight_number,
-        dep_flt_no = to_rec.flight_number,
+        arr_flt_no = arr_flt_no,
+        dep_flt_no = dep_flt_no,
         prv_country = prv_stn_rec.country,
         nxt_country = nxt_stn_rec.country,
         prv_state = prv_stn_rec.state,
@@ -278,9 +282,12 @@ end
     prv_stn_rec, nxt_stn_rec,
 )::MCTResult
     # ── Primary lookup: marketing carriers with codeshare context ────────
+    # Use marketing flight numbers (from_rec.flight_number / to_rec.flight_number)
+    # since MCT flight number ranges apply to the carrier field they accompany.
     marketing_result = _mct_direct_lookup(
         r, ctx,
         from_rec.carrier, to_rec.carrier,
+        from_rec.flight_number, to_rec.flight_number,
         stn_code, mct_status, from_rec, to_rec,
         arr_op_carrier, dep_op_carrier,
         arr_is_codeshare, dep_is_codeshare,
@@ -291,13 +298,19 @@ end
     (!arr_is_codeshare && !dep_is_codeshare) && return marketing_result
 
     # ── Secondary lookup: operating carriers without codeshare flags ─────
-    # Substitute operating carrier for marketing carrier on codeshare sides
+    # Substitute operating carrier for marketing carrier on codeshare sides.
+    # Per SSIM Ch. 8 (p. 400): "If the Arrival Carrier is not defined, then
+    # the flight number will be applied to the Arrival Codeshare Operating
+    # Carrier." — use operating flight number with operating carrier.
     op_arr_carrier = arr_is_codeshare ? arr_op_carrier : from_rec.carrier
     op_dep_carrier = dep_is_codeshare ? dep_op_carrier : to_rec.carrier
+    op_arr_flt = arr_is_codeshare ? from_rec.operating_flight_number : from_rec.flight_number
+    op_dep_flt = dep_is_codeshare ? to_rec.operating_flight_number : to_rec.flight_number
 
     operating_result = _mct_direct_lookup(
         r, ctx,
         op_arr_carrier, op_dep_carrier,
+        op_arr_flt, op_dep_flt,
         stn_code, mct_status, from_rec, to_rec,
         NO_AIRLINE, NO_AIRLINE,  # no codeshare context for operating lookup
         false, false,            # not codeshare from operating carrier's perspective

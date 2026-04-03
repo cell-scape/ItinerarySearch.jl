@@ -630,17 +630,20 @@ The `MCTRule` callable in the connection builder performs codeshare-aware resolu
 3. **Pick the best**: The result with higher specificity wins. At equal specificity, the marketing result takes precedence.
 
 ```julia
-# Primary: marketing carriers with codeshare context
+# Primary: marketing carriers + marketing flight numbers + codeshare context
 marketing_result = _mct_direct_lookup(r, ctx,
-    from_rec.carrier, to_rec.carrier,    # marketing carriers
+    from_rec.carrier, to_rec.carrier,          # marketing carriers
+    from_rec.flight_number, to_rec.flight_number, # marketing flight numbers
     ..., arr_op_carrier, dep_op_carrier,
     arr_is_codeshare, dep_is_codeshare, ...)
 
-# Secondary: operating carriers without codeshare context
+# Secondary: operating carriers + operating flight numbers, no codeshare flags
 op_arr = arr_is_codeshare ? arr_op_carrier : from_rec.carrier
 op_dep = dep_is_codeshare ? dep_op_carrier : to_rec.carrier
+op_arr_flt = arr_is_codeshare ? from_rec.operating_flight_number : from_rec.flight_number
+op_dep_flt = dep_is_codeshare ? to_rec.operating_flight_number : to_rec.flight_number
 operating_result = _mct_direct_lookup(r, ctx,
-    op_arr, op_dep,                      # operating carriers
+    op_arr, op_dep, op_arr_flt, op_dep_flt,    # operating carriers + flight numbers
     ..., NO_AIRLINE, NO_AIRLINE,
     false, false, ...)
 
@@ -650,6 +653,8 @@ if operating_result.specificity > marketing_result.specificity
 end
 return marketing_result
 ```
+
+Per SSIM Ch. 8 (p. 400): *"If both the Arrival Carrier and the Arrival Codeshare Operating Carrier are defined, then the flight number will be applied to the Arrival Carrier"* and *"If the Arrival Carrier is not defined, then the flight number will be applied to the Arrival Codeshare Operating Carrier."* The marketing lookup uses marketing flight numbers; the operating lookup uses operating flight numbers.
 
 For non-codeshare connections, only the marketing lookup is performed — no overhead.
 
