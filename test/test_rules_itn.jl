@@ -261,9 +261,9 @@ using Dates
             @test check_itn_suppcodes(itn, ctx) == PASS
         end
 
-        @testset "passes when TRC has no 'I' at leg_seq" begin
-            # leg_sequence_number=1, trc[1]='A' — 'A' is suppressed for connections but not 'I'
-            leg_rec = _itn_leg_record(traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
+        @testset "passes when TRC has an informational-only code ('Z')" begin
+            # 'Z' is informational/ignored — must not suppress any itinerary type
+            leg_rec = _itn_leg_record(traffic_restriction_for_leg="Z", leg_sequence_number=UInt8(1))
             itn = _nonstop_itn(leg_rec=leg_rec)
             @test check_itn_suppcodes(itn, ctx) == PASS
         end
@@ -281,9 +281,10 @@ using Dates
             @test check_itn_suppcodes(itn, ctx) == FAIL_ITN_SUPPCODE
         end
 
-        @testset "passes when 'I' is at a different leg_seq position" begin
-            # traffic_restriction_for_leg="XI" but leg_sequence_number=1 => trc[1]='X' => no suppression
-            leg_rec = _itn_leg_record(traffic_restriction_for_leg="XI", leg_sequence_number=UInt8(1))
+        @testset "passes when 'I' is at a different leg_seq position (informational code at seq)" begin
+            # traffic_restriction_for_leg="ZI", leg_sequence_number=1 => _get_trc returns 'Z' (informational)
+            # 'I' is at position 2 but this leg has seq=1, so it is not seen
+            leg_rec = _itn_leg_record(traffic_restriction_for_leg="ZI", leg_sequence_number=UInt8(1))
             itn = _nonstop_itn(leg_rec=leg_rec)
             @test check_itn_suppcodes(itn, ctx) == PASS
         end

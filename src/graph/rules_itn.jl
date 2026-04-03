@@ -25,7 +25,7 @@ a pass; zero or negative is a fail with a unique diagnostic code.
 - `FAIL_ITN_SCOPE    = -20` — failed scope filter (DOM vs INTL)
 - `FAIL_ITN_OPDAYS   = -21` — no overlapping operating days across all legs
 - `FAIL_ITN_CIRCUITY = -22` — total route too circuitous vs great-circle O-D
-- `FAIL_ITN_SUPPCODE = -23` — TRC suppression code 'I' on a leg
+- `FAIL_ITN_SUPPCODE = -23` — TRC suppression code blocks this itinerary type
 - `FAIL_ITN_MAFT     = -24` — total block time exceeds MAFT with stop allowance
 """
 const FAIL_ITN_SCOPE    = Int(-20)
@@ -123,13 +123,25 @@ end
 ---
 
 # Description
-- Checks for itinerary-level suppression code 'I' on any leg in the itinerary
-- Code 'I' in SSIM8 indicates the leg is suppressed for itinerary building
-- Inspects `cp.from_leg.record.traffic_restriction_for_leg` at position `cp.from_leg.record.leg_sequence_number`
-  for each connection in the itinerary
+- Evaluates each leg's TRC code in the context of the full itinerary and
+  returns `FAIL_ITN_SUPPCODE` when the code prohibits this itinerary type
+- Uses `_get_trc(record)` to extract the applicable TRC character (handles
+  both SSIM indexed and NewSSIM single-char formats); legs with no code (`' '`)
+  are skipped
+- Code semantics (ns = num_stops, intl = international, inter = interline):
+  - `I` — always fail
+  - `A` — fail if nonstop (ns == 0)
+  - `B` — fail if not nonstop (connecting traffic not allowed)
+  - `C` — fail if international itinerary
+  - `G`, `L`, `T`, `X`, `Y` — fail if nonstop or interline
+  - `K`, `S`, `V` — fail if nonstop
+  - `M`, `O`, `Q` — fail if nonstop, not international, or interline
+  - `N`, `U`, `W` — fail if nonstop or not international
+  - `Z`, `J`, `P`, `R`, `H` — pass (informational or ignored)
 
 # Arguments
-1. `itn::Itinerary`: the itinerary to evaluate; iterates `itn.connections`
+1. `itn::Itinerary`: the itinerary to evaluate; accesses `itn.connections`,
+   `itn.num_stops`, and `itn.status`
 2. `ctx`: runtime context (no fields accessed by this rule)
 
 # Returns
@@ -138,11 +150,40 @@ end
 function check_itn_suppcodes(itn::Itinerary, ctx)::Int
     for cp in itn.connections
         from_l = cp.from_leg::GraphLeg
-        trc = from_l.record.traffic_restriction_for_leg
-        seq = Int(from_l.record.leg_sequence_number)
-        if seq > 0 && seq <= length(trc)
-            trc[seq] == 'I' && return FAIL_ITN_SUPPCODE
-        end
+        ch = _get_trc(from_l.record)
+        ch == ' ' && continue
+
+        ns = itn.num_stops
+        intl = is_international(itn.status)
+        inter = is_interline(itn.status)
+
+        # I — always fail
+        ch == 'I' && return FAIL_ITN_SUPPCODE
+        # A — fail if nonstop
+        ch == 'A' && ns == Int16(0) && return FAIL_ITN_SUPPCODE
+        # B — fail if not nonstop (connecting traffic not allowed)
+        ch == 'B' && ns != Int16(0) && return FAIL_ITN_SUPPCODE
+        # C — fail if international itinerary
+        ch == 'C' && intl && return FAIL_ITN_SUPPCODE
+        # G — fail if nonstop or interline
+        ch == 'G' && (ns == Int16(0) || inter) && return FAIL_ITN_SUPPCODE
+        # K, S, V — fail if nonstop
+        (ch == 'K' || ch == 'S' || ch == 'V') && ns == Int16(0) && return FAIL_ITN_SUPPCODE
+        # L — fail if nonstop or interline
+        ch == 'L' && (ns == Int16(0) || inter) && return FAIL_ITN_SUPPCODE
+        # M — fail if nonstop or not international or interline
+        ch == 'M' && (ns == Int16(0) || !intl || inter) && return FAIL_ITN_SUPPCODE
+        # N, W — fail if nonstop or not international
+        (ch == 'N' || ch == 'W') && (ns == Int16(0) || !intl) && return FAIL_ITN_SUPPCODE
+        # O, Q — fail if nonstop or not international or interline
+        (ch == 'O' || ch == 'Q') && (ns == Int16(0) || !intl || inter) && return FAIL_ITN_SUPPCODE
+        # T — fail if nonstop or interline
+        ch == 'T' && (ns == Int16(0) || inter) && return FAIL_ITN_SUPPCODE
+        # U — fail if nonstop or not international
+        ch == 'U' && (ns == Int16(0) || !intl) && return FAIL_ITN_SUPPCODE
+        # X, Y — fail if nonstop or interline
+        (ch == 'X' || ch == 'Y') && (ns == Int16(0) || inter) && return FAIL_ITN_SUPPCODE
+        # Z, J, P, R, H — pass (informational or ignored)
     end
     return PASS
 end
