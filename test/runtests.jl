@@ -74,6 +74,8 @@ import ItinerarySearch:
     MCTAuditLog, open_audit_log, write_audit_entry!, close_audit_log,
     # MCT replay
     replay_misconnects, parse_misconnect_row,
+    # MCT inspector
+    mct_inspect, InspectorState,
     # Connection rules
     check_cnx_roundtrip, check_cnx_backtrack, check_cnx_scope, check_cnx_interline,
     check_cnx_opdays, check_cnx_suppcodes, check_cnx_trfrest,
@@ -640,5 +642,13 @@ TEST01,1,UA,100,N,UA,100,LAX,ORD,2026-06-15T08:00:00.0,2026-06-15T14:00:00.0,202
         @test occursin("true", lines[2])   # our_resolves: 90 <= 90
 
         rm(tmpfile)
+    end
+
+    @testset "MCT Inspector State" begin
+        lookup = MCTLookup()
+        state = InspectorState(lookup=lookup, connections=NamedTuple[])
+        @test state.position == 0
+        @test isempty(state.connections)
+        @test isempty(state.filters)
     end
 end
