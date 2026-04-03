@@ -361,9 +361,10 @@ include("test_helpers.jl")
                 time = Minutes(90),
                 mct_id = Int32(100),
             )
-            ct = MCTCandidateTrace(rec, true, :none, :exception)
+            ct = MCTCandidateTrace(rec, true, :none, :exception, UInt32(0))
             @test ct.matched == true
             @test ct.skip_reason == :none
+            @test ct.mismatched_fields == UInt32(0)
             @test ct.pass == :exception
             @test ct.record.time == Minutes(90)
         end
@@ -450,6 +451,9 @@ include("test_helpers.jl")
             @test length(candidates2) >= 2
             @test candidates2[1].matched == false
             @test candidates2[1].skip_reason == :field_mismatch
+            @test candidates2[1].mismatched_fields != UInt32(0)
+            @test (candidates2[1].mismatched_fields & MCT_BIT_ARR_CARRIER) != 0
+            @test (candidates2[1].mismatched_fields & MCT_BIT_DEP_CARRIER) != 0
             @test candidates2[2].matched == true
             @test candidates2[2].pass == :station_standard
         end

@@ -11,8 +11,10 @@ State for the interactive MCT inspector REPL loop.
     position::Int = 0
     filters::Vector{Function} = Function[]
     detail::Bool = false
-    max_candidates::Int = 10
+    max_candidates::Int = 0    # 0 = show all
     airports::Dict{StationCode,StationRecord} = Dict{StationCode,StationRecord}()
+    cascade_page_size::Int = 25     # candidates per page in cascade display
+    cascade_shown::Int = 0          # how many candidates shown so far for current connection
 end
 
 function _print_connection_header(io::IO, idx::Int, total::Int, params::NamedTuple)
@@ -32,28 +34,93 @@ function _print_connection_header(io::IO, idx::Int, total::Int, params::NamedTup
     println(io, "  Status: $status | CnxTime: $(cnx) min | Their MCT: $(their_mct) | Their diff: $(their_diff)")
 end
 
-function _print_cascade(io::IO, trace::MCTTrace, max_candidates::Int)
+function _print_cascade(io::IO, trace::MCTTrace, max_candidates::Int; from::Int=1)
     cands = trace.candidates
     total = length(cands)
-    show_n = max_candidates > 0 ? min(max_candidates, total) : total
-    println(io, "\n  Cascade ($total candidates evaluated$(show_n < total ? ", showing top $show_n" : "")):")
-    for i in 1:show_n
+    limit = max_candidates > 0 ? min(max_candidates, total) : total
+    show_end = min(from + limit - 1, total)
+    if from > total
+        println(io, "  No more candidates.")
+        return show_end
+    end
+    if from == 1
+        println(io, "\n  Cascade ($total candidates evaluated):")
+    end
+    for i in from:show_end
         c = cands[i]
-        id = Int(c.record.mct_id)
-        t = Int(c.record.time)
-        spec = string(c.record.specificity, base=16)
-        if c.matched && c.skip_reason == :none
-            println(io, "  #$i [MATCH✓] mct_id=$id time=$t spec=0x$spec")
-            fields = decode_matched_fields(c.record.specified)
-            !isempty(fields) && println(io, "     matched: $fields")
-        elseif c.matched && c.skip_reason == :supp_scope_miss
-            println(io, "  #$i [skip: supp_scope_miss] mct_id=$id time=$t spec=0x$spec")
-        else
-            println(io, "  #$i [skip: $(c.skip_reason)] mct_id=$id time=$t spec=0x$spec")
+        _print_candidate(io, i, c, trace)
+    end
+    if show_end < total
+        println(io, "  ... $(total - show_end) more (type 'more' to see next page)")
+    end
+    return show_end
+end
+
+function _print_candidate(io::IO, idx::Int, c::MCTCandidateTrace, trace::MCTTrace)
+    id = Int(c.record.mct_id)
+    t = Int(c.record.time)
+    spec = string(c.record.specificity, base=16)
+    specified = decode_matched_fields(c.record.specified)
+
+    if c.matched && c.skip_reason == :none
+        println(io, "  #$idx [MATCH✓] mct_id=$id time=$t spec=0x$spec")
+        !isempty(specified) && println(io, "       specified: $specified")
+    elseif c.skip_reason == :field_mismatch
+        mm_str = decode_matched_fields(c.mismatched_fields)
+        println(io, "  #$idx [skip: field_mismatch] mct_id=$id time=$t spec=0x$spec")
+        !isempty(specified) && println(io, "       specified: $specified")
+        !isempty(mm_str) && println(io, "       failed on: $mm_str")
+        # Show expected vs actual for each mismatched field
+        _print_mismatch_values(io, c, trace)
+    elseif c.skip_reason == :date_expired
+        println(io, "  #$idx [skip: date_expired] mct_id=$id time=$t spec=0x$spec")
+    elseif c.skip_reason == :supp_scope_miss
+        println(io, "  #$idx [skip: supp_scope_miss] mct_id=$id time=$t spec=0x$spec")
+    else
+        println(io, "  #$idx [skip: $(c.skip_reason)] mct_id=$id time=$t spec=0x$spec")
+    end
+end
+
+# Field value extraction from MCTRecord (expected) and MCTTrace (actual connection)
+const _MCT_FIELD_EXTRACTORS = (
+    (MCT_BIT_ARR_CARRIER,   "ARR_CARRIER",   r -> String(r.arr_carrier),   t -> String(t.arr_carrier)),
+    (MCT_BIT_DEP_CARRIER,   "DEP_CARRIER",   r -> String(r.dep_carrier),   t -> String(t.dep_carrier)),
+    (MCT_BIT_ARR_TERM,      "ARR_TERM",      r -> String(r.arr_term),      t -> String(t.arr_term)),
+    (MCT_BIT_DEP_TERM,      "DEP_TERM",      r -> String(r.dep_term),      t -> String(t.dep_term)),
+    (MCT_BIT_PRV_STN,       "PRV_STN",       r -> String(r.prv_stn),       t -> String(t.prv_stn)),
+    (MCT_BIT_NXT_STN,       "NXT_STN",       r -> String(r.nxt_stn),       t -> String(t.nxt_stn)),
+    (MCT_BIT_PRV_COUNTRY,   "PRV_COUNTRY",   r -> String(r.prv_country),   t -> String(t.prv_country)),
+    (MCT_BIT_NXT_COUNTRY,   "NXT_COUNTRY",   r -> String(r.nxt_country),   t -> String(t.nxt_country)),
+    (MCT_BIT_PRV_REGION,    "PRV_REGION",     r -> String(r.prv_region),    t -> String(t.prv_region)),
+    (MCT_BIT_NXT_REGION,    "NXT_REGION",     r -> String(r.nxt_region),    t -> String(t.nxt_region)),
+    (MCT_BIT_DEP_BODY,      "DEP_BODY",      r -> string(r.dep_body),      t -> string(t.dep_body)),
+    (MCT_BIT_ARR_BODY,      "ARR_BODY",      r -> string(r.arr_body),      t -> string(t.arr_body)),
+    (MCT_BIT_ARR_CS_IND,    "ARR_CS_IND",    r -> string(r.arr_cs_ind),    t -> string(t.arr_is_codeshare ? 'Y' : 'N')),
+    (MCT_BIT_DEP_CS_IND,    "DEP_CS_IND",    r -> string(r.dep_cs_ind),    t -> string(t.dep_is_codeshare ? 'Y' : 'N')),
+    (MCT_BIT_ARR_CS_OP,     "ARR_CS_OP",     r -> String(r.arr_cs_op_carrier), t -> String(t.arr_op_carrier)),
+    (MCT_BIT_DEP_CS_OP,     "DEP_CS_OP",     r -> String(r.dep_cs_op_carrier), t -> String(t.dep_op_carrier)),
+    (MCT_BIT_ARR_ACFT_TYPE, "ARR_ACFT_TYPE", r -> String(r.arr_acft_type), t -> String(t.arr_acft_type)),
+    (MCT_BIT_DEP_ACFT_TYPE, "DEP_ACFT_TYPE", r -> String(r.dep_acft_type), t -> String(t.dep_acft_type)),
+    (MCT_BIT_PRV_STATE,     "PRV_STATE",     r -> String(r.prv_state),     t -> String(t.prv_state)),
+    (MCT_BIT_NXT_STATE,     "NXT_STATE",     r -> String(r.nxt_state),     t -> String(t.nxt_state)),
+)
+
+function _print_mismatch_values(io::IO, c::MCTCandidateTrace, trace::MCTTrace)
+    mm = c.mismatched_fields
+    mm == UInt32(0) && return
+    for (bit, name, rec_fn, trace_fn) in _MCT_FIELD_EXTRACTORS
+        if (mm & bit) != 0
+            rec_val = rec_fn(c.record)
+            trace_val = trace_fn(trace)
+            println(io, "                 $name: record=\"$rec_val\" connection=\"$trace_val\"")
         end
     end
-    if show_n < total
-        println(io, "  ... $(total - show_n) more candidates not shown")
+    # Flight range mismatches — show range vs actual
+    if (mm & MCT_BIT_ARR_FLT_RNG) != 0
+        println(io, "                 ARR_FLT_RNG: record=$(Int(c.record.arr_flt_rng_start))-$(Int(c.record.arr_flt_rng_end)) connection=$(Int(trace.arr_flt_no))")
+    end
+    if (mm & MCT_BIT_DEP_FLT_RNG) != 0
+        println(io, "                 DEP_FLT_RNG: record=$(Int(c.record.dep_flt_rng_start))-$(Int(c.record.dep_flt_rng_end)) connection=$(Int(trace.dep_flt_no))")
     end
 end
 
@@ -135,13 +202,14 @@ end
 function _print_help(io::IO)
     println(io, """
     MCT Inspector Commands:
-      i / inspect     — Show full cascade trace for current connection
+      i / inspect     — Show cascade trace for current connection (paged)
+      more            — Show next page of candidates
       c / enter       — Move to next connection
       s N / skip N    — Skip ahead N connections
       f <expr>        — Add filter (station=ORD, mismatch, resolves, source=exception)
       m / mismatch    — Shortcut: filter mismatch
       r / resolves    — Shortcut: filter resolves
-      d / detail      — Toggle detail level
+      d / detail      — Toggle auto-cascade on each connection
       clear           — Clear all filters
       h / help        — Show this help
       q / quit        — Exit inspector""")
@@ -210,9 +278,10 @@ function _advance_to_next!(state::InspectorState, io_in::IO, io_out::IO; skip::I
             continue
         end
 
+        state.cascade_shown = 0
         _print_connection_header(io_out, state.position, total, params)
         if state.detail
-            _print_cascade(io_out, trace, state.max_candidates)
+            state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size)
         end
         _print_result(io_out, trace, params)
         println(io_out, "")
@@ -243,10 +312,17 @@ function _command_loop!(state::InspectorState, io_in::IO, io_out::IO, params::Na
             _advance_to_next!(state, io_in, io_out)
             return
         elseif cmd in ("i", "inspect")
+            state.cascade_shown = 0
             _print_connection_header(io_out, state.position, total, params)
-            _print_cascade(io_out, trace, state.max_candidates)
+            state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size)
             _print_result(io_out, trace, params)
             println(io_out, "")
+        elseif cmd == "more"
+            if state.cascade_shown > 0 && state.cascade_shown < length(trace.candidates)
+                state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size; from=state.cascade_shown + 1)
+            else
+                println(io_out, "No more candidates to show. Use 'i' to restart cascade.")
+            end
         elseif cmd in ("d", "detail")
             state.detail = !state.detail
             println(io_out, "Detail mode: $(state.detail ? "ON" : "OFF")")

@@ -245,12 +245,14 @@ Captures one candidate MCT record's evaluation during the cascade lookup.
 - `matched::Bool` — did all specified fields match?
 - `skip_reason::Symbol` — `:none`, `:date_expired`, `:field_mismatch`, `:station_standard_skip`, `:supp_scope_miss`
 - `pass::Symbol` — `:exception`, `:global_suppression`, `:station_standard`, `:global_default`
+- `mismatched_fields::UInt32` — bitmask of which specified fields did NOT match (0 when matched or non-field skip)
 """
 struct MCTCandidateTrace
     record::MCTRecord
     matched::Bool
     skip_reason::Symbol
     pass::Symbol
+    mismatched_fields::UInt32
 end
 
 # ── Specificity computation ───────────────────────────────────────────────────
@@ -435,6 +437,67 @@ _compute_specificity(rec::MCTRecord)::UInt32 = _compute_specificity(rec.specifie
     return true
 end
 
+"""
+    `function _mct_record_mismatch_fields(rec::MCTRecord, ...)::UInt32`
+
+Like `_mct_record_matches`, but returns a bitmask of which specified fields
+did NOT match. Returns `UInt32(0)` when all specified fields match.
+Used only in the trace path to provide detailed mismatch information.
+"""
+@inline function _mct_record_mismatch_fields(
+    rec::MCTRecord,
+    arr_carrier::AirlineCode, dep_carrier::AirlineCode,
+    arr_body::Char, dep_body::Char,
+    prv_stn::StationCode, nxt_stn::StationCode,
+    arr_term::InlineString3, dep_term::InlineString3,
+    prv_country::InlineString3, nxt_country::InlineString3,
+    arr_op_carrier::AirlineCode, dep_op_carrier::AirlineCode,
+    arr_is_codeshare::Bool, dep_is_codeshare::Bool,
+    arr_acft_type::InlineString7, dep_acft_type::InlineString7,
+    arr_flt_no::FlightNumber, dep_flt_no::FlightNumber,
+    prv_state::InlineString3, nxt_state::InlineString3,
+    prv_region::InlineString3, nxt_region::InlineString3,
+)::UInt32
+    sp = rec.specified
+    sp == UInt32(0) && return UInt32(0)
+    mm = UInt32(0)
+    (sp & MCT_BIT_ARR_CARRIER) != 0 && rec.arr_carrier != arr_carrier && (mm |= MCT_BIT_ARR_CARRIER)
+    (sp & MCT_BIT_DEP_CARRIER) != 0 && rec.dep_carrier != dep_carrier && (mm |= MCT_BIT_DEP_CARRIER)
+    (sp & MCT_BIT_ARR_BODY)    != 0 && rec.arr_body    != arr_body    && (mm |= MCT_BIT_ARR_BODY)
+    (sp & MCT_BIT_DEP_BODY)    != 0 && rec.dep_body    != dep_body    && (mm |= MCT_BIT_DEP_BODY)
+    (sp & MCT_BIT_PRV_STN)     != 0 && rec.prv_stn     != prv_stn     && (mm |= MCT_BIT_PRV_STN)
+    (sp & MCT_BIT_NXT_STN)     != 0 && rec.nxt_stn     != nxt_stn     && (mm |= MCT_BIT_NXT_STN)
+    (sp & MCT_BIT_ARR_TERM)    != 0 && rec.arr_term    != arr_term    && (mm |= MCT_BIT_ARR_TERM)
+    (sp & MCT_BIT_DEP_TERM)    != 0 && rec.dep_term    != dep_term    && (mm |= MCT_BIT_DEP_TERM)
+    (sp & MCT_BIT_PRV_REGION) != 0 && rec.prv_region != prv_region && (mm |= MCT_BIT_PRV_REGION)
+    (sp & MCT_BIT_NXT_REGION) != 0 && rec.nxt_region != nxt_region && (mm |= MCT_BIT_NXT_REGION)
+    if (sp & MCT_BIT_DEP_CS_IND) != 0
+        rec.dep_cs_ind == 'Y' && !dep_is_codeshare && (mm |= MCT_BIT_DEP_CS_IND)
+    end
+    if (sp & MCT_BIT_DEP_CS_OP) != 0
+        rec.dep_cs_op_carrier != dep_op_carrier && (mm |= MCT_BIT_DEP_CS_OP)
+    end
+    if (sp & MCT_BIT_ARR_CS_IND) != 0
+        rec.arr_cs_ind == 'Y' && !arr_is_codeshare && (mm |= MCT_BIT_ARR_CS_IND)
+    end
+    if (sp & MCT_BIT_ARR_CS_OP) != 0
+        rec.arr_cs_op_carrier != arr_op_carrier && (mm |= MCT_BIT_ARR_CS_OP)
+    end
+    if (sp & MCT_BIT_ARR_FLT_RNG) != 0
+        (arr_flt_no < rec.arr_flt_rng_start || arr_flt_no > rec.arr_flt_rng_end) && (mm |= MCT_BIT_ARR_FLT_RNG)
+    end
+    if (sp & MCT_BIT_DEP_FLT_RNG) != 0
+        (dep_flt_no < rec.dep_flt_rng_start || dep_flt_no > rec.dep_flt_rng_end) && (mm |= MCT_BIT_DEP_FLT_RNG)
+    end
+    (sp & MCT_BIT_ARR_ACFT_TYPE) != 0 && rec.arr_acft_type != arr_acft_type && (mm |= MCT_BIT_ARR_ACFT_TYPE)
+    (sp & MCT_BIT_DEP_ACFT_TYPE) != 0 && rec.dep_acft_type != dep_acft_type && (mm |= MCT_BIT_DEP_ACFT_TYPE)
+    (sp & MCT_BIT_PRV_STATE) != 0 && rec.prv_state != prv_state && (mm |= MCT_BIT_PRV_STATE)
+    (sp & MCT_BIT_NXT_STATE) != 0 && rec.nxt_state != nxt_state && (mm |= MCT_BIT_NXT_STATE)
+    (sp & MCT_BIT_PRV_COUNTRY) != 0 && rec.prv_country != prv_country && (mm |= MCT_BIT_PRV_COUNTRY)
+    (sp & MCT_BIT_NXT_COUNTRY) != 0 && rec.nxt_country != nxt_country && (mm |= MCT_BIT_NXT_COUNTRY)
+    return mm
+end
+
 # ── MCT lookup cascade ────────────────────────────────────────────────────────
 
 """
@@ -574,7 +637,7 @@ function lookup_mct(
         # Date validity — skip records outside their effective window
         if rec.eff_date != UInt32(0) && target_date != UInt32(0)
             if target_date < rec.eff_date || target_date > rec.dis_date
-                trace !== nothing && push!(trace, MCTCandidateTrace(rec, false, :date_expired, :exception))
+                trace !== nothing && push!(trace, MCTCandidateTrace(rec, false, :date_expired, :exception, UInt32(0)))
                 continue
             end
         end
@@ -590,7 +653,20 @@ function lookup_mct(
             prv_region, nxt_region,
         )
         if !matched
-            trace !== nothing && push!(trace, MCTCandidateTrace(rec, false, :field_mismatch, :exception))
+            if trace !== nothing
+                mm = _mct_record_mismatch_fields(
+                    rec, arr_carrier, dep_carrier, arr_body, dep_body,
+                    prv_stn, nxt_stn, arr_term, dep_term,
+                    prv_country, nxt_country,
+                    arr_op_carrier, dep_op_carrier,
+                    arr_is_codeshare, dep_is_codeshare,
+                    arr_acft_type, dep_acft_type,
+                    arr_flt_no, dep_flt_no,
+                    prv_state, nxt_state,
+                    prv_region, nxt_region,
+                )
+                push!(trace, MCTCandidateTrace(rec, false, :field_mismatch, :exception, mm))
+            end
             continue
         end
 
@@ -598,23 +674,23 @@ function lookup_mct(
             # Suppression geography scope — only suppress if connection is in scope
             if rec.supp_region != _empty
                 if rec.supp_region != prv_region && rec.supp_region != nxt_region
-                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :exception))
+                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :exception, UInt32(0)))
                     continue
                 end
             end
             if rec.supp_country != _empty
                 if rec.supp_country != prv_country && rec.supp_country != nxt_country
-                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :exception))
+                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :exception, UInt32(0)))
                     continue
                 end
             end
             if rec.supp_state != _empty
                 if rec.supp_state != prv_state && rec.supp_state != nxt_state
-                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :exception))
+                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :exception, UInt32(0)))
                     continue
                 end
             end
-            trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :none, :exception))
+            trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :none, :exception, UInt32(0)))
             return MCTResult(
                 time           = Minutes(0),
                 queried_status = status,
@@ -627,7 +703,7 @@ function lookup_mct(
             )
         end
 
-        trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :none, :exception))
+        trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :none, :exception, UInt32(0)))
         return MCTResult(
             time           = rec.time,
             queried_status = status,
@@ -652,7 +728,7 @@ function lookup_mct(
             # Date validity
             if rec.eff_date != UInt32(0) && target_date != UInt32(0)
                 if target_date < rec.eff_date || target_date > rec.dis_date
-                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, false, :date_expired, :global_suppression))
+                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, false, :date_expired, :global_suppression, UInt32(0)))
                     continue
                 end
             end
@@ -668,7 +744,20 @@ function lookup_mct(
                 prv_region, nxt_region,
             )
             if !matched
-                trace !== nothing && push!(trace, MCTCandidateTrace(rec, false, :field_mismatch, :global_suppression))
+                if trace !== nothing
+                    mm = _mct_record_mismatch_fields(
+                        rec, arr_carrier, dep_carrier, arr_body, dep_body,
+                        prv_stn, nxt_stn, arr_term, dep_term,
+                        prv_country, nxt_country,
+                        arr_op_carrier, dep_op_carrier,
+                        arr_is_codeshare, dep_is_codeshare,
+                        arr_acft_type, dep_acft_type,
+                        arr_flt_no, dep_flt_no,
+                        prv_state, nxt_state,
+                        prv_region, nxt_region,
+                    )
+                    push!(trace, MCTCandidateTrace(rec, false, :field_mismatch, :global_suppression, mm))
+                end
                 continue
             end
 
@@ -676,23 +765,23 @@ function lookup_mct(
             # geography AND flight endpoint geography
             if rec.supp_region != _empty
                 if rec.supp_region != prv_region && rec.supp_region != nxt_region
-                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :global_suppression))
+                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :global_suppression, UInt32(0)))
                     continue
                 end
             end
             if rec.supp_country != _empty
                 if rec.supp_country != prv_country && rec.supp_country != nxt_country
-                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :global_suppression))
+                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :global_suppression, UInt32(0)))
                     continue
                 end
             end
             if rec.supp_state != _empty
                 if rec.supp_state != prv_state && rec.supp_state != nxt_state
-                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :global_suppression))
+                    trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :global_suppression, UInt32(0)))
                     continue
                 end
             end
-            trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :none, :global_suppression))
+            trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :none, :global_suppression, UInt32(0)))
             return MCTResult(
                 time           = Minutes(0),
                 queried_status = status,
@@ -712,12 +801,12 @@ function lookup_mct(
         # Date validity — skip records outside their effective window
         if rec.eff_date != UInt32(0) && target_date != UInt32(0)
             if target_date < rec.eff_date || target_date > rec.dis_date
-                trace !== nothing && push!(trace, MCTCandidateTrace(rec, false, :date_expired, :station_standard))
+                trace !== nothing && push!(trace, MCTCandidateTrace(rec, false, :date_expired, :station_standard, UInt32(0)))
                 continue
             end
         end
         # Station standards are wildcards by definition; skip match check.
-        trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :none, :station_standard))
+        trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :none, :station_standard, UInt32(0)))
         return MCTResult(
             time           = rec.time,
             queried_status = status,
