@@ -880,6 +880,7 @@ function materialize_mct_lookup(
     active_stations::Set{StationCode};
     constraints::SearchConstraints = SearchConstraints(),
     mct_serial_ascending::Bool = true,
+    mct_suppressions_enabled::Bool = true,
 )::MCTLookup
     # Build an IN-list of station codes for the SQL predicate.
     # For large sets we use a parameterised ANY approach; for simplicity here
@@ -930,6 +931,9 @@ function materialize_mct_lookup(
     for r in result
         station_key, status, rec = _build_mct_record(r)
         status_idx = Int(status)
+
+        # Skip suppression records when disabled
+        rec.suppressed && !mct_suppressions_enabled && continue
 
         # Blank-station suppression records → global suppressions list
         if station_key[1] == NO_STATION || station_key[2] == NO_STATION

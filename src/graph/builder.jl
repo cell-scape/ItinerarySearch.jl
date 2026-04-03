@@ -413,7 +413,8 @@ function build_graph!(
     constraints = SearchConstraints()
     mct_lookup = materialize_mct_lookup(store, active_stations;
                                        constraints = constraints,
-                                       mct_serial_ascending = config.mct_serial_ascending)
+                                       mct_serial_ascending = config.mct_serial_ascending,
+                                       mct_suppressions_enabled = config.mct_suppressions_enabled)
     @info "Materialised MCT lookup" stations_with_mct = length(mct_lookup.stations)
     emit!(event_log, PhaseEvent(phase = :mct_materialize, action = :end, elapsed_ns = time_ns() - t_mct))
     checkpoint!(event_log)
