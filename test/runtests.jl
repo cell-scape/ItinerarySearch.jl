@@ -389,6 +389,62 @@ include("test_helpers.jl")
             @test cfg2.max_connections == 100
         end
 
+        @testset "lookup_mct trace collection" begin
+            # Build a lookup with known records at ORD
+            rec_specific = MCTRecord(
+                arr_carrier = AirlineCode("UA"),
+                dep_carrier = AirlineCode("UA"),
+                specified = MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER,
+                time = Minutes(45),
+                mct_id = Int32(101),
+                specificity = UInt32(1) << 28 | UInt32(1) << 25,
+            )
+            rec_generic = MCTRecord(
+                time = Minutes(60),
+                mct_id = Int32(102),
+                station_standard = true,
+                specificity = UInt32(0),
+            )
+            ord = StationCode("ORD")
+            lookup = MCTLookup(
+                stations = Dict(
+                    (ord, ord) => (
+                        [rec_specific, rec_generic],  # DD
+                        MCTRecord[],  # DI
+                        MCTRecord[],  # ID
+                        MCTRecord[],  # II
+                    ),
+                ),
+            )
+
+            # Without trace — normal path unchanged
+            result = lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"), ord, ord, MCT_DD)
+            @test result.time == Minutes(45)
+            @test result.mct_id == Int32(101)
+
+            # With trace — captures candidates
+            candidates = MCTCandidateTrace[]
+            result2 = lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"), ord, ord, MCT_DD;
+                                 trace=candidates)
+            @test result2.time == Minutes(45)
+            @test length(candidates) >= 1
+            @test candidates[1].matched == true
+            @test candidates[1].pass == :exception
+            @test candidates[1].record.mct_id == Int32(101)
+
+            # Mismatched carrier — should skip specific, fall to standard
+            candidates2 = MCTCandidateTrace[]
+            result3 = lookup_mct(lookup, AirlineCode("AA"), AirlineCode("AA"), ord, ord, MCT_DD;
+                                 trace=candidates2)
+            @test result3.time == Minutes(60)
+            @test result3.source == SOURCE_STATION_STANDARD
+            @test length(candidates2) >= 2
+            @test candidates2[1].matched == false
+            @test candidates2[1].skip_reason == :field_mismatch
+            @test candidates2[2].matched == true
+            @test candidates2[2].pass == :station_standard
+        end
+
         @testset "SegmentRecord" begin
             @test isbitstype(SegmentRecord)
             seg = SegmentRecord(

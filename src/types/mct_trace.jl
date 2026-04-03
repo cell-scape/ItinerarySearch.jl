@@ -2,9 +2,10 @@
 #
 # Provides:
 #   - EMPTY_MCT_RESULT  — sentinel constant for "no MCT result"
-#   - MCTCandidateTrace — one candidate record's evaluation in the cascade
 #   - MCTTrace          — full trace of a single MCT lookup
 #   - MCTAuditConfig    — configuration for MCT audit logging
+#
+# Note: MCTCandidateTrace is defined in graph/mct_lookup.jl (after MCTRecord)
 
 """
     `EMPTY_MCT_RESULT`
@@ -23,23 +24,8 @@ const EMPTY_MCT_RESULT = MCTResult(
     matched_fields = UInt32(0),
 )
 
-"""
-    struct MCTCandidateTrace
-
-Captures one candidate MCT record's evaluation during the cascade lookup.
-
-# Fields
-- `record::MCTRecord` — the candidate record
-- `matched::Bool` — did all specified fields match?
-- `skip_reason::Symbol` — `:none`, `:date_expired`, `:field_mismatch`, `:station_standard_skip`, `:supp_scope_miss`
-- `pass::Symbol` — `:exception`, `:global_suppression`, `:station_standard`, `:global_default`
-"""
-struct MCTCandidateTrace
-    record::MCTRecord
-    matched::Bool
-    skip_reason::Symbol
-    pass::Symbol
-end
+# MCTCandidateTrace is defined in graph/mct_lookup.jl (after MCTRecord,
+# before lookup_mct) so that the trace kwarg type annotation resolves.
 
 """
     @kwdef struct MCTTrace
