@@ -448,7 +448,7 @@ function build_graph!(
     emit!(event_log, PhaseEvent(phase = :connection_build, action = :start))
     t_cnx = time_ns()
     cnx_rules = build_cnx_rules(config, constraints, mct_lookup)
-    itn_rules = build_itn_rules(config)
+    itn_rules = build_itn_rules(config; constraints = constraints)
 
     n_rules = length(cnx_rules)
     ctx = RuntimeContext(

@@ -137,15 +137,26 @@ using Dates
     # ── Return-code constants exported ───────────────────────────────────────
 
     @testset "Itinerary return-code constants" begin
-        @test FAIL_ITN_SCOPE    < 0
-        @test FAIL_ITN_OPDAYS   < 0
-        @test FAIL_ITN_CIRCUITY < 0
-        @test FAIL_ITN_SUPPCODE < 0
-        @test FAIL_ITN_MAFT     < 0
+        @test FAIL_ITN_SCOPE          < 0
+        @test FAIL_ITN_OPDAYS         < 0
+        @test FAIL_ITN_CIRCUITY       < 0
+        @test FAIL_ITN_SUPPCODE       < 0
+        @test FAIL_ITN_MAFT           < 0
+        @test FAIL_ITN_ELAPSED        < 0
+        @test FAIL_ITN_DISTANCE       < 0
+        @test FAIL_ITN_STOPS          < 0
+        @test FAIL_ITN_FLIGHT_TIME    < 0
+        @test FAIL_ITN_LAYOVER        < 0
+        @test FAIL_ITN_CARRIER        < 0
+        @test FAIL_ITN_INTERLINE_DCNX < 0
+        @test FAIL_ITN_CRS_CNX        < 0
 
         # All itinerary fail codes must be unique and not overlap cnx codes
         itn_codes = [FAIL_ITN_SCOPE, FAIL_ITN_OPDAYS, FAIL_ITN_CIRCUITY,
-                     FAIL_ITN_SUPPCODE, FAIL_ITN_MAFT]
+                     FAIL_ITN_SUPPCODE, FAIL_ITN_MAFT,
+                     FAIL_ITN_ELAPSED, FAIL_ITN_DISTANCE, FAIL_ITN_STOPS,
+                     FAIL_ITN_FLIGHT_TIME, FAIL_ITN_LAYOVER, FAIL_ITN_CARRIER,
+                     FAIL_ITN_INTERLINE_DCNX, FAIL_ITN_CRS_CNX]
         @test allunique(itn_codes)
 
         cnx_codes = [FAIL_SCOPE, FAIL_ONLINE, FAIL_CODESHARE, FAIL_INTERLINE,
@@ -210,26 +221,26 @@ using Dates
         end
     end
 
-    # ── Rule 3: check_itn_circuity ────────────────────────────────────────────
+    # ── Rule 3: check_itn_circuity_range ────────────────────────────────────────────
 
-    @testset "check_itn_circuity" begin
+    @testset "check_itn_circuity_range" begin
         ctx = _mock_ctx()
 
         @testset "passes when itinerary is empty" begin
             itn = Itinerary()
-            @test check_itn_circuity(itn, ctx) == PASS
+            @test check_itn_circuity_range(itn, ctx) == PASS
         end
 
         @testset "passes when market_distance is zero" begin
             itn = _nonstop_itn(total_distance=Distance(999.0f0), market_distance=Distance(0.0f0))
-            @test check_itn_circuity(itn, ctx) == PASS
+            @test check_itn_circuity_range(itn, ctx) == PASS
         end
 
         @testset "passes when total_distance <= factor * market_distance + extra" begin
             # ParameterSet defaults: max_circuity=2.5, domestic_circuity_extra_miles=500
             # 1000 <= 2.5 * 1000 + 500 = 3000 => PASS
             itn = _nonstop_itn(total_distance=Distance(1000.0f0), market_distance=Distance(1000.0f0))
-            @test check_itn_circuity(itn, ctx) == PASS
+            @test check_itn_circuity_range(itn, ctx) == PASS
         end
 
         @testset "fails when total_distance >> market_distance" begin
@@ -238,7 +249,7 @@ using Dates
                 total_distance=Distance(10000.0f0),
                 market_distance=Distance(500.0f0),
             )
-            @test check_itn_circuity(itn, ctx) == FAIL_ITN_CIRCUITY
+            @test check_itn_circuity_range(itn, ctx) == FAIL_ITN_CIRCUITY
         end
 
         @testset "uses constraints.defaults.max_circuity" begin
@@ -247,7 +258,7 @@ using Dates
             ctx_tight = _mock_ctx(constraints=tight)
             # total=2000, market=1000 => 2000 > 1.0 * 1000 + 0 => FAIL
             itn = _nonstop_itn(total_distance=Distance(2000.0f0), market_distance=Distance(1000.0f0))
-            @test check_itn_circuity(itn, ctx_tight) == FAIL_ITN_CIRCUITY
+            @test check_itn_circuity_range(itn, ctx_tight) == FAIL_ITN_CIRCUITY
         end
 
         @testset "international route uses international_circuity_extra_miles" begin
@@ -261,13 +272,13 @@ using Dates
                 total_distance=Distance(3400.0f0),
                 market_distance=Distance(1000.0f0),
             )
-            @test check_itn_circuity(itn_pass, ctx_intl) == PASS
+            @test check_itn_circuity_range(itn_pass, ctx_intl) == PASS
             itn_fail = _nonstop_itn(
                 status=intl_status,
                 total_distance=Distance(3600.0f0),
                 market_distance=Distance(1000.0f0),
             )
-            @test check_itn_circuity(itn_fail, ctx_intl) == FAIL_ITN_CIRCUITY
+            @test check_itn_circuity_range(itn_fail, ctx_intl) == FAIL_ITN_CIRCUITY
         end
     end
 
@@ -395,17 +406,54 @@ using Dates
         config = SearchConfig()
         rules = build_itn_rules(config)
 
-        @test length(rules) == 5
+        # Default config: maft_enabled=true, interline_dcnx_enabled=true,
+        # crs_cnx_enabled=true; default constraints add no range rules.
+        # Expected chain: scope, opdays, circuity_range, suppcodes, maft,
+        #                 interline_dcnx, crs_cnx  (7 rules)
+        @test length(rules) == 7
         @test rules[1] === check_itn_scope
         @test rules[2] === check_itn_opdays
-        @test rules[3] === check_itn_circuity
+        @test rules[3] === check_itn_circuity_range
         @test rules[4] === check_itn_suppcodes
         @test rules[5] === check_itn_maft
+        @test rules[6] === check_itn_interline_dcnx
+        @test rules[7] === check_itn_crs_cnx
 
         # All elements are callable with (Itinerary, ctx) signature
         ctx = _mock_ctx()
         itn = _nonstop_itn()
         @test all(r -> applicable(r, itn, ctx), rules)
+
+        @testset "maft_enabled=false omits check_itn_maft" begin
+            cfg_no_maft = SearchConfig(maft_enabled=false)
+            r2 = build_itn_rules(cfg_no_maft)
+            @test check_itn_maft ∉ r2
+            @test check_itn_scope ∈ r2
+        end
+
+        @testset "interline_dcnx_enabled=false omits interline rule" begin
+            cfg = SearchConfig(interline_dcnx_enabled=false)
+            r3 = build_itn_rules(cfg)
+            @test check_itn_interline_dcnx ∉ r3
+        end
+
+        @testset "crs_cnx_enabled=false omits CRS rule" begin
+            cfg = SearchConfig(crs_cnx_enabled=false)
+            r4 = build_itn_rules(cfg)
+            @test check_itn_crs_cnx ∉ r4
+        end
+
+        @testset "non-default constraints add range rules" begin
+            c = SearchConstraints(defaults=ParameterSet(min_elapsed=Int32(60)))
+            r5 = build_itn_rules(config; constraints=c)
+            @test check_itn_elapsed_range ∈ r5
+        end
+
+        @testset "carrier filter adds carrier rule" begin
+            c = SearchConstraints(defaults=ParameterSet(allow_carriers=Set([AirlineCode("UA")])))
+            r6 = build_itn_rules(config; constraints=c)
+            @test check_itn_carriers ∈ r6
+        end
     end
 
 end

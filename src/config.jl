@@ -106,6 +106,8 @@ the reference — no locking, no mutation.
     mct_schengen_mode::Symbol = :sch_then_eur  # :sch_then_eur (default), :eur_then_sch, :sch_only, :eur_only
     mct_suppressions_enabled::Bool = true    # false = ignore all suppression records in MCT lookup
     maft_enabled::Bool = true              # enable MAFT rule (both connection and itinerary level)
+    interline_dcnx_enabled::Bool = true    # enable interline double-connect restriction
+    crs_cnx_enabled::Bool = true           # enable CRS distance-based connection time rule
 end
 
 # ── JSON3 field extraction helpers ────────────────────────────────────────────
