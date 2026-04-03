@@ -51,7 +51,7 @@ import ItinerarySearch:
     post_ingest_sql!,
     query_schedule_legs, query_schedule_segments,
     # MCT lookup
-    MCTRecord, MCTLookup, MCTCacheKey, lookup_mct, materialize_mct_lookup,
+    MCTRecord, MCTLookup, MCTCacheKey, lookup_mct, lookup_mct_traced, materialize_mct_lookup,
     MCT_BIT_ARR_CARRIER, MCT_BIT_DEP_CARRIER,
     MCT_BIT_ARR_TERM, MCT_BIT_DEP_TERM,
     MCT_BIT_PRV_STN, MCT_BIT_NXT_STN,
@@ -513,5 +513,38 @@ include("test_helpers.jl")
         @test occursin("ARR_CARRIER", decoded)
         @test occursin("NXT_REGION", decoded)
         @test count(==(','), decoded) == 11  # 12 fields, 11 commas
+    end
+
+    @testset "lookup_mct_traced" begin
+        rec1 = MCTRecord(
+            arr_carrier = AirlineCode("UA"),
+            specified = MCT_BIT_ARR_CARRIER,
+            time = Minutes(50),
+            mct_id = Int32(200),
+            specificity = UInt32(1) << 25,
+        )
+        ord = StationCode("ORD")
+        lookup = MCTLookup(
+            stations = Dict(
+                (ord, ord) => (
+                    [rec1],       # DD
+                    MCTRecord[],  # DI
+                    MCTRecord[],  # ID
+                    MCTRecord[],  # II
+                ),
+            ),
+        )
+
+        trace = lookup_mct_traced(lookup, AirlineCode("UA"), AirlineCode("AA"),
+                                   ord, ord, MCT_DD)
+        @test trace isa MCTTrace
+        @test trace.result.time == Minutes(50)
+        @test trace.arr_carrier == AirlineCode("UA")
+        @test trace.dep_carrier == AirlineCode("AA")
+        @test trace.arr_station == ord
+        @test trace.status == MCT_DD
+        @test length(trace.candidates) == 1
+        @test trace.candidates[1].matched == true
+        @test trace.codeshare_mode == :none
     end
 end
