@@ -660,4 +660,44 @@ TEST01,1,UA,100,N,UA,100,LAX,ORD,2026-06-15T08:00:00.0,2026-06-15T14:00:00.0,202
         cfg2 = SearchConfig(mct_audit=MCTAuditConfig(enabled=true, detail=:detailed))
         @test cfg2.mct_audit.enabled == true
     end
+
+    @testset "Misconnect Replay Integration" begin
+        csv_content = """rcrd_loc,num_in_prty,inbound_operating_carrier,inbound_operating_flight_number,inbound_codeshare_indicator,inbound_carrier,inbound_flight_number,inbound_departure_station,inbound_arrival_station,inbound_departure_dtml,inbound_arrival_dtml,inbound_departure_date,inbound_arrival_date,inbound_departure_country,inbound_departure_state,inbound_aircraft_type,inbound_departure_terminal,inbound_arrival_terminal,inbound_aircraft_configuration,inbound_aircraft_bodytype,outbound_operating_carrier,outbound_operating_flight_number,outbound_codeshare_indicator,outbound_carrier,outbound_flight_number,outbound_departure_station,outbound_arrival_station,outbound_departure_dtml,outbound_departure_date,outbound_departure_country,outbound_departure_state,outbound_aircraft_type,outbound_departure_terminal,outbound_arrival_terminal,outbound_aircraft_configuration,outbound_aircraft_bodytype,international_domestic_status,connection_time,mct,mct_diff,mctrec,owner,dist_channel,aaa,agency_name,agency_id
+A0HHLV,1,AC,8944,Y,UA,8154,YUL,EWR,2026-05-31T18:15:00.0,2026-05-31T19:52:00.0,2026-05-31,2026-05-31,CA,QC,E75,,A,J12Y64,N,UA,3606,N,UA,3606,EWR,GSP,2026-05-31T21:15:00.0,2026-05-31,US,SC,E7W,C,,J12Y64,N,DD,83.0,90,-7.0,89788,Host,UA WEB,WEB,,
+A1V22C,7,UA,972,N,UA,972,ORD,BRU,2026-06-16T18:00:00.0,2026-06-17T09:00:00.0,2026-06-16,2026-06-17,US,IL,781,1,,J44O21Y253,W,SN,3169,Y,UA,9951,BRU,NAP,2026-06-17T09:45:00.0,2026-06-17,IT,,320,,,C18Y150,N,II,45.0,50,-5.0,189105,Host,UA WEB,WEB,,"""
+
+        tmpfile = tempname() * ".csv"
+        write(tmpfile, csv_content)
+
+        df = CSV.read(tmpfile, DataFrames.DataFrame; stringtype=String)
+        for row in eachrow(df)
+            params = parse_misconnect_row(row)
+            @test params.rcrd_loc isa String
+            @test params.arr_carrier isa AirlineCode
+            @test params.cnx_time isa Minutes
+            @test params.their_mct isa Minutes
+        end
+
+        # First row: codeshare inbound (AC→UA), DD status
+        row1 = parse_misconnect_row(eachrow(df)[1])
+        @test row1.rcrd_loc == "A0HHLV"
+        @test row1.arr_carrier == AirlineCode("UA")  # marketing carrier
+        @test row1.arr_op_carrier == AirlineCode("AC")
+        @test row1.arr_is_codeshare == true
+        @test row1.dep_is_codeshare == false
+        @test row1.status == MCT_DD
+        @test row1.cnx_time == Minutes(83)
+        @test row1.their_mct == Minutes(90)
+        @test row1.arr_station == StationCode("EWR")
+
+        # Second row: codeshare outbound (SN→UA), II status
+        row2 = parse_misconnect_row(eachrow(df)[2])
+        @test row2.rcrd_loc == "A1V22C"
+        @test row2.dep_is_codeshare == true
+        @test row2.dep_op_carrier == AirlineCode("SN")
+        @test row2.status == MCT_II
+        @test row2.arr_station == StationCode("BRU")
+
+        rm(tmpfile)
+    end
 end

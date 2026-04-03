@@ -118,9 +118,9 @@ function parse_misconnect_row(row)
     end
 
     # Their MCT values
-    their_mct = _int(row.mct)
+    their_mct = Minutes(_int(row.mct))
     their_mctrec = _int(row.mctrec)
-    cnx_time = _num(row.connection_time)
+    cnx_time = Minutes(round(Int, _num(row.connection_time)))
     their_mct_diff = _num(row.mct_diff)
 
     # Record locator
@@ -271,8 +271,8 @@ function _replay_dataframe(
         our_source = _source_str(r.source)
         our_specificity = string(r.specificity, base=16)
         our_matched_fields = decode_matched_fields(r.matched_fields)
-        time_match = our_mct == parsed.their_mct
-        cnx_int = isnan(parsed.cnx_time) ? 0 : Int(round(parsed.cnx_time))
+        time_match = our_mct == Int(parsed.their_mct)
+        cnx_int = Int(parsed.cnx_time)
         our_mct_diff = cnx_int - our_mct
         our_resolves = our_mct <= cnx_int
 

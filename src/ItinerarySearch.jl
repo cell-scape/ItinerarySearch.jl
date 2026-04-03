@@ -83,6 +83,11 @@ export RuntimeContext, SearchConstraints, build_itn_rules
 export write_legs, write_itineraries, write_trips
 export itinerary_legs, itinerary_legs_multi, itinerary_legs_json
 
+# MCT audit
+export MCTAuditConfig, MCTTrace, MCTCandidateTrace, EMPTY_MCT_RESULT
+export lookup_mct_traced, decode_matched_fields
+export replay_misconnects, mct_inspect
+
 # Visualization
 export viz_network_map, viz_timeline, viz_trip_comparison, viz_itinerary_refs
 
@@ -126,6 +131,11 @@ using PrecompileTools
         lookup = MCTLookup()
         lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"),
                    StationCode("ORD"), StationCode("ORD"), MCT_DD)
+
+        # MCT trace types
+        EMPTY_MCT_RESULT
+        MCTAuditConfig()
+        decode_matched_fields(UInt32(0))
 
         # Rule chain construction
         cnx_rules = build_cnx_rules(config, constraints, lookup)

@@ -1034,3 +1034,30 @@ function materialize_mct_lookup(
 
     MCTLookup(stations = staging, global_suppressions = global_supps)
 end
+
+"""
+    `function materialize_mct_lookup(store::DuckDBStore; kwargs...)::MCTLookup`
+---
+
+# Description
+- Convenience overload that loads all MCT records from the store without
+  filtering by active stations
+- Queries all distinct station codes from the `mct` table and delegates to
+  the primary two-argument form
+- Useful for standalone tools (e.g., misconnect replayer) that don't have
+  a pre-built graph to supply active stations
+
+# Arguments
+1. `store::DuckDBStore`: populated store (must have MCT records loaded)
+
+# Returns
+- `::MCTLookup`: fully populated lookup structure
+"""
+function materialize_mct_lookup(
+    store::DuckDBStore;
+    kwargs...,
+)::MCTLookup
+    rows = DBInterface.execute(store.db, "SELECT DISTINCT arr_stn FROM mct UNION SELECT DISTINCT dep_stn FROM mct")
+    active_stations = Set{StationCode}(StationCode(r[1]) for r in rows)
+    materialize_mct_lookup(store, active_stations; kwargs...)
+end
