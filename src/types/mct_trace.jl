@@ -3,8 +3,9 @@
 # Provides:
 #   - EMPTY_MCT_RESULT  — sentinel constant for "no MCT result"
 #   - MCTTrace          — full trace of a single MCT lookup
-#   - MCTAuditConfig    — configuration for MCT audit logging
 #
+# Note: MCTAuditConfig is defined in types/mct_audit_config.jl (included before
+#       config.jl so that SearchConfig can embed it as a field).
 # Note: MCTCandidateTrace is defined in graph/mct_lookup.jl (after MCTRecord)
 
 """
@@ -72,23 +73,4 @@ Full trace of a single MCT lookup: input parameters, all candidates evaluated
     codeshare_mode::Symbol = :none
 end
 
-"""
-    @kwdef struct MCTAuditConfig
-
-Configuration for MCT audit logging during connection building.
-Disabled by default.
-
-# Fields
-- `enabled::Bool` — enable audit logging (default `false`)
-- `detail::Symbol` — `:summary` (CSV) or `:detailed` (JSONL)
-- `output_path::String` — file path; empty string means stdout
-- `max_connections::Int` — stop after N connections (0 = unlimited)
-- `max_candidates::Int` — top N candidates in detailed mode (default 10)
-"""
-@kwdef struct MCTAuditConfig
-    enabled::Bool = false
-    detail::Symbol = :summary
-    output_path::String = ""
-    max_connections::Int = 0
-    max_candidates::Int = 10
-end
+# MCTAuditConfig is defined in types/mct_audit_config.jl (included before config.jl).

@@ -651,4 +651,13 @@ TEST01,1,UA,100,N,UA,100,LAX,ORD,2026-06-15T08:00:00.0,2026-06-15T14:00:00.0,202
         @test isempty(state.connections)
         @test isempty(state.filters)
     end
+
+    @testset "MCTAuditConfig in SearchConfig" begin
+        cfg = SearchConfig()
+        @test cfg.mct_audit.enabled == false
+        @test cfg.mct_audit.detail == :summary
+
+        cfg2 = SearchConfig(mct_audit=MCTAuditConfig(enabled=true, detail=:detailed))
+        @test cfg2.mct_audit.enabled == true
+    end
 end
