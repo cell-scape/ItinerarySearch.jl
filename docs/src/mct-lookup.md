@@ -10,7 +10,8 @@ How ItinerarySearch.jl implements the SSIM Chapter 8 Minimum Connecting Time cas
 
 **Source files:**
 - `src/ingest/mct.jl` — Fixed-width file parsing and DuckDB ingest
-- `src/graph/mct_lookup.jl` — In-memory MCTLookup structure, specificity computation, field matching, and the 4-pass lookup cascade
+- `src/graph/mct_lookup.jl` — In-memory MCTLookup structure, specificity computation, field matching, and the 3-pass lookup cascade
+- `src/graph/rules_cnx.jl` — MCTRule callable with codeshare multi-pass and Schengen resolution
 
 ---
 
@@ -682,3 +683,36 @@ MCT records filed at MIA (ID status):
 - MCT 1 wins (higher specificity). **Use 140 min.**
 
 **AA6160 → AA2718:** MCT 1 applies (140 min). 1500 + 140 = 1720 > 1635. **Connection does not build** — insufficient time.
+
+---
+
+## Configuration Reference
+
+All MCT-related configuration lives on `SearchConfig`. These settings control the lookup cascade behavior and can be set in the JSON config file or as keyword arguments.
+
+| Parameter | Default | Description |
+|---|---|---|
+| `mct_cache_enabled` | `true` | Cache MCT lookup results during connection build (~77% hit rate) |
+| `mct_serial_ascending` | `true` | Tiebreaker at equal specificity: `true` = lower serial (earlier record) wins; `false` = higher serial (later record) wins |
+| `mct_codeshare_mode` | `:both` | Codeshare carrier resolution: `:both` = marketing + operating lookups (best specificity wins); `:marketing` = marketing carrier only; `:operating` = operating carrier only |
+| `mct_schengen_mode` | `:sch_then_eur` | Schengen/Europe region priority: `:sch_then_eur` = SCH first, EUR fallback; `:eur_then_sch` = EUR first, SCH fallback; `:sch_only` = SCH or wildcard only; `:eur_only` = EUR or wildcard only |
+| `mct_suppressions_enabled` | `true` | Include suppression records in MCT lookup; `false` = ignore all suppressions |
+
+### Codeshare Mode Details
+
+For codeshare flights (identified by `operating_carrier != carrier` on the leg record), the MCT rule performs one or two `lookup_mct` calls depending on the mode:
+
+- **`:both`** — marketing lookup (marketing carrier + codeshare flags + marketing flight number), then operating lookup (operating carrier + operating flight number, no codeshare flags). Best specificity wins; marketing preferred at ties.
+- **`:marketing`** — marketing lookup only. Misses MCT records filed for the operating carrier.
+- **`:operating`** — operating lookup only. Misses codeshare-specific MCTs (records with `cs_ind=Y`).
+
+### Schengen Mode Details
+
+When a connection involves flights from/to Schengen or European stations, MCT records may be filed under region code `SCH` (Schengen) or `EUR` (Europe). The mode controls which region code is tried first:
+
+- **`:sch_then_eur`** — use SCH as the primary region, fall back to EUR if no region-specific match found
+- **`:eur_then_sch`** — use EUR as primary, fall back to SCH
+- **`:sch_only`** — only match SCH records (or wildcard)
+- **`:eur_only`** — only match EUR records (or wildcard)
+
+The fallback is only triggered when the primary lookup did not match on region bits (`MCT_BIT_PRV_REGION | MCT_BIT_NXT_REGION`). This ensures an exact region match always takes priority over a fallback. Non-SCH/EUR regions are unaffected by this setting.
