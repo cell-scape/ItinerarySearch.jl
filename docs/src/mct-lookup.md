@@ -329,7 +329,14 @@ for (_, vecs) in staging
 end
 ```
 
-This pre-sort is the key optimization: during the lookup cascade, the first matching record is guaranteed to be the most specific applicable one, so there is no need for further comparison or scoring at query time. When two records have equal specificity, the one with the higher serial number (later in the MCT file) wins, per SSIM Ch. 8, Section 8.5.2: *"Whenever new data is received, the information contained supersedes previously received data."*
+This pre-sort is the key optimization: during the lookup cascade, the first matching record is guaranteed to be the most specific applicable one, so there is no need for further comparison or scoring at query time.
+
+When two records have equal specificity, the serial number breaks ties. The direction is configurable via `SearchConfig.mct_serial_ascending`:
+
+- **`true` (default)**: lower serial (earlier record) wins — this matches the team's existing expectations
+- **`false`**: higher serial (later record) wins — per the literal reading of SSIM Ch. 8, Section 8.5.2: *"Whenever new data is received, the information contained supersedes previously received data."*
+
+In practice the difference is small (~1,800 connections out of 1.8M on the full UA schedule), but configurable for validation.
 
 ---
 

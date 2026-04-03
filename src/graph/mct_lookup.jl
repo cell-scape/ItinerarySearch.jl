@@ -879,6 +879,7 @@ function materialize_mct_lookup(
     store::DuckDBStore,
     active_stations::Set{StationCode};
     constraints::SearchConstraints = SearchConstraints(),
+    mct_serial_ascending::Bool = true,
 )::MCTLookup
     # Build an IN-list of station codes for the SQL predicate.
     # For large sets we use a parameterised ANY approach; for simplicity here
@@ -948,10 +949,12 @@ function materialize_mct_lookup(
     end
 
     # Sort each vector by descending specificity for first-match-wins lookup.
-    # At equal specificity, later serial numbers win per SSIM Ch. 8 Section 8.5.2:
-    # "whenever new data is received, the information contained supersedes
-    # previously received data."
-    _sort_key = r -> (r.specificity, r.record_serial)
+    # At equal specificity, the serial number breaks ties. The direction is
+    # configurable: ascending (default, lower serial = earlier record wins) or
+    # descending (higher serial = later record wins, per SSIM Ch. 8 Section 8.5.2).
+    # Encode ascending serial as negative so a single `rev=true` sort works for both.
+    _serial_factor = mct_serial_ascending ? Int64(-1) : Int64(1)
+    _sort_key = r -> (r.specificity, _serial_factor * Int64(r.record_serial))
     for (_, vecs) in staging
         for vec in vecs
             sort!(vec; by = _sort_key, rev = true)

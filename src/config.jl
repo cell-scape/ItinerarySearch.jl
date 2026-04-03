@@ -101,6 +101,7 @@ the reference — no locking, no mutation.
     distance_formula::Symbol = :haversine  # :haversine or :vincenty
     allow_roundtrips::Bool = false
     mct_cache_enabled::Bool = true         # cache MCT lookup results during connection build
+    mct_serial_ascending::Bool = true      # tiebreaker: true = lower serial wins (earlier record), false = higher serial wins (later record)
 end
 
 # ── JSON3 field extraction helpers ────────────────────────────────────────────
