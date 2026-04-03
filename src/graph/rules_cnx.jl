@@ -222,14 +222,18 @@ end
 # Returns
 - `::Int`: `PASS`, `FAIL_TIME_MIN`, or `FAIL_TIME_MAX`
 """
-@inline function _mct_full_lookup(
-    r::MCTRule, ctx, stn_code, mct_status, from_rec, to_rec,
+# Low-level MCT lookup with explicit carrier arguments. Called by the
+# codeshare resolution layer with different carrier combinations.
+@inline function _mct_direct_lookup(
+    r::MCTRule, ctx,
+    arr_carrier::AirlineCode, dep_carrier::AirlineCode,
+    stn_code, mct_status, from_rec, to_rec,
     arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare,
     prv_stn_rec, nxt_stn_rec,
 )::MCTResult
     lookup_mct(
         r.lookup,
-        from_rec.carrier, to_rec.carrier,
+        arr_carrier, dep_carrier,
         stn_code, stn_code, mct_status;
         arr_body = from_rec.body_type,
         dep_body = to_rec.body_type,
@@ -255,16 +259,71 @@ end
     )
 end
 
+# Codeshare-aware MCT resolution. Per SSIM Ch. 8 (p. 398): "A marketing (Y)
+# flight MCT will override an operating MCT." For codeshare flights, two
+# lookups are performed:
+#
+# 1. Marketing lookup: use marketing carriers with codeshare flags set —
+#    finds codeshare-specific MCTs (records with cs_ind=Y)
+# 2. Operating lookup: use operating carriers without codeshare flags —
+#    finds operating carrier MCTs
+#
+# The result with higher specificity wins. At equal specificity, the marketing
+# result takes precedence (codeshare MCTs override operating MCTs).
+#
+# For non-codeshare connections, a single lookup is performed (no overhead).
+@inline function _mct_codeshare_resolve(
+    r::MCTRule, ctx, stn_code, mct_status, from_rec, to_rec,
+    arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare,
+    prv_stn_rec, nxt_stn_rec,
+)::MCTResult
+    # ── Primary lookup: marketing carriers with codeshare context ────────
+    marketing_result = _mct_direct_lookup(
+        r, ctx,
+        from_rec.carrier, to_rec.carrier,
+        stn_code, mct_status, from_rec, to_rec,
+        arr_op_carrier, dep_op_carrier,
+        arr_is_codeshare, dep_is_codeshare,
+        prv_stn_rec, nxt_stn_rec,
+    )
+
+    # If neither leg is a codeshare, no second lookup needed
+    (!arr_is_codeshare && !dep_is_codeshare) && return marketing_result
+
+    # ── Secondary lookup: operating carriers without codeshare flags ─────
+    # Substitute operating carrier for marketing carrier on codeshare sides
+    op_arr_carrier = arr_is_codeshare ? arr_op_carrier : from_rec.carrier
+    op_dep_carrier = dep_is_codeshare ? dep_op_carrier : to_rec.carrier
+
+    operating_result = _mct_direct_lookup(
+        r, ctx,
+        op_arr_carrier, op_dep_carrier,
+        stn_code, mct_status, from_rec, to_rec,
+        NO_AIRLINE, NO_AIRLINE,  # no codeshare context for operating lookup
+        false, false,            # not codeshare from operating carrier's perspective
+        prv_stn_rec, nxt_stn_rec,
+    )
+
+    # ── Pick the best result ────────────────────────────────────────────
+    # Higher specificity wins. At equal specificity, marketing result takes
+    # precedence per SSIM Ch. 8: "A marketing (Y) flight MCT will override
+    # an operating MCT."
+    if operating_result.specificity > marketing_result.specificity
+        return operating_result
+    end
+    return marketing_result
+end
+
 @inline function _mct_lookup_cached(
     r::MCTRule, ctx, stn_code, mct_status, from_rec, to_rec,
     arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare,
     prv_stn_rec, nxt_stn_rec,
 )::MCTResult
     if !ctx.config.mct_cache_enabled
-        return _mct_full_lookup(r, ctx, stn_code, mct_status, from_rec, to_rec,
-                                arr_op_carrier, dep_op_carrier,
-                                arr_is_codeshare, dep_is_codeshare,
-                                prv_stn_rec, nxt_stn_rec)
+        return _mct_codeshare_resolve(r, ctx, stn_code, mct_status, from_rec, to_rec,
+                                      arr_op_carrier, dep_op_carrier,
+                                      arr_is_codeshare, dep_is_codeshare,
+                                      prv_stn_rec, nxt_stn_rec)
     end
 
     cache_key = MCTCacheKey(
@@ -288,10 +347,10 @@ end
         return cached
     end
 
-    result = _mct_full_lookup(r, ctx, stn_code, mct_status, from_rec, to_rec,
-                              arr_op_carrier, dep_op_carrier,
-                              arr_is_codeshare, dep_is_codeshare,
-                              prv_stn_rec, nxt_stn_rec)
+    result = _mct_codeshare_resolve(r, ctx, stn_code, mct_status, from_rec, to_rec,
+                                    arr_op_carrier, dep_op_carrier,
+                                    arr_is_codeshare, dep_is_codeshare,
+                                    prv_stn_rec, nxt_stn_rec)
     if cached === nothing
         ctx.mct_cache[cache_key] = result
     end

@@ -593,24 +593,60 @@ A passenger connects from UA 100 (arriving from LHR on a 777W, terminal 5) to AA
 
 **Step 0:** Look up `(StationCode("ORD"), StationCode("ORD"))` in `lookup.stations`. Found — proceed.
 
-**Pass 1 (Exceptions):** Scan DD records in descending specificity:
-- Record A: `arr_carrier=UA, dep_carrier=AA, arr_term=5, dep_term=3, time=45min` — specificity bits: 28 (dep carrier) + 25 (arr carrier) + 21 (dep term) + 20 (arr term) = high score. All fields match. **Return 45 min, SOURCE_EXCEPTION.**
+**Pass 1 (Exceptions & Suppressions):** Scan DD records in descending `(specificity, record_serial)`:
+- Record A: `arr_carrier=UA, dep_carrier=AA, arr_term=5, dep_term=3, time=45min` — specificity bits: 28 (dep carrier) + 25 (arr carrier) + 21 (dep term) + 20 (arr term) = high score. Not suppressed. All fields match. **Return 45 min, SOURCE_EXCEPTION.**
 
-If Record A had `dep_term=7` instead (mismatch), the cascade would continue to the next record — perhaps one with only carriers specified (lower specificity).
+If Record A had `dep_term=7` instead (mismatch), the cascade would continue to the next record — perhaps a suppression with carrier + codeshare specificity, or an exception with only carriers specified (lower specificity). Suppressions and exceptions compete in the same pass.
 
-If no exceptions matched:
+If no exceptions or suppressions matched:
 
-**Pass 2 (Suppressions):** Check for any suppression records blocking UA-AA at ORD DD. None found.
+**Pass 1b (Global Suppressions):** Check blank-station suppression records. None found for UA-AA DD.
 
-**Pass 3 (Station Standard):** Return ORD's published DD station standard (e.g., 75 min, SOURCE_STATION_STANDARD).
+**Pass 2 (Station Standard):** Return ORD's published DD station standard (e.g., 75 min, SOURCE_STATION_STANDARD).
 
 If ORD had no station standard:
 
-**Pass 4 (Global Default):** Return 60 min (DD global default), SOURCE_GLOBAL_DEFAULT.
+**Pass 3 (Global Default):** Return 60 min (DD global default), SOURCE_GLOBAL_DEFAULT.
 
 ---
 
-## Codeshare Example (from SSIM Ch. 8, p. 398)
+## Codeshare Resolution
+
+**Source:** `src/graph/rules_cnx.jl` — `_mct_codeshare_resolve`
+
+For codeshare flights, the MCT lookup needs to consider both the marketing carrier (with codeshare indicators) and the operating carrier (without). Per SSIM Ch. 8 (p. 398): *"A marketing (Y) flight MCT will override an operating MCT"* and *"A marketing MCT is not necessary unless the marketing Carrier wants a longer MCT than the Codeshare Operating Carrier."*
+
+The `MCTRule` callable in the connection builder performs codeshare-aware resolution:
+
+1. **Marketing lookup**: Use marketing carriers with codeshare flags set. This finds codeshare-specific MCTs — records with `cs_ind=Y` and optionally `cs_op_carrier` specified.
+2. **Operating lookup** (only if either leg is a codeshare): Use operating carriers without codeshare flags. This finds records filed for the operating carrier directly.
+3. **Pick the best**: The result with higher specificity wins. At equal specificity, the marketing result takes precedence.
+
+```julia
+# Primary: marketing carriers with codeshare context
+marketing_result = _mct_direct_lookup(r, ctx,
+    from_rec.carrier, to_rec.carrier,    # marketing carriers
+    ..., arr_op_carrier, dep_op_carrier,
+    arr_is_codeshare, dep_is_codeshare, ...)
+
+# Secondary: operating carriers without codeshare context
+op_arr = arr_is_codeshare ? arr_op_carrier : from_rec.carrier
+op_dep = dep_is_codeshare ? dep_op_carrier : to_rec.carrier
+operating_result = _mct_direct_lookup(r, ctx,
+    op_arr, op_dep,                      # operating carriers
+    ..., NO_AIRLINE, NO_AIRLINE,
+    false, false, ...)
+
+# Higher specificity wins; marketing preferred at equal specificity
+if operating_result.specificity > marketing_result.specificity
+    return operating_result
+end
+return marketing_result
+```
+
+For non-codeshare connections, only the marketing lookup is performed — no overhead.
+
+### Codeshare Example (from SSIM Ch. 8, p. 398)
 
 Flights available at MIA:
 - BA0207: LHR-MIA, 1040-1500
@@ -625,10 +661,12 @@ MCT records filed at MIA (ID status):
 | AA | Y | BA | AA | 0140 (MCT 1) |
 | BA | | | AA | 0130 (MCT 2) |
 
-Per the hierarchy, MCT 1 has higher specificity (has codeshare indicator + operating carrier bits set). The result:
+**BA0207 → AA2718** (BA is the operating carrier, not a codeshare):
+- Single lookup with `arr_carrier=BA`: MCT 2 matches. **Use 130 min.**
 
-- **BA0207 → AA2718:** Arriving carrier is BA (marketing). No codeshare indicator in the MCT matches BA directly. MCT 2 matches (`arr_carrier=BA, dep_carrier=AA`). **Use MCT 2 = 130 min.**
-- **AA6160 → AA2720:** Arriving carrier is AA (marketing), but it's a codeshare (`arr_is_codeshare=true`, operating carrier is BA via DEI 50). MCT 1 matches (`arr_carrier=AA, arr_cs_ind=Y, arr_cs_op=BA`). **Use MCT 1 = 140 min.**
-- **AA6160 → AA2718:** MCT 1 applies (140 min). 1500 + 140 = 1720 > 1635. Connection does not build — insufficient time.
+**AA6160 → AA2720** (AA is the marketing carrier, codeshare of BA):
+- Marketing lookup with `arr_carrier=AA, arr_is_codeshare=true, arr_op_carrier=BA`: MCT 1 matches (codeshare Y + operating carrier BA). Specificity includes cs_ind + cs_op + carrier bits.
+- Operating lookup with `arr_carrier=BA, arr_is_codeshare=false`: MCT 2 matches. Lower specificity (carrier only, no codeshare bits).
+- MCT 1 wins (higher specificity). **Use 140 min.**
 
-This implements the Chapter 8 rule: *"A marketing (Y) flight MCT will override an operating MCT"* and *"A marketing MCT is not necessary unless the marketing Carrier wants a longer MCT than the Codeshare Operating Carrier."*
+**AA6160 → AA2718:** MCT 1 applies (140 min). 1500 + 140 = 1720 > 1635. **Connection does not build** — insufficient time.
