@@ -397,26 +397,86 @@ using Dates
             @test check_cnx_suppcodes(cp, ctx) == PASS
         end
 
-        @testset "passes when TRC has no 'A' at leg_seq" begin
-            # leg_sequence_number=1, trc[1]='B' — 'B' is a traffic restriction but not 'A'
-            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="B", leg_sequence_number=UInt8(1))
-            cp = _test_connection(from_rec=from_rec)
-            @test check_cnx_suppcodes(cp, ctx) == PASS
+        @testset "passes for informational codes (Z, J, P, R, S, U)" begin
+            for code in ["Z", "J", "P", "R", "S", "U"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                cp = _test_connection(from_rec=from_rec)
+                @test check_cnx_suppcodes(cp, ctx) == PASS
+            end
         end
 
-        @testset "fails when from_leg TRC has 'A' at leg_seq" begin
-            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
-            cp = _test_connection(from_rec=from_rec)
-            @test check_cnx_suppcodes(cp, ctx) == FAIL_SUPPCODE
+        @testset "passes for K and V (any connection allowed)" begin
+            for code in ["K", "V"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                cp = _test_connection(from_rec=from_rec)
+                @test check_cnx_suppcodes(cp, ctx) == PASS
+            end
         end
 
-        @testset "fails when to_leg TRC has 'A' at leg_seq" begin
+        @testset "fails for unconditional block codes (A, H, I, B, M, T)" begin
+            for code in ["A", "H", "I", "B", "M", "T"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                cp = _test_connection(from_rec=from_rec)
+                @test check_cnx_suppcodes(cp, ctx) == FAIL_SUPPCODE
+            end
+        end
+
+        @testset "fails when to_leg TRC has unconditional block code" begin
             to_rec = _test_leg_record(departure_station="ORD", arrival_station="LHR", traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
             cp = _test_connection(to_rec=to_rec)
             @test check_cnx_suppcodes(cp, ctx) == FAIL_SUPPCODE
         end
 
-        @testset "passes when 'A' is at different leg_seq position" begin
+        @testset "C (domestic only) — passes for domestic, fails for international" begin
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="C", leg_sequence_number=UInt8(1))
+            dom_status  = StatusBits(DOW_MON)
+            intl_status = StatusBits(DOW_MON | STATUS_INTERNATIONAL)
+            cp_dom  = _test_connection(from_rec=from_rec, status=dom_status)
+            cp_intl = _test_connection(from_rec=from_rec, status=intl_status)
+            @test check_cnx_suppcodes(cp_dom,  ctx) == PASS
+            @test check_cnx_suppcodes(cp_intl, ctx) == FAIL_SUPPCODE
+        end
+
+        @testset "N and W (international only) — passes for international, fails for domestic" begin
+            for code in ["N", "W"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                dom_status  = StatusBits(DOW_MON)
+                intl_status = StatusBits(DOW_MON | STATUS_INTERNATIONAL)
+                cp_dom  = _test_connection(from_rec=from_rec, status=dom_status)
+                cp_intl = _test_connection(from_rec=from_rec, status=intl_status)
+                @test check_cnx_suppcodes(cp_dom,  ctx) == FAIL_SUPPCODE
+                @test check_cnx_suppcodes(cp_intl, ctx) == PASS
+            end
+        end
+
+        @testset "F, Y, E, G, X (online only) — passes for online, fails for interline" begin
+            for code in ["F", "Y", "E", "G", "X"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                online_status   = StatusBits(DOW_MON)
+                interline_status = StatusBits(DOW_MON | STATUS_INTERLINE)
+                cp_online    = _test_connection(from_rec=from_rec, status=online_status)
+                cp_interline = _test_connection(from_rec=from_rec, status=interline_status)
+                @test check_cnx_suppcodes(cp_online,    ctx) == PASS
+                @test check_cnx_suppcodes(cp_interline, ctx) == FAIL_SUPPCODE
+            end
+        end
+
+        @testset "D, O, Q (international online only) — fails if domestic or interline" begin
+            for code in ["D", "O", "Q"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                # domestic online — fails (not international)
+                cp_dom_online = _test_connection(from_rec=from_rec, status=StatusBits(DOW_MON))
+                @test check_cnx_suppcodes(cp_dom_online, ctx) == FAIL_SUPPCODE
+                # international interline — fails (interline)
+                cp_intl_interline = _test_connection(from_rec=from_rec, status=StatusBits(DOW_MON | STATUS_INTERNATIONAL | STATUS_INTERLINE))
+                @test check_cnx_suppcodes(cp_intl_interline, ctx) == FAIL_SUPPCODE
+                # international online — passes
+                cp_intl_online = _test_connection(from_rec=from_rec, status=StatusBits(DOW_MON | STATUS_INTERNATIONAL))
+                @test check_cnx_suppcodes(cp_intl_online, ctx) == PASS
+            end
+        end
+
+        @testset "passes when blocking code is at a different leg_seq position" begin
             # traffic_restriction_for_leg = "XA" but leg_sequence_number=1 => trc[1]='X' => no suppression
             from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="XA", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)
@@ -569,38 +629,27 @@ using Dates
             @test check_cnx_trfrest(cp, ctx) == PASS
         end
 
-        @testset "passes for non-blocked TRC code" begin
-            # 'E' is not in the blocked set
-            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="E", leg_sequence_number=UInt8(1))
-            cp = _test_connection(from_rec=from_rec)
-            @test check_cnx_trfrest(cp, ctx) == PASS
+        @testset "passes for non-'A' TRC codes (B, C, D, E, F handled by suppcodes)" begin
+            for code in ["B", "C", "D", "E", "F"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                cp = _test_connection(from_rec=from_rec)
+                @test check_cnx_trfrest(cp, ctx) == PASS
+            end
         end
 
-        @testset "fails for blocked TRC code 'A' on from_leg" begin
+        @testset "fails for TRC code 'A' on from_leg" begin
             from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)
             @test check_cnx_trfrest(cp, ctx) == FAIL_TRFREST
         end
 
-        @testset "fails for blocked TRC code 'B' on from_leg" begin
-            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="B", leg_sequence_number=UInt8(1))
-            cp = _test_connection(from_rec=from_rec)
-            @test check_cnx_trfrest(cp, ctx) == FAIL_TRFREST
-        end
-
-        @testset "fails for blocked TRC code 'C' on to_leg" begin
-            to_rec = _test_leg_record(departure_station="ORD", arrival_station="LHR", traffic_restriction_for_leg="C", leg_sequence_number=UInt8(1))
+        @testset "fails for TRC code 'A' on to_leg" begin
+            to_rec = _test_leg_record(departure_station="ORD", arrival_station="LHR", traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
             cp = _test_connection(to_rec=to_rec)
             @test check_cnx_trfrest(cp, ctx) == FAIL_TRFREST
         end
 
-        @testset "fails for blocked TRC code 'D' on to_leg" begin
-            to_rec = _test_leg_record(departure_station="ORD", arrival_station="LHR", traffic_restriction_for_leg="D", leg_sequence_number=UInt8(1))
-            cp = _test_connection(to_rec=to_rec)
-            @test check_cnx_trfrest(cp, ctx) == FAIL_TRFREST
-        end
-
-        @testset "passes when blocked code is at a different leg_seq position" begin
+        @testset "passes when 'A' is at a different leg_seq position" begin
             # traffic_restriction_for_leg="XA" but leg_sequence_number=1 => trc[1]='X' => no block
             from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="XA", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)

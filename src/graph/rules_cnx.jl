@@ -637,14 +637,26 @@ end
 ---
 
 # Description
-- Checks the TRC (Traffic Restriction Code) field at `leg_seq` position for both
-  legs in the connection
-- Returns `FAIL_SUPPCODE` if either leg carries a code 'A' (no local traffic) at
-  its leg sequence position
-- TRC is stored as `InlineString15`; the `leg_seq` field (1-based) indexes into it
+- Checks the TRC (Traffic Restriction Code) field for both legs and applies the
+  full SSIM Appendix G connection-level suppression logic
+- Uses `_get_trc` to extract the character at `leg_sequence_number` position;
+  returns `' '` for empty/missing TRC fields
+- Delegates per-code logic to `_trc_blocks_connection`, which covers all codes
+  defined in SSIM Appendix G:
+
+  | Codes          | Behavior                                       |
+  |----------------|------------------------------------------------|
+  | A, H, I, B, M, T | No connections at all — always FAIL         |
+  | C              | Domestic connections only — FAIL if international |
+  | N, W           | International only — FAIL if not international |
+  | F, Y, E, G, X  | Online only — FAIL if interline               |
+  | D, O, Q        | International online only — FAIL if not international OR interline |
+  | K, V           | Any connection allowed — PASS                 |
+  | blank, Z, J, P, R, S, U | Informational/ignored — PASS         |
 
 # Arguments
-1. `cp::GraphConnection`: the connection to evaluate
+1. `cp::GraphConnection`: the connection to evaluate; `cp.status` is read for
+   `STATUS_INTERNATIONAL` and `STATUS_INTERLINE` bits
 2. `ctx`: runtime context (no fields accessed by this rule)
 
 # Returns
@@ -652,23 +664,26 @@ end
 """
 function check_cnx_suppcodes(cp::GraphConnection, ctx)::Int
     from_leg = cp.from_leg::GraphLeg
-    to_leg_r = cp.to_leg::GraphLeg
-    from_trc = from_leg.record.traffic_restriction_for_leg
-    to_trc = to_leg_r.record.traffic_restriction_for_leg
+    to_leg = cp.to_leg::GraphLeg
+    from_leg === to_leg && return PASS  # nonstop self-connection
 
-    from_seq = Int(from_leg.record.leg_sequence_number)
-    if from_seq > 0 && from_seq <= length(from_trc)
-        ch = from_trc[from_seq]
-        ch == 'A' && return FAIL_SUPPCODE
-    end
+    from_trc = _get_trc(from_leg.record)
+    to_trc = _get_trc(to_leg.record)
 
-    to_seq = Int(to_leg_r.record.leg_sequence_number)
-    if to_seq > 0 && to_seq <= length(to_trc)
-        ch = to_trc[to_seq]
-        ch == 'A' && return FAIL_SUPPCODE
-    end
+    _trc_blocks_connection(from_trc, cp) && return FAIL_SUPPCODE
+    _trc_blocks_connection(to_trc, cp) && return FAIL_SUPPCODE
 
     return PASS
+end
+
+@inline function _trc_blocks_connection(ch::Char, cp::GraphConnection)::Bool
+    ch == ' ' && return false
+    (ch == 'A' || ch == 'H' || ch == 'I' || ch == 'B' || ch == 'M' || ch == 'T') && return true
+    ch == 'C' && return is_international(cp.status)
+    (ch == 'N' || ch == 'W') && return !is_international(cp.status)
+    (ch == 'F' || ch == 'Y' || ch == 'E' || ch == 'G' || ch == 'X') && return is_interline(cp.status)
+    (ch == 'D' || ch == 'O' || ch == 'Q') && return !is_international(cp.status) || is_interline(cp.status)
+    return false
 end
 
 # ── Rule 7: MAFTRule (callable struct) ────────────────────────────────────────
@@ -936,10 +951,12 @@ end
 ---
 
 # Description
-- Checks the TRC field for both legs for IATA traffic restriction codes that
-  block connecting traffic
-- Codes 'A', 'B', 'C', 'D' are considered blocking; see `_is_trc_blocked`
-- Checks the TRC character at position `leg_seq` for each leg
+- Checks the TRC field for both legs for code 'A', which unconditionally
+  prohibits all connecting traffic regardless of connection geography or carrier
+- Uses `_get_trc` to extract the character at `leg_sequence_number` position;
+  returns `' '` for empty/missing TRC fields
+- Broader SSIM Appendix G connection suppression (codes B, C, D, F, H, etc.)
+  is handled by `check_cnx_suppcodes` (rule 6)
 
 # Arguments
 1. `cp::GraphConnection`: the connection to evaluate
@@ -951,29 +968,15 @@ end
 function check_cnx_trfrest(cp::GraphConnection, ctx)::Int
     from_l = cp.from_leg::GraphLeg
     to_l = cp.to_leg::GraphLeg
-    from_trc = from_l.record.traffic_restriction_for_leg
-    from_seq = Int(from_l.record.leg_sequence_number)
-    if from_seq > 0 && from_seq <= length(from_trc)
-        _is_trc_blocked(from_trc[from_seq]) && return FAIL_TRFREST
-    end
+    from_l === to_l && return PASS
 
-    to_trc = to_l.record.traffic_restriction_for_leg
-    to_seq = Int(to_l.record.leg_sequence_number)
-    if to_seq > 0 && to_seq <= length(to_trc)
-        _is_trc_blocked(to_trc[to_seq]) && return FAIL_TRFREST
-    end
+    from_trc = _get_trc(from_l.record)
+    from_trc == 'A' && return FAIL_TRFREST
+
+    to_trc = _get_trc(to_l.record)
+    to_trc == 'A' && return FAIL_TRFREST
 
     return PASS
-end
-
-"""
-    `function _is_trc_blocked(ch::Char)::Bool`
-
-Returns `true` for IATA TRC codes that block local or connecting traffic.
-Codes A–D are the primary suppression codes in SSIM8.
-"""
-function _is_trc_blocked(ch::Char)::Bool
-    ch == 'A' || ch == 'B' || ch == 'C' || ch == 'D'
 end
 
 # ── Rule chain assembly ────────────────────────────────────────────────────────
