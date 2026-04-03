@@ -101,6 +101,10 @@ the reference — no locking, no mutation.
     distance_formula::Symbol = :haversine  # :haversine or :vincenty
     allow_roundtrips::Bool = false
     mct_cache_enabled::Bool = true         # cache MCT lookup results during connection build
+    mct_serial_ascending::Bool = true      # tiebreaker: true = lower serial wins (earlier record), false = higher serial wins (later record)
+    mct_codeshare_mode::Symbol = :both     # :both = marketing+operating (default), :marketing = marketing only, :operating = operating only
+    mct_schengen_mode::Symbol = :sch_then_eur  # :sch_then_eur (default), :eur_then_sch, :sch_only, :eur_only
+    mct_suppressions_enabled::Bool = true    # false = ignore all suppression records in MCT lookup
 end
 
 # ── JSON3 field extraction helpers ────────────────────────────────────────────

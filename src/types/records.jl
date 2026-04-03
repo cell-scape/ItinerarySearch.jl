@@ -164,20 +164,75 @@ end
 
 flight_id(k::LegKey) = "$(k.carrier)$(lpad(k.flight_number, 4))"
 
+# ── ConnectionRef ────────────────────────────────────────────────────────────
+
+"""
+    struct ConnectionRef
+
+Compact reference to an MCT-evaluated connection between two legs at a station.
+Carries the MCT result, connection time, and traffic status for audit and output.
+One `ConnectionRef` per intermediate stop in an itinerary (nonstops have none).
+
+# Fields
+- `station::StationCode` — connect-point airport
+- `cnx_time::Minutes` — actual available connection time (minutes)
+- `mct_time::Minutes` — selected MCT (minutes, 0 if suppressed)
+- `mct_source::MCTSource` — SOURCE_EXCEPTION, SOURCE_STATION_STANDARD, or SOURCE_GLOBAL_DEFAULT
+- `mct_status::MCTStatus` — DD, DI, ID, or II
+- `mct_id::Int32` — primary key of the matched MCT record (0 = global default)
+- `mct_specificity::UInt32` — specificity score of the matched record
+- `mct_matched_fields::UInt32` — bitmask of fields that matched
+- `suppressed::Bool` — true if this connection was MCT-suppressed
+- `is_through::Bool` — true if same flight (through-service), MCT not applicable
+"""
+@kwdef struct ConnectionRef
+    station::StationCode        = StationCode("")
+    cnx_time::Minutes           = Minutes(0)
+    mct_time::Minutes           = Minutes(0)
+    mct_source::MCTSource       = SOURCE_GLOBAL_DEFAULT
+    mct_status::MCTStatus       = MCT_DD
+    mct_id::Int32               = Int32(0)
+    mct_specificity::UInt32     = UInt32(0)
+    mct_matched_fields::UInt32  = UInt32(0)
+    suppressed::Bool            = false
+    is_through::Bool            = false
+end
+
+"""
+    `mct_source_label(source::MCTSource, suppressed::Bool)::String`
+
+Human-readable label for the MCT source type.
+"""
+function mct_source_label(source::MCTSource, suppressed::Bool)::String
+    if suppressed
+        return "suppression"
+    elseif source == SOURCE_EXCEPTION
+        return "exception"
+    elseif source == SOURCE_STATION_STANDARD
+        return "station_standard"
+    else
+        return "global_default"
+    end
+end
+
+mct_source_label(cr::ConnectionRef) = mct_source_label(cr.mct_source, cr.suppressed)
+
 # ── ItineraryRef ─────────────────────────────────────────────────────────────
 
 """
     struct ItineraryRef
 
-Lightweight itinerary reference containing a sequence of `LegKey` references
-and numeric summary fields. Decoupled from the graph — suitable for serialization,
-cross-system handoff, and reaccommodation candidate lists.
+Lightweight itinerary reference containing a sequence of `LegKey` references,
+`ConnectionRef` references for each intermediate stop, and numeric summary fields.
+Decoupled from the graph — suitable for serialization, cross-system handoff, and
+reaccommodation candidate lists.
 
 Display strings (flights, route) are computed on demand via `Base.show` and
 helper accessors, not stored — keeps allocations minimal.
 
 # Fields
 - `legs::Vector{LegKey}` — ordered leg references
+- `connections::Vector{ConnectionRef}` — MCT info for each intermediate connection (length = num_stops)
 - `num_stops::Int` — number of intermediate stops (0 = nonstop)
 - `elapsed_minutes::Int32` — total elapsed time (minutes, UTC)
 - `flight_minutes::Int32` — total in-flight block time (minutes, UTC)
@@ -187,6 +242,7 @@ helper accessors, not stored — keeps allocations minimal.
 """
 @kwdef struct ItineraryRef
     legs::Vector{LegKey} = LegKey[]
+    connections::Vector{ConnectionRef} = ConnectionRef[]
     num_stops::Int = 0
     elapsed_minutes::Int32 = Int32(0)
     flight_minutes::Int32 = Int32(0)

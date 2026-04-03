@@ -174,6 +174,39 @@ end
 
 # ── Rule 4: MCTRule (callable struct) ─────────────────────────────────────────
 
+const _SCH = InlineString3("SCH")
+const _EUR = InlineString3("EUR")
+
+# Determine fallback region for Schengen/Europe based on mode.
+# Returns nothing when no fallback applies.
+@inline function _sch_eur_fallback(region::InlineString3, mode::Symbol)::Union{InlineString3, Nothing}
+    if region == _SCH
+        mode === :sch_then_eur && return _EUR
+        mode === :eur_then_sch && return nothing  # SCH is the fallback, not primary
+        return nothing  # :sch_only or :eur_only — no fallback
+    elseif region == _EUR
+        mode === :eur_then_sch && return _SCH
+        mode === :sch_then_eur && return nothing  # EUR is the fallback, not primary
+        return nothing
+    end
+    return nothing  # not SCH/EUR
+end
+
+# Determine primary region for Schengen/Europe based on mode.
+# Swaps the region when mode says the other should be tried first.
+@inline function _sch_eur_primary(region::InlineString3, mode::Symbol)::InlineString3
+    if region == _SCH
+        mode === :eur_then_sch && return _EUR  # prefer EUR, SCH is fallback
+        mode === :eur_only && return _EUR       # force EUR
+        return region  # :sch_then_eur or :sch_only — keep SCH
+    elseif region == _EUR
+        mode === :sch_then_eur && return _SCH  # prefer SCH, EUR is fallback
+        mode === :sch_only && return _SCH       # force SCH
+        return region  # :eur_then_sch or :eur_only — keep EUR
+    end
+    return region  # not SCH/EUR
+end
+
 """
     `struct MCTRule`
 ---
@@ -222,14 +255,22 @@ end
 # Returns
 - `::Int`: `PASS`, `FAIL_TIME_MIN`, or `FAIL_TIME_MAX`
 """
-@inline function _mct_full_lookup(
-    r::MCTRule, ctx, stn_code, mct_status, from_rec, to_rec,
+# Low-level MCT lookup with explicit carrier, flight number, and region arguments.
+# Called by the codeshare and Schengen resolution layers with different
+# parameter combinations.
+@inline function _mct_direct_lookup(
+    r::MCTRule, ctx,
+    arr_carrier::AirlineCode, dep_carrier::AirlineCode,
+    arr_flt_no::FlightNumber, dep_flt_no::FlightNumber,
+    stn_code, mct_status, from_rec, to_rec,
     arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare,
-    prv_stn_rec, nxt_stn_rec,
+    prv_stn_rec, nxt_stn_rec;
+    prv_region::InlineString3 = prv_stn_rec.region,
+    nxt_region::InlineString3 = nxt_stn_rec.region,
 )::MCTResult
     lookup_mct(
         r.lookup,
-        from_rec.carrier, to_rec.carrier,
+        arr_carrier, dep_carrier,
         stn_code, stn_code, mct_status;
         arr_body = from_rec.body_type,
         dep_body = to_rec.body_type,
@@ -243,28 +284,110 @@ end
         dep_is_codeshare = dep_is_codeshare,
         arr_acft_type = from_rec.aircraft_type,
         dep_acft_type = to_rec.aircraft_type,
-        arr_flt_no = from_rec.flight_number,
-        dep_flt_no = to_rec.flight_number,
+        arr_flt_no = arr_flt_no,
+        dep_flt_no = dep_flt_no,
         prv_country = prv_stn_rec.country,
         nxt_country = nxt_stn_rec.country,
         prv_state = prv_stn_rec.state,
         nxt_state = nxt_stn_rec.state,
-        prv_region = prv_stn_rec.region,
-        nxt_region = nxt_stn_rec.region,
+        prv_region = prv_region,
+        nxt_region = nxt_region,
         target_date = ctx.target_date,
     )
+end
+
+# Codeshare-aware MCT resolution. Per SSIM Ch. 8 (p. 398): "A marketing (Y)
+# flight MCT will override an operating MCT." For codeshare flights, two
+# lookups are performed:
+#
+# 1. Marketing lookup: use marketing carriers with codeshare flags set —
+#    finds codeshare-specific MCTs (records with cs_ind=Y)
+# 2. Operating lookup: use operating carriers without codeshare flags —
+#    finds operating carrier MCTs
+#
+# The result with higher specificity wins. At equal specificity, the marketing
+# result takes precedence (codeshare MCTs override operating MCTs).
+#
+# For non-codeshare connections, a single lookup is performed (no overhead).
+@inline function _mct_codeshare_resolve(
+    r::MCTRule, ctx, stn_code, mct_status, from_rec, to_rec,
+    arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare,
+    prv_stn_rec, nxt_stn_rec;
+    prv_region::InlineString3 = prv_stn_rec.region,
+    nxt_region::InlineString3 = nxt_stn_rec.region,
+)::MCTResult
+    mode = ctx.config.mct_codeshare_mode  # :both, :marketing, or :operating
+
+    # ── Operating carrier + flight number for codeshare sides ────────────
+    op_arr_carrier = arr_is_codeshare ? arr_op_carrier : from_rec.carrier
+    op_dep_carrier = dep_is_codeshare ? dep_op_carrier : to_rec.carrier
+    op_arr_flt = arr_is_codeshare ? from_rec.operating_flight_number : from_rec.flight_number
+    op_dep_flt = dep_is_codeshare ? to_rec.operating_flight_number : to_rec.flight_number
+
+    # ── Mode: operating only ─────────────────────────────────────────────
+    if mode === :operating
+        return _mct_direct_lookup(
+            r, ctx,
+            op_arr_carrier, op_dep_carrier,
+            op_arr_flt, op_dep_flt,
+            stn_code, mct_status, from_rec, to_rec,
+            NO_AIRLINE, NO_AIRLINE,
+            false, false,
+            prv_stn_rec, nxt_stn_rec;
+            prv_region = prv_region, nxt_region = nxt_region,
+        )
+    end
+
+    # ── Marketing lookup: marketing carriers + flight numbers + codeshare context
+    marketing_result = _mct_direct_lookup(
+        r, ctx,
+        from_rec.carrier, to_rec.carrier,
+        from_rec.flight_number, to_rec.flight_number,
+        stn_code, mct_status, from_rec, to_rec,
+        arr_op_carrier, dep_op_carrier,
+        arr_is_codeshare, dep_is_codeshare,
+        prv_stn_rec, nxt_stn_rec;
+        prv_region = prv_region, nxt_region = nxt_region,
+    )
+
+    # Mode: marketing only — skip operating lookup
+    mode === :marketing && return marketing_result
+
+    # If neither leg is a codeshare, no second lookup needed
+    (!arr_is_codeshare && !dep_is_codeshare) && return marketing_result
+
+    # ── Operating lookup: operating carriers + flight numbers, no codeshare flags
+    operating_result = _mct_direct_lookup(
+        r, ctx,
+        op_arr_carrier, op_dep_carrier,
+        op_arr_flt, op_dep_flt,
+        stn_code, mct_status, from_rec, to_rec,
+        NO_AIRLINE, NO_AIRLINE,
+        false, false,
+        prv_stn_rec, nxt_stn_rec;
+        prv_region = prv_region, nxt_region = nxt_region,
+    )
+
+    # Higher specificity wins; marketing preferred at equal specificity
+    if operating_result.specificity > marketing_result.specificity
+        return operating_result
+    end
+    return marketing_result
 end
 
 @inline function _mct_lookup_cached(
     r::MCTRule, ctx, stn_code, mct_status, from_rec, to_rec,
     arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare,
-    prv_stn_rec, nxt_stn_rec,
+    prv_stn_rec, nxt_stn_rec;
+    prv_region::InlineString3 = prv_stn_rec.region,
+    nxt_region::InlineString3 = nxt_stn_rec.region,
 )::MCTResult
     if !ctx.config.mct_cache_enabled
-        return _mct_full_lookup(r, ctx, stn_code, mct_status, from_rec, to_rec,
-                                arr_op_carrier, dep_op_carrier,
-                                arr_is_codeshare, dep_is_codeshare,
-                                prv_stn_rec, nxt_stn_rec)
+        return _mct_codeshare_resolve(r, ctx, stn_code, mct_status, from_rec, to_rec,
+                                      arr_op_carrier, dep_op_carrier,
+                                      arr_is_codeshare, dep_is_codeshare,
+                                      prv_stn_rec, nxt_stn_rec;
+                                      prv_region = prv_region, nxt_region = nxt_region)
     end
 
     cache_key = MCTCacheKey(
@@ -278,7 +401,7 @@ end
         from_rec.aircraft_type, to_rec.aircraft_type,
         prv_stn_rec.country, nxt_stn_rec.country,
         prv_stn_rec.state, nxt_stn_rec.state,
-        prv_stn_rec.region, nxt_stn_rec.region,
+        prv_region, nxt_region,
     )
 
     cached = get(ctx.mct_cache, cache_key, nothing)
@@ -288,10 +411,11 @@ end
         return cached
     end
 
-    result = _mct_full_lookup(r, ctx, stn_code, mct_status, from_rec, to_rec,
-                              arr_op_carrier, dep_op_carrier,
-                              arr_is_codeshare, dep_is_codeshare,
-                              prv_stn_rec, nxt_stn_rec)
+    result = _mct_codeshare_resolve(r, ctx, stn_code, mct_status, from_rec, to_rec,
+                                    arr_op_carrier, dep_op_carrier,
+                                    arr_is_codeshare, dep_is_codeshare,
+                                    prv_stn_rec, nxt_stn_rec;
+                                    prv_region = prv_region, nxt_region = nxt_region)
     if cached === nothing
         ctx.mct_cache[cache_key] = result
     end
@@ -339,13 +463,38 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
     # Cascade lookup — same station for both arr and dep (intra-station connection)
     stn_code = (cp.station::GraphStation).code
 
-    # MCT cache: look up by SSIM8 key (excluding flight numbers and date which
-    # vary per-leg but rarely affect the result). Revalidate on hit if the cached
-    # record used flight-number ranges or date validity.
+    # ── Schengen/Europe region resolution ────────────────────────────────
+    # Determine primary region codes based on mct_schengen_mode. For SCH/EUR
+    # regions, the mode controls priority; non-SCH/EUR regions pass through.
+    sch_mode = ctx.config.mct_schengen_mode
+    prv_rgn = _sch_eur_primary(prv_stn_rec.region, sch_mode)
+    nxt_rgn = _sch_eur_primary(nxt_stn_rec.region, sch_mode)
+
     result = _mct_lookup_cached(r, ctx, stn_code, mct_status, from_rec, to_rec,
                                 arr_op_carrier, dep_op_carrier,
                                 arr_is_codeshare, dep_is_codeshare,
-                                prv_stn_rec, nxt_stn_rec)
+                                prv_stn_rec, nxt_stn_rec;
+                                prv_region = prv_rgn, nxt_region = nxt_rgn)
+
+    # Schengen fallback: if a fallback region exists and the primary lookup
+    # didn't match on region bits, retry with the fallback region
+    prv_fb = _sch_eur_fallback(prv_stn_rec.region, sch_mode)
+    nxt_fb = _sch_eur_fallback(nxt_stn_rec.region, sch_mode)
+    if prv_fb !== nothing || nxt_fb !== nothing
+        region_bits = MCT_BIT_PRV_REGION | MCT_BIT_NXT_REGION
+        if (result.matched_fields & region_bits) == 0
+            fb_prv = prv_fb !== nothing ? prv_fb : prv_rgn
+            fb_nxt = nxt_fb !== nothing ? nxt_fb : nxt_rgn
+            fb_result = _mct_lookup_cached(r, ctx, stn_code, mct_status, from_rec, to_rec,
+                                           arr_op_carrier, dep_op_carrier,
+                                           arr_is_codeshare, dep_is_codeshare,
+                                           prv_stn_rec, nxt_stn_rec;
+                                           prv_region = fb_prv, nxt_region = fb_nxt)
+            if fb_result.specificity > result.specificity
+                result = fb_result
+            end
+        end
+    end
 
     cp.mct_result = result
     cp.mct = result.time

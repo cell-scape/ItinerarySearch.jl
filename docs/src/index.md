@@ -75,5 +75,6 @@ close(store)
 
 - [Architecture](architecture.md) — system overview, data pipeline, and type hierarchy
 - [Getting Started](getting-started.md) — end-to-end tutorial with all major features
+- [MCT Lookup](mct-lookup.md) — SSIM Chapter 8 cascade implementation walkthrough
 - [API Reference](api/types.md) — complete function and type documentation
 - [Itinerary Leg Index](leg-index.md) — compact leg index output format reference

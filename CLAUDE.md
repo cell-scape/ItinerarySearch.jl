@@ -77,9 +77,11 @@ The main module `ItinerarySearch` (`src/ItinerarySearch.jl`) uses standard `incl
 - `Cabin` — CEnum for booking class (F/C/Y etc.)
 - `LegRecord` — Flight leg struct with 41 fields using canonical names: `carrier`, `flight_number`, `departure_station`, `arrival_station`, `passenger_departure_time`, `passenger_arrival_time`, `aircraft_type`, `distance`, etc.
 - `GraphStation` — Airport node with departures/arrivals/connections vectors
-- `GraphConnection` — Connection between two legs with MCT, status bitmask
+- `GraphConnection` — Connection between two legs with MCT, status bitmask, `MCTResult`
 - `Itinerary` — Sequence of GraphConnections
-- `SearchConfig` — JSON-deserialized search parameters
+- `ConnectionRef` — Compact MCT audit reference (station, cnx_time, mct_time, mct_source, mct_status, mct_id)
+- `ItineraryRef` — Serializable itinerary with `legs::Vector{LegKey}` and `connections::Vector{ConnectionRef}`
+- `SearchConfig` — JSON-deserialized search parameters (includes `mct_codeshare_mode`, `mct_schengen_mode`, `mct_serial_ascending`, `mct_suppressions_enabled`)
 
 ### Data Pipeline
 

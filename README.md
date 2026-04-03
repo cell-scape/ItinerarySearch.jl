@@ -209,6 +209,10 @@ See [docs/src/architecture.md](docs/src/architecture.md) for the full Mermaid di
 | `interline` | `INTERLINE_CODESHARE` | `INTERLINE_ONLINE`, `INTERLINE_CODESHARE`, or `INTERLINE_ALL` |
 | `distance_formula` | `:haversine` | `:haversine` or `:vincenty` |
 | `mct_cache_enabled` | `true` | Cache MCT lookup results during connection build |
+| `mct_serial_ascending` | `true` | MCT tiebreaker: `true` = earlier record wins; `false` = later record wins |
+| `mct_codeshare_mode` | `:both` | `:both`, `:marketing`, or `:operating` carrier lookup |
+| `mct_schengen_mode` | `:sch_then_eur` | SCH/EUR region priority: `:sch_then_eur`, `:eur_then_sch`, `:sch_only`, `:eur_only` |
+| `mct_suppressions_enabled` | `true` | Include MCT suppression records (`false` = ignore) |
 | `log_level` | `:info` | Log level (`:debug`, `:info`, `:warn`, `:error`) |
 | `log_json_path` | `""` | DynaTrace-compatible JSON log file (empty = disabled) |
 | `event_log_enabled` | `false` | Structured event log with JSONL sink |
