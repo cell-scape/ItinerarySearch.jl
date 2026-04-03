@@ -225,6 +225,7 @@ function mct_inspect(
     lookup::MCTLookup;
     misconnect::String = "",
     airports::Dict{StationCode,StationRecord} = Dict{StationCode,StationRecord}(),
+    acft_body::Dict{String,Char} = Dict{String,Char}(),
     io_in::IO = stdin,
     io_out::IO = stdout,
 )
@@ -233,7 +234,7 @@ function mct_inspect(
         df = CSV.read(misconnect, DataFrame; stringtype=String)
         for row in eachrow(df)
             try
-                push!(connections, parse_misconnect_row(row))
+                push!(connections, parse_misconnect_row(row; acft_body))
             catch e
                 println(io_out, "  Warning: skipping row $(row.rcrd_loc): $e")
             end

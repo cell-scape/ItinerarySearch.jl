@@ -15,7 +15,7 @@
 
 using ItinerarySearch
 import ItinerarySearch: materialize_mct_lookup, DuckDBStore, ingest_mct!,
-    load_airports!, StationRecord
+    load_airports!, load_aircrafts!, StationRecord
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 
@@ -23,6 +23,7 @@ function parse_args()
     misconnect_path = ""
     mct_path = ""
     airports_path = ""
+    aircrafts_path = ""
     replay = false
     detailed = false
 
@@ -34,6 +35,9 @@ function parse_args()
             i += 2
         elseif arg == "--airports" && i < length(ARGS)
             airports_path = ARGS[i + 1]
+            i += 2
+        elseif arg == "--aircrafts" && i < length(ARGS)
+            aircrafts_path = ARGS[i + 1]
             i += 2
         elseif arg == "--replay"
             replay = true
@@ -50,20 +54,16 @@ function parse_args()
     end
 
     # Defaults
-    if isempty(mct_path)
-        dir = pkgdir(ItinerarySearch)
-        mct_path = dir !== nothing ?
-            joinpath(dir, "data", "input", "MCTIMFILUA.DAT") :
-            "data/input/MCTIMFILUA.DAT"
-    end
-    if isempty(airports_path)
-        dir = pkgdir(ItinerarySearch)
-        airports_path = dir !== nothing ?
-            joinpath(dir, "data", "input", "mdstua.txt") :
-            "data/input/mdstua.txt"
-    end
+    dir = pkgdir(ItinerarySearch)
+    _default(filename) = dir !== nothing ?
+        joinpath(dir, "data", "input", filename) :
+        joinpath("data", "input", filename)
 
-    return (; misconnect_path, mct_path, airports_path, replay, detailed)
+    isempty(mct_path) && (mct_path = _default("MCTIMFILUA.DAT"))
+    isempty(airports_path) && (airports_path = _default("mdstua.txt"))
+    isempty(aircrafts_path) && (aircrafts_path = _default("aircraft.txt"))
+
+    return (; misconnect_path, mct_path, airports_path, aircrafts_path, replay, detailed)
 end
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -90,10 +90,11 @@ function main()
     println("  Misconnect: $(args.misconnect_path)")
     println("  MCT file:   $(args.mct_path)")
     println("  Airports:   $(args.airports_path)")
+    println("  Aircrafts:  $(args.aircrafts_path)")
     println()
 
     # Load MCT lookup
-    println("Loading MCT data...")
+    println("Loading data...")
     store = DuckDBStore()
     ingest_mct!(store, args.mct_path)
 
@@ -119,6 +120,20 @@ function main()
         println("  Loaded $(length(airports)) airports")
     end
 
+    # Load aircrafts for body type resolution
+    acft_body = Dict{String,Char}()
+    if isfile(args.aircrafts_path)
+        load_aircrafts!(store, args.aircrafts_path)
+        result = DBInterface.execute(store.db, "SELECT code, body_type FROM aircrafts")
+        for r in result
+            code = strip(string(r.code))
+            bt = strip(string(something(r.body_type, "")))
+            isempty(code) && continue
+            acft_body[code] = isempty(bt) ? 'N' : (bt[1] == 'W' ? 'W' : 'N')
+        end
+        println("  Loaded $(length(acft_body)) aircraft body types")
+    end
+
     lookup = materialize_mct_lookup(store)
     close(store)
     println("  MCT lookup ready")
@@ -133,14 +148,15 @@ function main()
         mkpath(dirname(outpath))
         io = open(outpath, "w")
         replay_misconnects(args.misconnect_path, lookup;
-            output_io=io, detail=detail, airports=airports)
+            output_io=io, detail=detail, airports=airports, acft_body=acft_body)
         close(io)
         println("Replay written to: $outpath")
     else
         # Interactive mode
         mct_inspect(lookup;
             misconnect=args.misconnect_path,
-            airports=airports)
+            airports=airports,
+            acft_body=acft_body)
     end
 end
 

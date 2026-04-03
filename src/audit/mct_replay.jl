@@ -20,7 +20,7 @@
 # Returns
 - `NamedTuple` with all fields needed for `lookup_mct_traced` plus comparison fields
 """
-function parse_misconnect_row(row)
+function parse_misconnect_row(row; acft_body::Dict{String,Char} = Dict{String,Char}())
     _s(val) = ismissing(val) ? "" : string(val)
     _c(val) = begin
         s = strip(_s(val))
@@ -77,15 +77,17 @@ function parse_misconnect_row(row)
     arr_term = InlineString3(arr_term_str)
     dep_term = InlineString3(dep_term_str)
 
-    # Body type — first char
-    arr_body = _c(row.inbound_aircraft_bodytype)
-    dep_body = _c(row.outbound_aircraft_bodytype)
-
     # Aircraft type
     arr_acft_str = strip(_s(row.inbound_aircraft_type))
     dep_acft_str = strip(_s(row.outbound_aircraft_type))
     arr_acft_type = InlineString7(arr_acft_str)
     dep_acft_type = InlineString7(dep_acft_str)
+
+    # Body type — prefer aircrafts table lookup, fall back to CSV, normalize non-W to N
+    arr_body = get(acft_body, arr_acft_str, _c(row.inbound_aircraft_bodytype))
+    dep_body = get(acft_body, dep_acft_str, _c(row.outbound_aircraft_bodytype))
+    arr_body = arr_body == 'W' ? 'W' : (arr_body == ' ' ? ' ' : 'N')
+    dep_body = dep_body == 'W' ? 'W' : (dep_body == ' ' ? ' ' : 'N')
 
     # Flight numbers
     arr_flt_no = _flt(row.inbound_flight_number)
@@ -191,9 +193,10 @@ function replay_misconnects(
     output_io::IO = stdout,
     detail::Symbol = :summary,
     airports::Dict{StationCode,StationRecord} = Dict{StationCode,StationRecord}(),
+    acft_body::Dict{String,Char} = Dict{String,Char}(),
 )::Nothing
     df = CSV.read(path, DataFrames.DataFrame; stringtype=String)
-    _replay_dataframe(df, lookup; output_io, detail, airports)
+    _replay_dataframe(df, lookup; output_io, detail, airports, acft_body)
     return nothing
 end
 
@@ -241,13 +244,14 @@ function _replay_dataframe(
     output_io::IO = stdout,
     detail::Symbol = :summary,
     airports::Dict{StationCode,StationRecord} = Dict{StationCode,StationRecord}(),
+    acft_body::Dict{String,Char} = Dict{String,Char}(),
 )
     if detail == :summary
         println(output_io, join(_REPLAY_COLUMNS, ","))
     end
 
     for row in eachrow(df)
-        parsed = parse_misconnect_row(row)
+        parsed = parse_misconnect_row(row; acft_body)
 
         # Resolve region from airports dict
         prv_region = InlineStrings.InlineString3("")
