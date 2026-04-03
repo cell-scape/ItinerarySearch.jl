@@ -97,8 +97,8 @@ end
   acceptable ratio of the great-circle origin-to-destination distance
 - Skips the check when the itinerary has no connections or the market distance
   is zero (no coordinates available)
-- Uses `ctx.constraints.defaults.itinerary_circuity` as the maximum allowed
-  ratio and `ctx.constraints.defaults.circuity_extra_miles` as a flat tolerance
+- Uses `ctx.constraints.defaults.max_circuity` as the maximum allowed
+  ratio and `ctx.constraints.defaults.domestic_circuity_extra_miles` as a flat tolerance
 
 # Arguments
 1. `itn::Itinerary`: the itinerary to evaluate; accesses `itn.total_distance`
@@ -111,8 +111,8 @@ end
 function check_itn_circuity(itn::Itinerary, ctx)::Int
     isempty(itn.connections) && return PASS
     itn.market_distance <= Distance(0) && return PASS
-    factor = ctx.constraints.defaults.itinerary_circuity
-    extra = ctx.constraints.defaults.circuity_extra_miles
+    factor = ctx.constraints.defaults.max_circuity
+    extra = ctx.constraints.defaults.domestic_circuity_extra_miles
     return Float64(itn.total_distance) <= factor * Float64(itn.market_distance) + extra ? PASS : FAIL_ITN_CIRCUITY
 end
 

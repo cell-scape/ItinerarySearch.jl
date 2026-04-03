@@ -710,7 +710,7 @@ using Dates
         # Verify CircuityRule picks up defaults from constraints
         rule9 = rules[9]::CircuityRule
         @test rule9.factor == constraints.defaults.circuity_factor
-        @test rule9.extra_miles == constraints.defaults.circuity_extra_miles
+        @test rule9.extra_miles == constraints.defaults.domestic_circuity_extra_miles
     end
 
     # ── Allocation regression test ────────────────────────────────────────────

@@ -378,7 +378,7 @@ end
             trailing_days = 0,
             interline = INTERLINE_ALL,
             max_stops = 2,
-            circuity_extra_miles = 50_000.0,  # suppress circuity for zero-coord test stations
+            circuity_extra_miles = 50_000.0,   # suppress circuity for zero-coord test stations
         )
 
         store = DuckDBStore()
@@ -388,7 +388,7 @@ end
 
         # Use large extra_miles to suppress circuity rejection with synthetic zero-coord stations
         constraints = SearchConstraints(
-            defaults = ParameterSet(circuity_extra_miles=50_000.0),
+            defaults = ParameterSet(domestic_circuity_extra_miles=50_000.0),
         )
         ctx = RuntimeContext(
             config = config,

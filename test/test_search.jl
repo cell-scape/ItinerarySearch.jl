@@ -104,8 +104,8 @@ using Dates
         ps = ParameterSet(
             max_stops=Int16(max_stops),
             circuity_factor=5.0,
-            circuity_extra_miles=50_000.0,
-            itinerary_circuity=5.0,
+            domestic_circuity_extra_miles=50_000.0,
+            max_circuity=5.0,
         )
         sc = constraints === nothing ? SearchConstraints(defaults=ps) : constraints
         RuntimeContext(
@@ -195,8 +195,8 @@ using Dates
             defaults=ParameterSet(
                 max_stops=Int16(2),
                 circuity_factor=5.0,
-                circuity_extra_miles=50_000.0,
-                itinerary_circuity=5.0,
+                domestic_circuity_extra_miles=50_000.0,
+                max_circuity=5.0,
             )
         )
         cnx_ctx = (
@@ -528,8 +528,8 @@ using Dates
             defaults=ParameterSet(
                 max_stops=Int16(0),
                 circuity_factor=5.0,
-                circuity_extra_miles=50_000.0,
-                itinerary_circuity=5.0,
+                domestic_circuity_extra_miles=50_000.0,
+                max_circuity=5.0,
             ),
         )
         cnx_ctx = (
@@ -693,8 +693,8 @@ using Dates
             defaults=ParameterSet(
                 max_stops=Int16(3),
                 circuity_factor=50.0,
-                circuity_extra_miles=500_000.0,
-                itinerary_circuity=50.0,
+                domestic_circuity_extra_miles=500_000.0,
+                max_circuity=50.0,
             ),
         )
         cnx_ctx = (
@@ -816,8 +816,8 @@ using Dates
             max_stops=Int16(2),
             max_elapsed=Int32(480),              # tight: 8h max elapsed
             circuity_factor=5.0,
-            circuity_extra_miles=50_000.0,
-            itinerary_circuity=10.0,             # generous: don't prune on circuity
+            domestic_circuity_extra_miles=50_000.0,
+            max_circuity=10.0,                   # generous: don't prune on circuity
         )
         ctx_tight = RuntimeContext(
             config=SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL),
@@ -841,8 +841,8 @@ using Dates
             max_stops=Int16(2),
             max_elapsed=Int32(1440),             # default 24h
             circuity_factor=5.0,
-            circuity_extra_miles=50_000.0,
-            itinerary_circuity=10.0,
+            domestic_circuity_extra_miles=50_000.0,
+            max_circuity=10.0,
         )
         ctx_loose = RuntimeContext(
             config=SearchConfig(scope=SCOPE_ALL, interline=INTERLINE_ALL),
@@ -871,7 +871,7 @@ using Dates
         # candidate_dist = 800 + 999_999 = 1,000,799 mi
         # candidate_circ = 1_000_799 / ~3451 ≈ 290 >> 2.5 → pruned
         #
-        # With itinerary_circuity=2.5 the 1-stop should be pruned.
+        # With max_circuity=2.5 the 1-stop should be pruned.
         # Nonstop (JFK→LHR distance=3451) has circuity ≈ 1.0 → survives.
 
         jfk_stn = GraphStation(
@@ -920,8 +920,8 @@ using Dates
                 max_stops=Int16(2),
                 max_elapsed=Int32(99_999),       # generous: don't prune on elapsed
                 circuity_factor=5.0,
-                circuity_extra_miles=50_000.0,
-                itinerary_circuity=2.5,          # tight circuity threshold
+                domestic_circuity_extra_miles=50_000.0,
+                max_circuity=2.5,                # tight circuity threshold
             )
         )
         cnx_ctx = (

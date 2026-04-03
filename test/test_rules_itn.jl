@@ -226,7 +226,7 @@ using Dates
         end
 
         @testset "passes when total_distance <= factor * market_distance + extra" begin
-            # ParameterSet defaults: itinerary_circuity=2.5, circuity_extra_miles=500
+            # ParameterSet defaults: max_circuity=2.5, domestic_circuity_extra_miles=500
             # 1000 <= 2.5 * 1000 + 500 = 3000 => PASS
             itn = _nonstop_itn(total_distance=Distance(1000.0f0), market_distance=Distance(1000.0f0))
             @test check_itn_circuity(itn, ctx) == PASS
@@ -241,9 +241,9 @@ using Dates
             @test check_itn_circuity(itn, ctx) == FAIL_ITN_CIRCUITY
         end
 
-        @testset "uses constraints.defaults.itinerary_circuity" begin
+        @testset "uses constraints.defaults.max_circuity" begin
             # Use a tight factor of 1.0 with no extra miles
-            tight = SearchConstraints(defaults=ParameterSet(itinerary_circuity=1.0, circuity_extra_miles=0.0))
+            tight = SearchConstraints(defaults=ParameterSet(max_circuity=1.0, domestic_circuity_extra_miles=0.0))
             ctx_tight = _mock_ctx(constraints=tight)
             # total=2000, market=1000 => 2000 > 1.0 * 1000 + 0 => FAIL
             itn = _nonstop_itn(total_distance=Distance(2000.0f0), market_distance=Distance(1000.0f0))

@@ -1004,7 +1004,7 @@ function build_cnx_rules(
         MAFTRule(),
         CircuityRule(
             constraints.defaults.circuity_factor,
-            constraints.defaults.circuity_extra_miles,
+            constraints.defaults.domestic_circuity_extra_miles,
         ),
         check_cnx_trfrest,
     )
