@@ -180,6 +180,7 @@ match.  Fields not present in `specified` are wildcards and always match.
     suppressed::Bool   = false
     station_standard::Bool = false
     specificity::UInt32 = UInt32(0)    # pre-sorted descending
+    record_serial::UInt32 = UInt32(0)  # SSIM file serial — tiebreaker at equal specificity
     mct_id::Int32 = Int32(0)           # PK from mct table (0 = unknown/default)
 end
 
@@ -533,12 +534,15 @@ function lookup_mct(
 
     records = lookup.stations[key][status_idx]
 
-    # ── Pass 1: exceptions (non-standard, non-suppressed) ────────────────────
+    # ── Pass 1: exceptions and suppressions (unified by specificity) ────────
     # Records are pre-sorted by descending specificity so the first match is
-    # the most specific one.
+    # the most specific one. Suppressions participate in the same ranking as
+    # exceptions per SSIM Ch. 8 Section 8.6 — the suppression indicator is
+    # listed as "#" (not part of the hierarchy), meaning it is an attribute
+    # of the record, not a separate tier.
+    _empty = InlineString3("")
     for rec in records
-        rec.station_standard && continue   # skip standard records in this pass
-        rec.suppressed && continue         # skip suppression records in this pass
+        rec.station_standard && continue   # skip standard records — handled in Pass 2
         # Date validity — skip records outside their effective window
         if rec.eff_date != UInt32(0) && target_date != UInt32(0)
             (target_date < rec.eff_date || target_date > rec.dis_date) && continue
@@ -554,6 +558,30 @@ function lookup_mct(
             prv_state, nxt_state,
             prv_region, nxt_region,
         ) || continue
+
+        if rec.suppressed
+            # Suppression geography scope — only suppress if connection is in scope
+            if rec.supp_region != _empty
+                rec.supp_region != prv_region && rec.supp_region != nxt_region && continue
+            end
+            if rec.supp_country != _empty
+                rec.supp_country != prv_country && rec.supp_country != nxt_country && continue
+            end
+            if rec.supp_state != _empty
+                rec.supp_state != prv_state && rec.supp_state != nxt_state && continue
+            end
+            return MCTResult(
+                time           = Minutes(0),
+                queried_status = status,
+                matched_status = status,
+                suppressed     = true,
+                source         = SOURCE_EXCEPTION,
+                specificity    = rec.specificity,
+                mct_id         = rec.mct_id,
+                matched_fields = rec.specified,
+            )
+        end
+
         return MCTResult(
             time           = rec.time,
             queried_status = status,
@@ -566,49 +594,7 @@ function lookup_mct(
         )
     end
 
-    # ── Pass 2: suppressions ─────────────────────────────────────────────────
-    for rec in records
-        rec.suppressed || continue
-        # Date validity — skip records outside their effective window
-        if rec.eff_date != UInt32(0) && target_date != UInt32(0)
-            (target_date < rec.eff_date || target_date > rec.dis_date) && continue
-        end
-        _mct_record_matches(
-            rec, arr_carrier, dep_carrier, arr_body, dep_body,
-            prv_stn, nxt_stn, arr_term, dep_term,
-            prv_country, nxt_country,
-            arr_op_carrier, dep_op_carrier,
-            arr_is_codeshare, dep_is_codeshare,
-            arr_acft_type, dep_acft_type,
-            arr_flt_no, dep_flt_no,
-            prv_state, nxt_state,
-            prv_region, nxt_region,
-        ) || continue
-        # Suppression geography scope — only suppress if connection matches scope
-        # Direct InlineString comparison — no String allocation
-        _empty = InlineString3("")
-        if rec.supp_region != _empty
-            rec.supp_region != prv_region && rec.supp_region != nxt_region && continue
-        end
-        if rec.supp_country != _empty
-            rec.supp_country != prv_country && rec.supp_country != nxt_country && continue
-        end
-        if rec.supp_state != _empty
-            rec.supp_state != prv_state && rec.supp_state != nxt_state && continue
-        end
-        return MCTResult(
-            time           = Minutes(0),
-            queried_status = status,
-            matched_status = status,
-            suppressed     = true,
-            source         = SOURCE_EXCEPTION,
-            specificity    = rec.specificity,
-            mct_id         = rec.mct_id,
-            matched_fields = rec.specified,
-        )
-    end
-
-    # ── Pass 3: station standard ──────────────────────────────────────────────
+    # ── Pass 2: station standard ──────────────────────────────────────────────
     for rec in records
         rec.station_standard || continue
         # Date validity — skip records outside their effective window
@@ -628,7 +614,7 @@ function lookup_mct(
         )
     end
 
-    # ── Pass 4: global default ────────────────────────────────────────────────
+    # ── Pass 3: global default ────────────────────────────────────────────────
     default_time = arr_station == dep_station ?
         lookup.global_defaults[status_idx] :
         lookup.inter_station_default
@@ -754,6 +740,7 @@ function _build_mct_record(r)::Tuple{Tuple{StationCode,StationCode}, MCTStatus, 
     !isempty(nxt_state_str)   && (sp |= MCT_BIT_NXT_STATE)
 
     mct_id_val = Int32(_safe_missing(r.mct_id, 0))
+    serial_val = UInt32(_safe_missing(r.record_serial, 0))
 
     # Compute specificity from bitmask and eff_date directly — avoids double MCTRecord construction
     spec = _compute_specificity(sp, eff_packed)
@@ -793,6 +780,7 @@ function _build_mct_record(r)::Tuple{Tuple{StationCode,StationCode}, MCTStatus, 
         suppressed     = Bool(_safe_missing(r.suppress, false)),
         station_standard = Bool(_safe_missing(r.station_standard, false)),
         specificity    = spec,
+        record_serial  = serial_val,
         mct_id         = mct_id_val,
     )
 
@@ -853,7 +841,7 @@ function materialize_mct_lookup(
     quoted = join(["'" * String(s) * "'" for s in active_stations], ", ")
     sql = """
         SELECT
-            mct_id,
+            mct_id, record_serial,
             arr_stn, dep_stn, mct_status, time_minutes, suppress, station_standard,
             arr_carrier, dep_carrier,
             arr_acft_body, dep_acft_body,
@@ -898,10 +886,13 @@ function materialize_mct_lookup(
         push!(staging[station_key][status_idx], rec)
     end
 
-    # Sort each vector by descending specificity for first-match-wins lookup
+    # Sort each vector by descending specificity for first-match-wins lookup.
+    # At equal specificity, later serial numbers win per SSIM Ch. 8 Section 8.5.2:
+    # "whenever new data is received, the information contained supersedes
+    # previously received data."
     for (_, vecs) in staging
         for vec in vecs
-            sort!(vec; by = r -> r.specificity, rev = true)
+            sort!(vec; by = r -> (r.specificity, r.record_serial), rev = true)
         end
     end
 
