@@ -2,6 +2,7 @@ using Test
 using ItinerarySearch
 using InlineStrings
 using Dates
+using JSON3
 
 # Internal symbols used by test files — not part of the public API
 import ItinerarySearch:
@@ -67,6 +68,8 @@ import ItinerarySearch:
     decode_matched_fields,
     # MCT audit trace types
     EMPTY_MCT_RESULT, MCTCandidateTrace, MCTTrace, MCTAuditConfig,
+    # MCT audit log
+    MCTAuditLog, open_audit_log, write_audit_entry!, close_audit_log,
     # Connection rules
     check_cnx_roundtrip, check_cnx_backtrack, check_cnx_scope, check_cnx_interline,
     check_cnx_opdays, check_cnx_suppcodes, check_cnx_trfrest,
@@ -513,6 +516,53 @@ include("test_helpers.jl")
         @test occursin("ARR_CARRIER", decoded)
         @test occursin("NXT_REGION", decoded)
         @test count(==(','), decoded) == 11  # 12 fields, 11 commas
+    end
+
+    @testset "MCT Audit Log Writer" begin
+        # Summary mode to IOBuffer
+        buf = IOBuffer()
+        log = open_audit_log(buf, MCTAuditConfig(enabled=true, detail=:summary))
+
+        trace = MCTTrace(
+            arr_carrier = AirlineCode("UA"),
+            dep_carrier = AirlineCode("AA"),
+            arr_station = StationCode("ORD"),
+            dep_station = StationCode("ORD"),
+            status = MCT_DD,
+            candidates = MCTCandidateTrace[],
+            result = MCTResult(
+                time = Minutes(60), queried_status = MCT_DD, matched_status = MCT_DD,
+                suppressed = false, source = SOURCE_STATION_STANDARD,
+                specificity = UInt32(0), mct_id = Int32(50), matched_fields = UInt32(0),
+            ),
+        )
+        write_audit_entry!(log, trace; cnx_time=Minutes(75))
+        close_audit_log(log)
+
+        output = String(take!(buf))
+        lines = split(strip(output), '\n')
+        @test length(lines) == 2  # header + 1 data row
+        @test startswith(lines[1], "arr_carrier")
+        @test occursin("UA", lines[2])
+        @test occursin("station_standard", lines[2])
+
+        # Detailed mode (JSONL)
+        buf2 = IOBuffer()
+        log2 = open_audit_log(buf2, MCTAuditConfig(enabled=true, detail=:detailed))
+        write_audit_entry!(log2, trace; cnx_time=Minutes(75))
+        close_audit_log(log2)
+
+        output2 = String(take!(buf2))
+        obj = JSON3.read(strip(output2))
+        @test obj.mct_time == 60
+        @test obj.mct_source == "station_standard"
+
+        # max_connections limit
+        buf3 = IOBuffer()
+        log3 = open_audit_log(buf3, MCTAuditConfig(enabled=true, detail=:summary, max_connections=1))
+        write_audit_entry!(log3, trace; cnx_time=Minutes(75))
+        @test write_audit_entry!(log3, trace; cnx_time=Minutes(80)) == false  # over limit
+        close_audit_log(log3)
     end
 
     @testset "lookup_mct_traced" begin
