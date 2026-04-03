@@ -59,6 +59,12 @@ function parse_misconnect_row(row)
     arr_station = isempty(arr_station_str) ? NO_STATION : StationCode(arr_station_str)
     dep_station = isempty(dep_station_str) ? NO_STATION : StationCode(dep_station_str)
 
+    # Origin/destination stations (prv_stn = origin of arriving flight, nxt_stn = destination of departing flight)
+    prv_stn_str = strip(_s(row.inbound_departure_station))
+    nxt_stn_str = strip(_s(row.outbound_arrival_station))
+    prv_stn = isempty(prv_stn_str) ? NO_STATION : StationCode(prv_stn_str)
+    nxt_stn = isempty(nxt_stn_str) ? NO_STATION : StationCode(nxt_stn_str)
+
     # Carriers
     arr_carrier_str = strip(_s(row.inbound_carrier))
     dep_carrier_str = strip(_s(row.outbound_carrier))
@@ -130,6 +136,7 @@ function parse_misconnect_row(row)
         rcrd_loc,
         arr_carrier, dep_carrier,
         arr_station, dep_station,
+        prv_stn, nxt_stn,
         status,
         arr_term, dep_term,
         arr_body, dep_body,
@@ -252,6 +259,8 @@ function _replay_dataframe(
             dep_term = parsed.dep_term,
             arr_acft_type = parsed.arr_acft_type,
             dep_acft_type = parsed.dep_acft_type,
+            prv_stn = parsed.prv_stn,
+            nxt_stn = parsed.nxt_stn,
             arr_flt_no = parsed.arr_flt_no,
             dep_flt_no = parsed.dep_flt_no,
             arr_op_carrier = parsed.arr_op_carrier,
@@ -300,7 +309,7 @@ function _replay_dataframe(
                 string(our_mct_id),
                 our_source,
                 our_specificity,
-                our_matched_fields,
+                "\"" * our_matched_fields * "\"",
                 string(time_match),
                 string(cnx_int),
                 string(isnan(parsed.their_mct_diff) ? "" : string(Int(round(parsed.their_mct_diff)))),

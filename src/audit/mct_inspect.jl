@@ -96,10 +96,13 @@ end
 function _run_trace(state::InspectorState, params::NamedTuple)::MCTTrace
     prv_region = InlineString3("")
     nxt_region = InlineString3("")
-    prv_stn = get(state.airports, params.arr_station, nothing)
-    nxt_stn = get(state.airports, params.dep_station, nothing)
-    prv_stn !== nothing && (prv_region = prv_stn.region)
-    nxt_stn !== nothing && (nxt_region = nxt_stn.region)
+    prv_stn_info = get(state.airports, params.arr_station, nothing)
+    nxt_stn_info = get(state.airports, params.dep_station, nothing)
+    prv_stn_info !== nothing && (prv_region = prv_stn_info.region)
+    nxt_stn_info !== nothing && (nxt_region = nxt_stn_info.region)
+    # Use prv_stn/nxt_stn from parsed params if available, else NO_STATION
+    prv_stn = hasproperty(params, :prv_stn) ? params.prv_stn : NO_STATION
+    nxt_stn = hasproperty(params, :nxt_stn) ? params.nxt_stn : NO_STATION
     lookup_mct_traced(
         state.lookup,
         params.arr_carrier, params.dep_carrier,
@@ -107,6 +110,8 @@ function _run_trace(state::InspectorState, params::NamedTuple)::MCTTrace
         params.status;
         arr_body = params.arr_body,
         dep_body = params.dep_body,
+        prv_stn = prv_stn,
+        nxt_stn = nxt_stn,
         arr_term = params.arr_term,
         dep_term = params.dep_term,
         arr_op_carrier = params.arr_op_carrier,

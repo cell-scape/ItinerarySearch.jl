@@ -75,7 +75,7 @@ function _write_summary_row!(log::MCTAuditLog, trace::MCTTrace, cnx_time::Minute
         _source_str(r.source),
         string(Int(r.mct_id)),
         string(r.specificity, base=16),
-        decode_matched_fields(r.matched_fields),
+        "\"" * decode_matched_fields(r.matched_fields) * "\"",
         string(r.suppressed),
         string(Int(cnx_time)),
         pass_fail,
