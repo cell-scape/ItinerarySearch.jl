@@ -52,7 +52,7 @@ include("cli.jl")
 # import ItinerarySearch: name.
 
 # Types
-export StationCode, Itinerary, Trip, TripLeg, FlightGraph
+export StationCode, Itinerary, Trip, TripLeg, FlightGraph, ConnectionRef
 
 # Config
 export SearchConfig, load_config

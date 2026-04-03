@@ -705,10 +705,25 @@ function itinerary_legs(
         push!(unique_itns, itn)
     end
 
-    # Extract LegKey sequences and wrap in ItineraryRef with metrics from the graph Itinerary
+    # Construct a ConnectionRef from a GraphConnection, copying MCT result fields.
+    _cnxref(cp::GraphConnection) = ConnectionRef(
+        station            = (cp.station::GraphStation).code,
+        cnx_time           = cp.cnx_time,
+        mct_time           = cp.mct_result.time,
+        mct_source         = cp.mct_result.source,
+        mct_status         = cp.mct_result.queried_status,
+        mct_id             = cp.mct_result.mct_id,
+        mct_specificity    = cp.mct_result.specificity,
+        mct_matched_fields = cp.mct_result.matched_fields,
+        suppressed         = cp.mct_result.suppressed,
+        is_through         = cp.is_through,
+    )
+
+    # Extract LegKey sequences and ConnectionRef data, wrap in ItineraryRef
     result = ItineraryRef[]
     for itn in unique_itns
         keys = LegKey[]
+        cnx_refs = ConnectionRef[]
         flight_mins = Int32(0)
         last_leg = nothing
         for cp in itn.connections
@@ -720,6 +735,8 @@ function itinerary_legs(
                 last_leg = from_l
             end
             if !(from_l === to_l) && to_l !== last_leg
+                # This is a real connection (not a nonstop self-connection)
+                push!(cnx_refs, _cnxref(cp))
                 push!(keys, LegKey(to_l.record))
                 flight_mins += _utc_block_time(to_l.record)
                 last_leg = to_l
@@ -732,6 +749,7 @@ function itinerary_legs(
 
         push!(result, ItineraryRef(
             legs            = keys,
+            connections     = cnx_refs,
             num_stops       = ns,
             elapsed_minutes = elapsed,
             flight_minutes  = flight_mins,
@@ -1043,10 +1061,25 @@ function _legkey_to_dict(k::LegKey)::Dict{String,Any}
     )
 end
 
+function _cnxref_to_dict(cr::ConnectionRef)::Dict{String,Any}
+    status_labels = ("DD", "DI", "ID", "II")
+    Dict{String,Any}(
+        "station"          => strip(String(cr.station)),
+        "cnx_time"         => Int(cr.cnx_time),
+        "mct_time"         => Int(cr.mct_time),
+        "mct_source"       => mct_source_label(cr),
+        "mct_status"       => status_labels[Int(cr.mct_status)],
+        "mct_id"           => Int(cr.mct_id),
+        "mct_specificity"  => Int(cr.mct_specificity),
+        "suppressed"       => cr.suppressed,
+        "is_through"       => cr.is_through,
+    )
+end
+
 function _itnref_summary_dict(itn::ItineraryRef)::Dict{String,Any}
     first_key = isempty(itn.legs) ? LegKey() : itn.legs[1]
     d = unpack_date(first_key.operating_date)
-    Dict{String,Any}(
+    result = Dict{String,Any}(
         "flights"         => flights_str(itn),
         "route"           => route_str(itn),
         "stops"           => String.(stops(itn)),
@@ -1061,6 +1094,10 @@ function _itnref_summary_dict(itn::ItineraryRef)::Dict{String,Any}
         "distance_miles"  => round(Float64(itn.distance_miles); digits=0),
         "circuity"        => round(Float64(itn.circuity); digits=2),
     )
+    if !isempty(itn.connections)
+        result["connections"] = [_cnxref_to_dict(cr) for cr in itn.connections]
+    end
+    return result
 end
 
 # ── Streaming JSON writers (avoid intermediate Dict allocations) ──────────────
@@ -1094,6 +1131,7 @@ function _write_itnref_summary_json(io::IOBuffer, itn::ItineraryRef)
     end
     first_key = isempty(itn.legs) ? LegKey() : itn.legs[1]
     d = unpack_date(first_key.operating_date)
+    status_labels = ("DD", "DI", "ID", "II")
     print(io, "],\"num_stops\":", itn.num_stops,
               ",\"origin\":\"", origin(itn), "\"",
               ",\"destination\":\"", destination(itn), "\"",
@@ -1104,6 +1142,22 @@ function _write_itnref_summary_json(io::IOBuffer, itn::ItineraryRef)
               ",\"layover_minutes\":", Int(itn.layover_minutes),
               ",\"distance_miles\":", round(Float64(itn.distance_miles); digits=0),
               ",\"circuity\":", round(Float64(itn.circuity); digits=2))
+    if !isempty(itn.connections)
+        print(io, ",\"connections\":[")
+        for (i, cr) in enumerate(itn.connections)
+            i > 1 && print(io, ",")
+            print(io, "{\"station\":\"", strip(String(cr.station)), "\"",
+                      ",\"cnx_time\":", Int(cr.cnx_time),
+                      ",\"mct_time\":", Int(cr.mct_time),
+                      ",\"mct_source\":\"", mct_source_label(cr), "\"",
+                      ",\"mct_status\":\"", status_labels[Int(cr.mct_status)], "\"",
+                      ",\"mct_id\":", Int(cr.mct_id),
+                      ",\"mct_specificity\":", Int(cr.mct_specificity),
+                      ",\"suppressed\":", cr.suppressed,
+                      ",\"is_through\":", cr.is_through, "}")
+        end
+        print(io, "]")
+    end
 end
 
 function _nested_to_json(nested::Dict{Date, Dict{String, Dict{String, Vector{ItineraryRef}}}})::String
