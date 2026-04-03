@@ -63,6 +63,8 @@ import ItinerarySearch:
     MCT_BIT_ARR_ACFT_TYPE, MCT_BIT_DEP_ACFT_TYPE,
     MCT_BIT_ARR_FLT_RNG, MCT_BIT_DEP_FLT_RNG,
     MCT_BIT_PRV_STATE, MCT_BIT_NXT_STATE,
+    # MCT bitmask decoder
+    decode_matched_fields,
     # MCT audit trace types
     EMPTY_MCT_RESULT, MCTCandidateTrace, MCTTrace, MCTAuditConfig,
     # Connection rules
@@ -439,5 +441,21 @@ include("test_helpers.jl")
         @test hasmethod(table_stats, Tuple{AbstractStore})
         @test hasmethod(query_schedule_legs, Tuple{AbstractStore, Date, Date})
         @test hasmethod(query_schedule_segments, Tuple{AbstractStore, Date, Date})
+    end
+
+    @testset "MCT Bitmask Decode" begin
+        @test decode_matched_fields(UInt32(0)) == ""
+        @test decode_matched_fields(MCT_BIT_ARR_CARRIER) == "ARR_CARRIER"
+        @test decode_matched_fields(MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER) == "ARR_CARRIER,DEP_CARRIER"
+        @test decode_matched_fields(MCT_BIT_ARR_TERM | MCT_BIT_DEP_BODY | MCT_BIT_PRV_REGION) == "ARR_TERM,PRV_REGION,DEP_BODY"
+        # All bits
+        all_bits = MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER | MCT_BIT_ARR_TERM |
+                   MCT_BIT_DEP_TERM | MCT_BIT_PRV_STN | MCT_BIT_NXT_STN |
+                   MCT_BIT_PRV_COUNTRY | MCT_BIT_NXT_COUNTRY | MCT_BIT_PRV_REGION |
+                   MCT_BIT_NXT_REGION | MCT_BIT_DEP_BODY | MCT_BIT_ARR_BODY
+        decoded = decode_matched_fields(all_bits)
+        @test occursin("ARR_CARRIER", decoded)
+        @test occursin("NXT_REGION", decoded)
+        @test count(==(','), decoded) == 11  # 12 fields, 11 commas
     end
 end
