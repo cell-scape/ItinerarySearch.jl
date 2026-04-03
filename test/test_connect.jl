@@ -90,13 +90,16 @@ using Dates
 
     # Standard mock context: empty MCT lookup falls back to global defaults
     # (DD = 60 min), so any cnx_time >= 60 passes MCTRule.
-    # Uses a generous domestic_circuity_extra_miles so tests with default-coord stations
-    # (latitude=0, longitude=0) don't fail on CircuityRule.
+    # Uses generous circuity extra miles so tests with default-coord stations
+    # (latitude=0, longitude=0) don't fail on CircuityRule for either dom or intl.
     function _mock_ctx(;
         scope=SCOPE_ALL,
         interline=INTERLINE_CODESHARE,
         constraints=SearchConstraints(
-            defaults=ParameterSet(domestic_circuity_extra_miles=50_000.0)  # generous: never circuity-fail
+            defaults=ParameterSet(
+                domestic_circuity_extra_miles=50_000.0,      # generous: never circuity-fail
+                international_circuity_extra_miles=50_000.0, # generous: never circuity-fail
+            )
         ),
         target_date=UInt32(0),
     )
@@ -113,7 +116,10 @@ using Dates
 
     # Build rules using empty MCT lookup (global defaults: DD=60, DI=90, etc.)
     # and the same generous constraints.
-    _make_rules(; constraints=SearchConstraints(defaults=ParameterSet(domestic_circuity_extra_miles=50_000.0))) =
+    _make_rules(; constraints=SearchConstraints(defaults=ParameterSet(
+        domestic_circuity_extra_miles=50_000.0,
+        international_circuity_extra_miles=50_000.0,
+    ))) =
         build_cnx_rules(SearchConfig(), constraints, MCTLookup())
 
     # ── Nonstop self-connections ───────────────────────────────────────────────

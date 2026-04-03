@@ -528,7 +528,8 @@ using Dates
         @testset "default constructor" begin
             rule = CircuityRule()
             @test rule.factor == 2.0
-            @test rule.extra_miles == 500.0
+            @test rule.domestic_extra_miles == 500.0
+            @test rule.international_extra_miles == 1000.0
         end
 
         @testset "round-trip always passes" begin
@@ -595,7 +596,7 @@ using Dates
                 station=cnx_stn,
                 status=StatusBits(DOW_MON),
             )
-            rule = CircuityRule(1.0, 0.0)   # very tight rule
+            rule = CircuityRule(1.0, 0.0, 0.0)   # very tight rule
             @test rule(cp, ctx) == FAIL_CIRCUITY
         end
 
@@ -765,7 +766,8 @@ using Dates
         # Verify CircuityRule picks up defaults from constraints
         rule9 = rules[9]::CircuityRule
         @test rule9.factor == constraints.defaults.circuity_factor
-        @test rule9.extra_miles == constraints.defaults.domestic_circuity_extra_miles
+        @test rule9.domestic_extra_miles == constraints.defaults.domestic_circuity_extra_miles
+        @test rule9.international_extra_miles == constraints.defaults.international_circuity_extra_miles
     end
 
     @testset "build_cnx_rules with maft_enabled=false omits MAFTRule" begin

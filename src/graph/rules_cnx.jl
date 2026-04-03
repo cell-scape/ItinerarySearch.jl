@@ -770,28 +770,33 @@ end
 - Callable struct implementing the circuity filter for two-leg connections
 - Rejects connections where the sum of both leg distances exceeds
   `factor × great_circle_distance(org, dst) + extra_miles`
+- Extra miles are split by international status: domestic connections use
+  `domestic_extra_miles`, international connections use `international_extra_miles`
 - Great-circle distances are cached in `ctx.gc_cache` (keyed by
-  `hash(org_code, hash(dst_code))`) to avoid repeated haversine calls
+  `(org_code, dst_code)` tuple) to avoid repeated haversine calls
 - Round-trip connections and same-origin/destination pairs always pass
 
 # Fields
 - `factor::Float64` — circuity multiplier (default 2.0)
-- `extra_miles::Float64` — flat mileage tolerance (default 500.0)
+- `domestic_extra_miles::Float64` — flat mileage tolerance for domestic routes (default 500.0)
+- `international_extra_miles::Float64` — flat mileage tolerance for international routes (default 1000.0)
 
 # Context fields accessed
-- `ctx.gc_cache::Dict{UInt64, Float64}` — cache of GC distances (mutated)
+- `ctx.gc_cache::Dict{Tuple{StationCode,StationCode}, Float64}` — cache of GC distances (mutated)
 """
 struct CircuityRule
     factor::Float64
-    extra_miles::Float64
+    domestic_extra_miles::Float64
+    international_extra_miles::Float64
 end
 
 """
     `CircuityRule()`
 
-Construct a `CircuityRule` with default factor (2.0) and extra miles (500.0).
+Construct a `CircuityRule` with default factor (2.0), domestic extra miles (500.0),
+and international extra miles (1000.0).
 """
-CircuityRule() = CircuityRule(2.0, 500.0)
+CircuityRule() = CircuityRule(2.0, 500.0, 1000.0)
 
 """
     `function (r::CircuityRule)(cp::GraphConnection, ctx)::Int`
@@ -830,8 +835,9 @@ function (r::CircuityRule)(cp::GraphConnection, ctx)::Int
         ctx.gc_cache[gc_key] = gc_dist
     end
 
+    extra = is_international(cp.status) ? r.international_extra_miles : r.domestic_extra_miles
     route_dist = Float64(from_l.distance) + Float64(to_l.distance)
-    return route_dist <= r.factor * gc_dist + r.extra_miles ? PASS : FAIL_CIRCUITY
+    return route_dist <= r.factor * gc_dist + extra ? PASS : FAIL_CIRCUITY
 end
 
 """
@@ -1030,6 +1036,7 @@ function build_cnx_rules(
         CircuityRule(
             p.circuity_factor,
             p.domestic_circuity_extra_miles,
+            p.international_circuity_extra_miles,
         ),
     )
     push!(rules, check_cnx_trfrest)

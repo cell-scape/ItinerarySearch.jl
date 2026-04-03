@@ -97,12 +97,14 @@ end
   acceptable ratio of the great-circle origin-to-destination distance
 - Skips the check when the itinerary has no connections or the market distance
   is zero (no coordinates available)
-- Uses `ctx.constraints.defaults.max_circuity` as the maximum allowed
-  ratio and `ctx.constraints.defaults.domestic_circuity_extra_miles` as a flat tolerance
+- Uses `ctx.constraints.defaults.max_circuity` as the maximum allowed ratio
+- Flat tolerance is `domestic_circuity_extra_miles` for domestic itineraries and
+  `international_circuity_extra_miles` for international itineraries, selected via
+  `itn.status`
 
 # Arguments
-1. `itn::Itinerary`: the itinerary to evaluate; accesses `itn.total_distance`
-   and `itn.market_distance`
+1. `itn::Itinerary`: the itinerary to evaluate; accesses `itn.total_distance`,
+   `itn.market_distance`, and `itn.status`
 2. `ctx`: runtime context; accesses `ctx.constraints::SearchConstraints`
 
 # Returns
@@ -111,9 +113,11 @@ end
 function check_itn_circuity(itn::Itinerary, ctx)::Int
     isempty(itn.connections) && return PASS
     itn.market_distance <= Distance(0) && return PASS
-    factor = ctx.constraints.defaults.max_circuity
-    extra = ctx.constraints.defaults.domestic_circuity_extra_miles
-    return Float64(itn.total_distance) <= factor * Float64(itn.market_distance) + extra ? PASS : FAIL_ITN_CIRCUITY
+    p = ctx.constraints.defaults
+    extra = is_international(itn.status) ?
+        p.international_circuity_extra_miles :
+        p.domestic_circuity_extra_miles
+    return Float64(itn.total_distance) <= p.max_circuity * Float64(itn.market_distance) + extra ? PASS : FAIL_ITN_CIRCUITY
 end
 
 # ── Rule 4: TRC suppression code check ────────────────────────────────────────

@@ -249,6 +249,26 @@ using Dates
             itn = _nonstop_itn(total_distance=Distance(2000.0f0), market_distance=Distance(1000.0f0))
             @test check_itn_circuity(itn, ctx_tight) == FAIL_ITN_CIRCUITY
         end
+
+        @testset "international route uses international_circuity_extra_miles" begin
+            # ParameterSet defaults: max_circuity=2.5, international_circuity_extra_miles=1000
+            # total=3400, market=1000 => 3400 <= 2.5*1000+1000=3500 => PASS
+            # total=3600, market=1000 => 3600 > 3500 => FAIL
+            ctx_intl = _mock_ctx()
+            intl_status = StatusBits(DOW_MON | STATUS_INTERNATIONAL)
+            itn_pass = _nonstop_itn(
+                status=intl_status,
+                total_distance=Distance(3400.0f0),
+                market_distance=Distance(1000.0f0),
+            )
+            @test check_itn_circuity(itn_pass, ctx_intl) == PASS
+            itn_fail = _nonstop_itn(
+                status=intl_status,
+                total_distance=Distance(3600.0f0),
+                market_distance=Distance(1000.0f0),
+            )
+            @test check_itn_circuity(itn_fail, ctx_intl) == FAIL_ITN_CIRCUITY
+        end
     end
 
     # ── Rule 4: check_itn_suppcodes ───────────────────────────────────────────
