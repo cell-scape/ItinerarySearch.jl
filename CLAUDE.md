@@ -81,7 +81,8 @@ The main module `ItinerarySearch` (`src/ItinerarySearch.jl`) uses standard `incl
 - `Itinerary` — Sequence of GraphConnections
 - `ConnectionRef` — Compact MCT audit reference (station, cnx_time, mct_time, mct_source, mct_status, mct_id)
 - `ItineraryRef` — Serializable itinerary with `legs::Vector{LegKey}` and `connections::Vector{ConnectionRef}`
-- `SearchConfig` — JSON-deserialized search parameters (includes `mct_codeshare_mode`, `mct_schengen_mode`, `mct_serial_ascending`, `mct_suppressions_enabled`)
+- `ParameterSet` — Tunable parameters for connection/itinerary validation: numeric ranges (min/max connection time, elapsed, flight time, layover, distance, circuity, stops), categorical allow/deny sets (carriers, countries, regions, stations, aircraft, service types), and circuity extra miles (domestic/international)
+- `SearchConfig` — JSON-deserialized search parameters (includes `mct_codeshare_mode`, `mct_schengen_mode`, `mct_serial_ascending`, `mct_suppressions_enabled`, `maft_enabled`, `interline_dcnx_enabled`, `crs_cnx_enabled`)
 
 ### Data Pipeline
 

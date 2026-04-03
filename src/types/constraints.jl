@@ -12,45 +12,114 @@
   `MarketOverride`; construct with `@kwdef` keyword syntax
 
 # Fields
+## Connection-level
 - `min_mct_override::Minutes` — minimum MCT to enforce; `NO_MINUTES` means use SSIM8 MCT table
 - `max_mct_override::Minutes` — maximum connection time allowed (minutes)
+- `min_connection_time::Minutes` — minimum connection time; `NO_MINUTES` means no minimum enforced
+- `max_connection_time::Minutes` — maximum connection time (minutes)
 - `circuity_factor::Float64` — maximum ratio of flown distance to market distance per leg
-- `circuity_extra_miles::Float64` — flat mileage tolerance added to circuity threshold
+- `domestic_circuity_extra_miles::Float64` — flat mileage tolerance for domestic legs
+- `international_circuity_extra_miles::Float64` — flat mileage tolerance for international legs
 - `valid_codeshare_partners::Set{Tuple{AirlineCode,AirlineCode}}` — allowed marketing/operating pairs; empty = allow all
 - `valid_jv_groups::Set{InlineString7}` — allowed joint-venture group codes; empty = allow all
 - `valid_wet_leases::Set{AirlineCode}` — allowed wet-lease operating carriers; empty = allow all
+
+## Leg-level filters
 - `min_leg_distance::Distance` — minimum leg distance (miles)
 - `max_leg_distance::Distance` — maximum leg distance (miles); `Inf32` = unlimited
+- `allow_service_types::Set{Char}` — permitted SSIM service-type codes; empty = allow all
+- `deny_service_types::Set{Char}` — rejected SSIM service-type codes; empty = deny none
+- `allow_aircraft_types::Set{InlineString7}` — permitted IATA aircraft type codes; empty = allow all
+- `deny_aircraft_types::Set{InlineString7}` — rejected IATA aircraft type codes; empty = deny none
+- `allow_body_types::Set{Char}` — permitted aircraft body-type codes; empty = allow all
+- `deny_body_types::Set{Char}` — rejected aircraft body-type codes; empty = deny none
+
+## Connection-level categorical filters
+- `allow_stations::Set{StationCode}` — permitted connect-point stations; empty = allow all
+- `deny_stations::Set{StationCode}` — rejected connect-point stations; empty = deny none
+- `allow_countries::Set{InlineString3}` — permitted connect-point ISO-2 country codes; empty = allow all
+- `deny_countries::Set{InlineString3}` — rejected connect-point ISO-2 country codes; empty = deny none
+- `allow_regions::Set{InlineString3}` — permitted connect-point IATA region codes; empty = allow all
+- `deny_regions::Set{InlineString3}` — rejected connect-point IATA region codes; empty = deny none
+- `allow_states::Set{InlineString3}` — permitted connect-point state/province codes; empty = allow all
+- `deny_states::Set{InlineString3}` — rejected connect-point state/province codes; empty = deny none
+
+## Itinerary-level
 - `min_stops::Int16` — minimum number of intermediate stops (0 = nonstop allowed)
 - `max_stops::Int16` — maximum number of intermediate stops
 - `min_elapsed::Int32` — minimum total elapsed time for the itinerary (minutes)
 - `max_elapsed::Int32` — maximum total elapsed time for the itinerary (minutes)
+- `min_flight_time::Int32` — minimum total airborne time across all legs (minutes)
+- `max_flight_time::Int32` — maximum total airborne time across all legs (minutes)
+- `min_layover_time::Int32` — minimum total layover time across all connections (minutes)
+- `max_layover_time::Int32` — maximum total layover time across all connections (minutes)
 - `min_total_distance::Distance` — minimum total flown distance (miles)
 - `max_total_distance::Distance` — maximum total flown distance (miles); `Inf32` = unlimited
-- `itinerary_circuity::Float64` — maximum ratio of total flown distance to market distance
+- `min_circuity::Float64` — minimum ratio of total flown distance to market distance
+- `max_circuity::Float64` — maximum ratio of total flown distance to market distance
+- `max_results::Int32` — stop search after this many results per O-D; `0` = unlimited
+
+## Itinerary-level carrier filters
+- `allow_carriers::Set{AirlineCode}` — permitted marketing carriers anywhere in itinerary; empty = allow all
+- `deny_carriers::Set{AirlineCode}` — rejected marketing carriers anywhere in itinerary; empty = deny none
+- `allow_operating_carriers::Set{AirlineCode}` — permitted operating carriers; empty = allow all
+- `deny_operating_carriers::Set{AirlineCode}` — rejected operating carriers; empty = deny none
 """
 @kwdef struct ParameterSet
-    # Connection-level
+    # ── Connection-level ─────────────────────────────────────────────────
     min_mct_override::Minutes = NO_MINUTES          # NO_MINUTES = use SSIM8 MCT
     max_mct_override::Minutes = Minutes(480)
+    min_connection_time::Minutes = NO_MINUTES        # NO_MINUTES = no minimum
+    max_connection_time::Minutes = Minutes(480)
     circuity_factor::Float64 = 2.0
-    circuity_extra_miles::Float64 = 500.0
-    # Forward-declared — not yet consumed by rules (planned for reaccommodation scenario engine)
+    domestic_circuity_extra_miles::Float64 = 500.0
+    international_circuity_extra_miles::Float64 = 1000.0
+
+    # Forward-declared — not yet consumed by rules
     valid_codeshare_partners::Set{Tuple{AirlineCode,AirlineCode}} = Set{Tuple{AirlineCode,AirlineCode}}()
     valid_jv_groups::Set{InlineString7} = Set{InlineString7}()
     valid_wet_leases::Set{AirlineCode} = Set{AirlineCode}()
+
+    # ── Leg-level filters ────────────────────────────────────────────────
     min_leg_distance::Distance = Distance(0.0)
     max_leg_distance::Distance = Distance(Inf32)
+    allow_service_types::Set{Char} = Set{Char}()
+    deny_service_types::Set{Char} = Set{Char}()
+    allow_aircraft_types::Set{InlineString7} = Set{InlineString7}()
+    deny_aircraft_types::Set{InlineString7} = Set{InlineString7}()
+    allow_body_types::Set{Char} = Set{Char}()
+    deny_body_types::Set{Char} = Set{Char}()
 
-    # Itinerary-level (min_stops, min_elapsed, min/max_total_distance: forward-declared, not yet enforced)
+    # ── Connection-level categorical filters ─────────────────────────────
+    allow_stations::Set{StationCode} = Set{StationCode}()
+    deny_stations::Set{StationCode} = Set{StationCode}()
+    allow_countries::Set{InlineString3} = Set{InlineString3}()
+    deny_countries::Set{InlineString3} = Set{InlineString3}()
+    allow_regions::Set{InlineString3} = Set{InlineString3}()
+    deny_regions::Set{InlineString3} = Set{InlineString3}()
+    allow_states::Set{InlineString3} = Set{InlineString3}()
+    deny_states::Set{InlineString3} = Set{InlineString3}()
+
+    # ── Itinerary-level ──────────────────────────────────────────────────
     min_stops::Int16 = Int16(0)
     max_stops::Int16 = Int16(2)
     min_elapsed::Int32 = Int32(0)
     max_elapsed::Int32 = Int32(1440)
+    min_flight_time::Int32 = Int32(0)
+    max_flight_time::Int32 = Int32(9999)
+    min_layover_time::Int32 = Int32(0)
+    max_layover_time::Int32 = Int32(9999)
     min_total_distance::Distance = Distance(0.0)
     max_total_distance::Distance = Distance(Inf32)
-    itinerary_circuity::Float64 = 2.5
-    max_results::Int32 = Int32(0)           # 0 = unlimited; stop search after N results per OD
+    min_circuity::Float64 = 0.0
+    max_circuity::Float64 = 2.5
+    max_results::Int32 = Int32(0)           # 0 = unlimited
+
+    # ── Itinerary-level carrier filters ──────────────────────────────────
+    allow_carriers::Set{AirlineCode} = Set{AirlineCode}()
+    deny_carriers::Set{AirlineCode} = Set{AirlineCode}()
+    allow_operating_carriers::Set{AirlineCode} = Set{AirlineCode}()
+    deny_operating_carriers::Set{AirlineCode} = Set{AirlineCode}()
 end
 
 """

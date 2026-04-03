@@ -66,16 +66,22 @@ import ItinerarySearch:
     # Connection rules
     check_cnx_roundtrip, check_cnx_backtrack, check_cnx_scope, check_cnx_interline,
     check_cnx_opdays, check_cnx_suppcodes, check_cnx_trfrest,
-    MCTRule, MAFTRule, CircuityRule,
+    MCTRule, MAFTRule, CircuityRule, ConnectionTimeRule, ConnectionGeoRule,
     build_cnx_rules,
     PASS, FAIL_ROUNDTRIP, FAIL_SCOPE, FAIL_ONLINE, FAIL_CODESHARE, FAIL_INTERLINE,
     FAIL_TIME_MIN, FAIL_TIME_MAX, FAIL_OPDAYS, FAIL_SUPPCODE,
-    FAIL_MAFT, FAIL_CIRCUITY, FAIL_TRFREST, FAIL_BACKTRACK,
+    FAIL_MAFT, FAIL_CIRCUITY, FAIL_TRFREST, FAIL_BACKTRACK, FAIL_GEO,
     # Itinerary rules
-    check_itn_scope, check_itn_opdays, check_itn_circuity,
+    check_itn_scope, check_itn_opdays, check_itn_circuity_range,
     check_itn_suppcodes, check_itn_maft,
+    check_itn_elapsed_range, check_itn_distance_range, check_itn_stops_range,
+    check_itn_flight_time, check_itn_layover_time,
+    check_itn_carriers, check_itn_interline_dcnx, check_itn_crs_cnx,
     FAIL_ITN_SCOPE, FAIL_ITN_OPDAYS, FAIL_ITN_CIRCUITY,
     FAIL_ITN_SUPPCODE, FAIL_ITN_MAFT,
+    FAIL_ITN_ELAPSED, FAIL_ITN_DISTANCE, FAIL_ITN_STOPS,
+    FAIL_ITN_FLIGHT_TIME, FAIL_ITN_LAYOVER, FAIL_ITN_CARRIER,
+    FAIL_ITN_INTERLINE_DCNX, FAIL_ITN_CRS_CNX,
     # Connection builder
     build_connections_at_station!, build_connections!,
     # Search internals

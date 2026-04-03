@@ -39,6 +39,8 @@ zero or negative is a fail with a unique diagnostic code.
 - `FAIL_MAFT       = -9` — maximum-feasible-travel-time exceeded
 - `FAIL_CIRCUITY   = -10` — route too circuitous
 - `FAIL_TRFREST    = -11` — traffic restriction code blocks connection
+- `FAIL_BACKTRACK  = -12` — connection backtracks to from_leg's departure station
+- `FAIL_GEO        = -13` — connection station fails geographic allow/deny filter
 """
 const PASS          = Int(1)
 const FAIL_ROUNDTRIP = Int(0)
@@ -54,6 +56,23 @@ const FAIL_MAFT     = Int(-9)
 const FAIL_CIRCUITY = Int(-10)
 const FAIL_TRFREST  = Int(-11)
 const FAIL_BACKTRACK = Int(-12)
+const FAIL_GEO       = Int(-13)
+
+# ── Shared filter helpers ────────────────────────────────────────────────────
+
+@inline function _check_categorical(value, allow_set::Set, deny_set::Set)::Bool
+    !isempty(deny_set) && value in deny_set && return false
+    !isempty(allow_set) && value ∉ allow_set && return false
+    return true
+end
+
+@inline function _get_trc(rec)::Char
+    trc = rec.traffic_restriction_for_leg
+    (isempty(trc) || trc == InlineString15(".")) && return ' '
+    length(trc) <= 1 && return trc[1]
+    seq = Int(rec.leg_sequence_number)
+    (seq > 0 && seq <= length(trc)) ? trc[seq] : ' '
+end
 
 # ── Rule 1: Roundtrip tagger ──────────────────────────────────────────────────
 
@@ -621,14 +640,26 @@ end
 ---
 
 # Description
-- Checks the TRC (Traffic Restriction Code) field at `leg_seq` position for both
-  legs in the connection
-- Returns `FAIL_SUPPCODE` if either leg carries a code 'A' (no local traffic) at
-  its leg sequence position
-- TRC is stored as `InlineString15`; the `leg_seq` field (1-based) indexes into it
+- Checks the TRC (Traffic Restriction Code) field for both legs and applies the
+  full SSIM Appendix G connection-level suppression logic
+- Uses `_get_trc` to extract the character at `leg_sequence_number` position;
+  returns `' '` for empty/missing TRC fields
+- Delegates per-code logic to `_trc_blocks_connection`, which covers all codes
+  defined in SSIM Appendix G:
+
+  | Codes          | Behavior                                       |
+  |----------------|------------------------------------------------|
+  | A, H, I, B, M, T | No connections at all — always FAIL         |
+  | C              | Domestic connections only — FAIL if international |
+  | N, W           | International only — FAIL if not international |
+  | F, Y, E, G, X  | Online only — FAIL if interline               |
+  | D, O, Q        | International online only — FAIL if not international OR interline |
+  | K, V           | Any connection allowed — PASS                 |
+  | blank, Z, J, P, R, S, U | Informational/ignored — PASS         |
 
 # Arguments
-1. `cp::GraphConnection`: the connection to evaluate
+1. `cp::GraphConnection`: the connection to evaluate; `cp.status` is read for
+   `STATUS_INTERNATIONAL` and `STATUS_INTERLINE` bits
 2. `ctx`: runtime context (no fields accessed by this rule)
 
 # Returns
@@ -636,23 +667,26 @@ end
 """
 function check_cnx_suppcodes(cp::GraphConnection, ctx)::Int
     from_leg = cp.from_leg::GraphLeg
-    to_leg_r = cp.to_leg::GraphLeg
-    from_trc = from_leg.record.traffic_restriction_for_leg
-    to_trc = to_leg_r.record.traffic_restriction_for_leg
+    to_leg = cp.to_leg::GraphLeg
+    from_leg === to_leg && return PASS  # nonstop self-connection
 
-    from_seq = Int(from_leg.record.leg_sequence_number)
-    if from_seq > 0 && from_seq <= length(from_trc)
-        ch = from_trc[from_seq]
-        ch == 'A' && return FAIL_SUPPCODE
-    end
+    from_trc = _get_trc(from_leg.record)
+    to_trc = _get_trc(to_leg.record)
 
-    to_seq = Int(to_leg_r.record.leg_sequence_number)
-    if to_seq > 0 && to_seq <= length(to_trc)
-        ch = to_trc[to_seq]
-        ch == 'A' && return FAIL_SUPPCODE
-    end
+    _trc_blocks_connection(from_trc, cp) && return FAIL_SUPPCODE
+    _trc_blocks_connection(to_trc, cp) && return FAIL_SUPPCODE
 
     return PASS
+end
+
+@inline function _trc_blocks_connection(ch::Char, cp::GraphConnection)::Bool
+    ch == ' ' && return false
+    (ch == 'A' || ch == 'H' || ch == 'I' || ch == 'B' || ch == 'M' || ch == 'T') && return true
+    ch == 'C' && return is_international(cp.status)
+    (ch == 'N' || ch == 'W') && return !is_international(cp.status)
+    (ch == 'F' || ch == 'Y' || ch == 'E' || ch == 'G' || ch == 'X') && return is_interline(cp.status)
+    (ch == 'D' || ch == 'O' || ch == 'Q') && return !is_international(cp.status) || is_interline(cp.status)
+    return false
 end
 
 # ── Rule 7: MAFTRule (callable struct) ────────────────────────────────────────
@@ -680,9 +714,12 @@ end
 """
     `MAFTRule()`
 
-Construct a `MAFTRule` with default speed (400 knots) and rest time (480 min).
+Construct a `MAFTRule` with default speed (400 knots) and rest time (240 min).
+
+Per the C reference (`CheckCnxMaxAllFlyTime`): MAFT = max(distance/400*60, 30) + 240 minutes
+for a single connection.
 """
-MAFTRule() = MAFTRule(400.0, 480.0)
+MAFTRule() = MAFTRule(400.0, 240.0)
 
 """
     `function (r::MAFTRule)(cp::GraphConnection, ctx)::Int`
@@ -736,28 +773,33 @@ end
 - Callable struct implementing the circuity filter for two-leg connections
 - Rejects connections where the sum of both leg distances exceeds
   `factor × great_circle_distance(org, dst) + extra_miles`
+- Extra miles are split by international status: domestic connections use
+  `domestic_extra_miles`, international connections use `international_extra_miles`
 - Great-circle distances are cached in `ctx.gc_cache` (keyed by
-  `hash(org_code, hash(dst_code))`) to avoid repeated haversine calls
+  `(org_code, dst_code)` tuple) to avoid repeated haversine calls
 - Round-trip connections and same-origin/destination pairs always pass
 
 # Fields
 - `factor::Float64` — circuity multiplier (default 2.0)
-- `extra_miles::Float64` — flat mileage tolerance (default 500.0)
+- `domestic_extra_miles::Float64` — flat mileage tolerance for domestic routes (default 500.0)
+- `international_extra_miles::Float64` — flat mileage tolerance for international routes (default 1000.0)
 
 # Context fields accessed
-- `ctx.gc_cache::Dict{UInt64, Float64}` — cache of GC distances (mutated)
+- `ctx.gc_cache::Dict{Tuple{StationCode,StationCode}, Float64}` — cache of GC distances (mutated)
 """
 struct CircuityRule
     factor::Float64
-    extra_miles::Float64
+    domestic_extra_miles::Float64
+    international_extra_miles::Float64
 end
 
 """
     `CircuityRule()`
 
-Construct a `CircuityRule` with default factor (2.0) and extra miles (500.0).
+Construct a `CircuityRule` with default factor (2.0), domestic extra miles (500.0),
+and international extra miles (1000.0).
 """
-CircuityRule() = CircuityRule(2.0, 500.0)
+CircuityRule() = CircuityRule(2.0, 500.0, 1000.0)
 
 """
     `function (r::CircuityRule)(cp::GraphConnection, ctx)::Int`
@@ -796,8 +838,9 @@ function (r::CircuityRule)(cp::GraphConnection, ctx)::Int
         ctx.gc_cache[gc_key] = gc_dist
     end
 
+    extra = is_international(cp.status) ? r.international_extra_miles : r.domestic_extra_miles
     route_dist = Float64(from_l.distance) + Float64(to_l.distance)
-    return route_dist <= r.factor * gc_dist + r.extra_miles ? PASS : FAIL_CIRCUITY
+    return route_dist <= r.factor * gc_dist + extra ? PASS : FAIL_CIRCUITY
 end
 
 """
@@ -920,10 +963,12 @@ end
 ---
 
 # Description
-- Checks the TRC field for both legs for IATA traffic restriction codes that
-  block connecting traffic
-- Codes 'A', 'B', 'C', 'D' are considered blocking; see `_is_trc_blocked`
-- Checks the TRC character at position `leg_seq` for each leg
+- Checks the TRC field for both legs for code 'A', which unconditionally
+  prohibits all connecting traffic regardless of connection geography or carrier
+- Uses `_get_trc` to extract the character at `leg_sequence_number` position;
+  returns `' '` for empty/missing TRC fields
+- Broader SSIM Appendix G connection suppression (codes B, C, D, F, H, etc.)
+  is handled by `check_cnx_suppcodes` (rule 6)
 
 # Arguments
 1. `cp::GraphConnection`: the connection to evaluate
@@ -935,29 +980,122 @@ end
 function check_cnx_trfrest(cp::GraphConnection, ctx)::Int
     from_l = cp.from_leg::GraphLeg
     to_l = cp.to_leg::GraphLeg
-    from_trc = from_l.record.traffic_restriction_for_leg
-    from_seq = Int(from_l.record.leg_sequence_number)
-    if from_seq > 0 && from_seq <= length(from_trc)
-        _is_trc_blocked(from_trc[from_seq]) && return FAIL_TRFREST
-    end
+    from_l === to_l && return PASS
 
-    to_trc = to_l.record.traffic_restriction_for_leg
-    to_seq = Int(to_l.record.leg_sequence_number)
-    if to_seq > 0 && to_seq <= length(to_trc)
-        _is_trc_blocked(to_trc[to_seq]) && return FAIL_TRFREST
-    end
+    from_trc = _get_trc(from_l.record)
+    from_trc == 'A' && return FAIL_TRFREST
+
+    to_trc = _get_trc(to_l.record)
+    to_trc == 'A' && return FAIL_TRFREST
 
     return PASS
 end
 
-"""
-    `function _is_trc_blocked(ch::Char)::Bool`
+# ── Rule 10: ConnectionTimeRule (callable struct) ─────────────────────────────
 
-Returns `true` for IATA TRC codes that block local or connecting traffic.
-Codes A–D are the primary suppression codes in SSIM8.
 """
-function _is_trc_blocked(ch::Char)::Bool
-    ch == 'A' || ch == 'B' || ch == 'C' || ch == 'D'
+    `struct ConnectionTimeRule`
+---
+
+# Description
+- Callable struct enforcing user-configurable minimum and maximum connection time
+  bounds, applied after MCTRule has enforced the SSIM8 schedule minimum
+- Through-flight connections (`cp.is_through == true`) and nonstop
+  self-connections (`cp.from_leg === cp.to_leg`) always pass
+- `min_time` is only checked when it is not `NO_MINUTES` (i.e. `!= Int16(-1)`)
+
+# Fields
+- `min_time::Minutes` — user minimum connection time; `NO_MINUTES` disables
+- `max_time::Minutes` — user maximum connection time
+"""
+struct ConnectionTimeRule
+    min_time::Minutes
+    max_time::Minutes
+end
+
+"""
+    `function (r::ConnectionTimeRule)(cp::GraphConnection, ctx)::Int`
+---
+
+# Description
+- Callable entry-point for `ConnectionTimeRule`
+- Reads `cp.cnx_time` (already set by `MCTRule`) and compares against `min_time`
+  and `max_time`
+
+# Arguments
+1. `cp::GraphConnection`: connection to evaluate
+2. `ctx`: runtime context (no fields accessed)
+
+# Returns
+- `::Int`: `PASS`, `FAIL_TIME_MIN`, or `FAIL_TIME_MAX`
+"""
+function (r::ConnectionTimeRule)(cp::GraphConnection, ctx)::Int
+    cp.from_leg === cp.to_leg && return PASS  # nonstop
+    cp.is_through && return PASS
+    cnx = Int32(cp.cnx_time)
+    r.min_time != NO_MINUTES && cnx < Int32(r.min_time) && return FAIL_TIME_MIN
+    cnx > Int32(r.max_time) && return FAIL_TIME_MAX
+    return PASS
+end
+
+# ── Rule 11: ConnectionGeoRule (callable struct) ───────────────────────────────
+
+"""
+    `struct ConnectionGeoRule`
+---
+
+# Description
+- Callable struct enforcing geographic allow/deny filters on the connection
+  station and the origin/destination station records
+- Each filter set is optional: an empty set means "no restriction"
+- Deny sets are checked before allow sets; a station present in a deny set
+  always fails regardless of allow sets
+
+# Fields
+- `allow_stations::Set{StationCode}` — if non-empty, station code must be in set
+- `deny_stations::Set{StationCode}` — if non-empty, station code must not be in set
+- `allow_countries::Set{InlineString3}` — country filter on connection station record
+- `deny_countries::Set{InlineString3}`
+- `allow_regions::Set{InlineString3}` — region filter on connection station record
+- `deny_regions::Set{InlineString3}`
+- `allow_states::Set{InlineString3}` — state/province filter on connection station record
+- `deny_states::Set{InlineString3}`
+"""
+struct ConnectionGeoRule
+    allow_stations::Set{StationCode}
+    deny_stations::Set{StationCode}
+    allow_countries::Set{InlineString3}
+    deny_countries::Set{InlineString3}
+    allow_regions::Set{InlineString3}
+    deny_regions::Set{InlineString3}
+    allow_states::Set{InlineString3}
+    deny_states::Set{InlineString3}
+end
+
+"""
+    `function (r::ConnectionGeoRule)(cp::GraphConnection, ctx)::Int`
+---
+
+# Description
+- Callable entry-point for `ConnectionGeoRule`
+- Checks the connection station's code, country, region, and state against
+  the configured allow/deny sets via `_check_categorical`
+
+# Arguments
+1. `cp::GraphConnection`: connection to evaluate; `cp.station` must be a `GraphStation`
+2. `ctx`: runtime context (no fields accessed)
+
+# Returns
+- `::Int`: `PASS` or `FAIL_GEO`
+"""
+function (r::ConnectionGeoRule)(cp::GraphConnection, ctx)::Int
+    stn = cp.station::GraphStation
+    _check_categorical(stn.code, r.allow_stations, r.deny_stations) || return FAIL_GEO
+    rec = stn.record
+    _check_categorical(rec.country, r.allow_countries, r.deny_countries) || return FAIL_GEO
+    _check_categorical(rec.region, r.allow_regions, r.deny_regions) || return FAIL_GEO
+    _check_categorical(rec.state, r.allow_states, r.deny_states) || return FAIL_GEO
+    return PASS
 end
 
 # ── Rule chain assembly ────────────────────────────────────────────────────────
@@ -967,11 +1105,15 @@ end
 ---
 
 # Description
-- Assembles and returns the canonical 9-rule connection rule chain
+- Assembles and returns the connection rule chain as a `Tuple` of callables
 - Rules are ordered for maximum short-circuit efficiency: cheap structural checks
   first, expensive MCT and geometry checks later
 - `MAFTRule` and `CircuityRule` are constructed from `constraints.defaults`
   parameters; `MCTRule` embeds the provided `mct_lookup`
+- `ConnectionTimeRule` is included only when non-default time bounds are configured
+  (`min_connection_time != NO_MINUTES` or `max_connection_time != 480`)
+- `ConnectionGeoRule` is included only when at least one geographic filter set is
+  non-empty
 
 # Arguments
 1. `config::SearchConfig`: search configuration (scope, interline mode, etc.)
@@ -979,13 +1121,13 @@ end
 3. `mct_lookup::MCTLookup`: pre-materialised in-memory MCT lookup structure
 
 # Returns
-- `::Tuple`: 9-element tuple of callables, in chain order (Tuple enables full specialization in the O(n²) loop)
+- `::Tuple`: tuple of callables in chain order (Tuple enables full specialization in the O(n²) loop)
 
 # Examples
 ```julia
 julia> rules = build_cnx_rules(SearchConfig(), SearchConstraints(), MCTLookup());
-julia> length(rules)
-9
+julia> length(rules) >= 9
+true
 ```
 """
 function build_cnx_rules(
@@ -993,19 +1135,40 @@ function build_cnx_rules(
     constraints::SearchConstraints,
     mct_lookup::MCTLookup,
 )
-    return (
+    p = constraints.defaults
+    rules = Any[
         check_cnx_roundtrip,
         check_cnx_backtrack,
         check_cnx_scope,
         check_cnx_interline,
         MCTRule(mct_lookup),
-        check_cnx_opdays,
-        check_cnx_suppcodes,
-        MAFTRule(),
+    ]
+    # Connection time rule (only when non-default bounds are configured)
+    if p.min_connection_time != NO_MINUTES || p.max_connection_time != Minutes(480)
+        push!(rules, ConnectionTimeRule(p.min_connection_time, p.max_connection_time))
+    end
+    push!(rules, check_cnx_opdays)
+    push!(rules, check_cnx_suppcodes)
+    config.maft_enabled && push!(rules, MAFTRule())
+    push!(rules,
         CircuityRule(
-            constraints.defaults.circuity_factor,
-            constraints.defaults.circuity_extra_miles,
+            p.circuity_factor,
+            p.domestic_circuity_extra_miles,
+            p.international_circuity_extra_miles,
         ),
-        check_cnx_trfrest,
     )
+    # Geographic filter (only when any set is non-empty)
+    if !isempty(p.allow_stations) || !isempty(p.deny_stations) ||
+       !isempty(p.allow_countries) || !isempty(p.deny_countries) ||
+       !isempty(p.allow_regions) || !isempty(p.deny_regions) ||
+       !isempty(p.allow_states) || !isempty(p.deny_states)
+        push!(rules, ConnectionGeoRule(
+            p.allow_stations, p.deny_stations,
+            p.allow_countries, p.deny_countries,
+            p.allow_regions, p.deny_regions,
+            p.allow_states, p.deny_states,
+        ))
+    end
+    push!(rules, check_cnx_trfrest)
+    return Tuple(rules)
 end

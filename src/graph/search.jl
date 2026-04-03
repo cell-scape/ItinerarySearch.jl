@@ -29,7 +29,7 @@
 - `target_dow::StatusBits` — single-bit DOW mask for the target date
 - `utc_dep_origin::Int32` — UTC departure of the current origin leg (minutes), set per departure leg in `search_itineraries`
 - `_max_elapsed_threshold::Int32` — pre-computed 1.5 × `max_elapsed` for DFS pruning (minutes)
-- `_circuity_threshold::Float64` — pre-computed `itinerary_circuity` for DFS pruning
+- `_circuity_threshold::Float64` — pre-computed `max_circuity` for DFS pruning
 - `results::Vector{Itinerary}` — committed itineraries from the current search
 - `build_stats::BuildStats` — connection-build instrumentation accumulator
 - `search_stats::SearchStats` — search instrumentation accumulator
@@ -60,7 +60,7 @@
     target_dow::StatusBits = StatusBits(0)  # DOW bit for target date
     utc_dep_origin::Int32 = Int32(0)        # UTC dep of first leg (minutes), set per departure
     _max_elapsed_threshold::Int32 = Int32(2160)  # 1.5 * max_elapsed, pre-computed
-    _circuity_threshold::Float64 = 2.5           # itinerary_circuity, pre-computed
+    _circuity_threshold::Float64 = 2.5           # max_circuity, pre-computed
 
     results::Vector{Itinerary} = Itinerary[]
 
@@ -723,7 +723,7 @@ function search_itineraries(
 
     # Pre-compute DFS pruning thresholds (avoid repeated multiplication in hot loop)
     ctx._max_elapsed_threshold = Int32(round(1.5 * ctx.constraints.defaults.max_elapsed))
-    ctx._circuity_threshold = ctx.constraints.defaults.itinerary_circuity
+    ctx._circuity_threshold = ctx.constraints.defaults.max_circuity
 
     # Great-circle market distance (cached)
     gc_key = (origin, dest)

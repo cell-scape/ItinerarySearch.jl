@@ -3,15 +3,23 @@
 #
 # Usage: julia --project=. scripts/demo.jl              # SSIM path (default)
 #        julia --project=. scripts/demo.jl --newssim    # NewSSIM CSV path
+#        julia --project=. scripts/demo.jl --config path/to/config.json
 
 using ItinerarySearch
 using Dates
 using DBInterface
 
-# Parse --newssim flag
+# Parse flags
 use_newssim = "--newssim" in ARGS
+config_path = nothing
+for (i, arg) in enumerate(ARGS)
+    if arg == "--config" && i < length(ARGS)
+        config_path = ARGS[i + 1]
+    end
+end
 
 println("ItinerarySearch.jl — Demo ($(use_newssim ? "NewSSIM CSV" : "SSIM") path)")
+config_path !== nothing && println("  Config: $(config_path)")
 println("="^50)
 
 # Create store with all defaults (loads demo data)
@@ -20,12 +28,17 @@ println("\nLoading demo data...")
 outdir_base = "data/output"
 mkpath(outdir_base)
 
-config = SearchConfig(
-    log_json_path=joinpath(outdir_base, "demo.log"),
-    log_level=:info,
-    event_log_enabled=true,
-    event_log_path=joinpath(outdir_base, "demo_events.jsonl"),
-)
+if config_path !== nothing
+    config = load_config(config_path)
+else
+    config = SearchConfig(
+        log_json_path=joinpath(outdir_base, "demo.log"),
+        log_level=:info,
+        event_log_enabled=true,
+        event_log_path=joinpath(outdir_base, "demo_events.jsonl"),
+    )
+end
+constraints = config_path !== nothing ? load_constraints(config_path) : SearchConstraints()
 store = DuckDBStore()
 graph_source = :ssim
 
@@ -159,8 +172,8 @@ for day_offset in 0:(n_days-1)
     # Search selected OD pairs
     ctx = RuntimeContext(
         config=config,
-        constraints=SearchConstraints(),
-        itn_rules=build_itn_rules(config),
+        constraints=constraints,
+        itn_rules=build_itn_rules(config; constraints=constraints),
     )
 
     itns_file = joinpath(outdir, "itineraries_$(target).csv")

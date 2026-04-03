@@ -105,6 +105,9 @@ the reference — no locking, no mutation.
     mct_codeshare_mode::Symbol = :both     # :both = marketing+operating (default), :marketing = marketing only, :operating = operating only
     mct_schengen_mode::Symbol = :sch_then_eur  # :sch_then_eur (default), :eur_then_sch, :sch_only, :eur_only
     mct_suppressions_enabled::Bool = true    # false = ignore all suppression records in MCT lookup
+    maft_enabled::Bool = true              # enable MAFT rule (both connection and itinerary level)
+    interline_dcnx_enabled::Bool = true    # enable interline double-connect restriction
+    crs_cnx_enabled::Bool = true           # enable CRS distance-based connection time rule
 end
 
 # ── JSON3 field extraction helpers ────────────────────────────────────────────
@@ -169,6 +172,179 @@ function _json_bool(obj::JSON3.Object, key::Symbol)::Union{Bool,Nothing}
     haskey(obj, key) || return nothing
     v = obj[key]
     v isa Bool ? v : nothing
+end
+
+"""
+    `_parse_json_set!(kwargs, obj, json_key, param_key, ::Type{T})`
+
+Parse a JSON array at `obj[json_key]` into a `Set{T}` and store it in `kwargs[param_key]`.
+Each element must be a `String`; non-string elements are skipped. Does nothing if the key
+is absent, the value is not a `JSON3.Array`, or the resulting set is empty.
+"""
+function _parse_json_set!(
+    kwargs::Dict{Symbol,Any}, obj, json_key::Symbol, param_key::Symbol, ::Type{T}
+) where {T}
+    haskey(obj, json_key) || return
+    val = obj[json_key]
+    val isa JSON3.Array || return
+    s = Set{T}(T(String(v)) for v in val if v isa String)
+    isempty(s) || (kwargs[param_key] = s)
+end
+
+"""
+    `_parse_json_char_set!(kwargs, obj, json_key, param_key)`
+
+Parse a JSON array at `obj[json_key]` into a `Set{Char}` and store it in `kwargs[param_key]`.
+Each element must be a non-empty `String`; the first character is used. Does nothing if the
+key is absent, the value is not a `JSON3.Array`, or the resulting set is empty.
+"""
+function _parse_json_char_set!(
+    kwargs::Dict{Symbol,Any}, obj, json_key::Symbol, param_key::Symbol
+)
+    haskey(obj, json_key) || return
+    val = obj[json_key]
+    val isa JSON3.Array || return
+    s = Set{Char}(first(String(v)) for v in val if v isa String && !isempty(String(v)))
+    isempty(s) || (kwargs[param_key] = s)
+end
+
+"""
+    `_parse_constraints_params(cstr::JSON3.Object)::Union{ParameterSet, Nothing}`
+---
+
+# Description
+- Parse a JSON constraints object into a `ParameterSet`
+- Returns `nothing` if no recognized fields are present
+- Silently skips absent or wrongly-typed fields
+
+# Arguments
+1. `cstr::JSON3.Object`: the parsed `"constraints"` JSON section
+
+# Returns
+- `::Union{ParameterSet, Nothing}`: populated `ParameterSet`, or `nothing` if empty
+"""
+function _parse_constraints_params(cstr::JSON3.Object)::Union{ParameterSet,Nothing}
+    ck = Dict{Symbol,Any}()
+
+    # Minutes fields (Int16)
+    for (jk, pk) in [
+        (:min_connection_time, :min_connection_time),
+        (:max_connection_time, :max_connection_time),
+    ]
+        v = _json_int(cstr, jk)
+        v !== nothing && (ck[pk] = Minutes(v))
+    end
+
+    # Stop count fields (Int16)
+    for (jk, pk) in [(:min_stops, :min_stops), (:max_stops, :max_stops)]
+        v = _json_int(cstr, jk)
+        v !== nothing && (ck[pk] = Int16(v))
+    end
+
+    # Int32 time fields
+    for (jk, pk) in [
+        (:min_elapsed, :min_elapsed),
+        (:max_elapsed, :max_elapsed),
+        (:min_flight_time, :min_flight_time),
+        (:max_flight_time, :max_flight_time),
+        (:min_layover_time, :min_layover_time),
+        (:max_layover_time, :max_layover_time),
+    ]
+        v = _json_int(cstr, jk)
+        v !== nothing && (ck[pk] = Int32(v))
+    end
+
+    # Distance fields (Float32) — accept float or integer JSON values
+    for (jk, pk) in [
+        (:min_total_distance, :min_total_distance),
+        (:max_total_distance, :max_total_distance),
+        (:min_leg_distance, :min_leg_distance),
+        (:max_leg_distance, :max_leg_distance),
+    ]
+        f = _json_float(cstr, jk)
+        if f !== nothing
+            ck[pk] = Distance(f)
+        else
+            v = _json_int(cstr, jk)
+            v !== nothing && (ck[pk] = Distance(Float64(v)))
+        end
+    end
+
+    # Float64 fields
+    for (jk, pk) in [
+        (:min_circuity, :min_circuity),
+        (:max_circuity, :max_circuity),
+        (:circuity_factor, :circuity_factor),
+        (:domestic_circuity_extra_miles, :domestic_circuity_extra_miles),
+        (:international_circuity_extra_miles, :international_circuity_extra_miles),
+    ]
+        f = _json_float(cstr, jk)
+        f !== nothing && (ck[pk] = f)
+    end
+
+    # Carrier sets (AirlineCode = InlineString3)
+    _parse_json_set!(ck, cstr, :deny_carriers, :deny_carriers, AirlineCode)
+    _parse_json_set!(ck, cstr, :allow_carriers, :allow_carriers, AirlineCode)
+    _parse_json_set!(ck, cstr, :deny_operating_carriers, :deny_operating_carriers, AirlineCode)
+    _parse_json_set!(ck, cstr, :allow_operating_carriers, :allow_operating_carriers, AirlineCode)
+
+    # Geographic sets (InlineString3)
+    _parse_json_set!(ck, cstr, :deny_countries, :deny_countries, InlineString3)
+    _parse_json_set!(ck, cstr, :allow_countries, :allow_countries, InlineString3)
+    _parse_json_set!(ck, cstr, :deny_regions, :deny_regions, InlineString3)
+    _parse_json_set!(ck, cstr, :allow_regions, :allow_regions, InlineString3)
+    _parse_json_set!(ck, cstr, :deny_states, :deny_states, InlineString3)
+    _parse_json_set!(ck, cstr, :allow_states, :allow_states, InlineString3)
+
+    # Station sets (StationCode = InlineString3)
+    _parse_json_set!(ck, cstr, :deny_stations, :deny_stations, StationCode)
+    _parse_json_set!(ck, cstr, :allow_stations, :allow_stations, StationCode)
+
+    # Aircraft type sets (InlineString7)
+    _parse_json_set!(ck, cstr, :deny_aircraft_types, :deny_aircraft_types, InlineString7)
+    _parse_json_set!(ck, cstr, :allow_aircraft_types, :allow_aircraft_types, InlineString7)
+
+    # Char sets (service type, body type)
+    _parse_json_char_set!(ck, cstr, :deny_service_types, :deny_service_types)
+    _parse_json_char_set!(ck, cstr, :allow_service_types, :allow_service_types)
+    _parse_json_char_set!(ck, cstr, :deny_body_types, :deny_body_types)
+    _parse_json_char_set!(ck, cstr, :allow_body_types, :allow_body_types)
+
+    isempty(ck) && return nothing
+    return ParameterSet(; ck...)
+end
+
+"""
+    `load_constraints(path::String)::SearchConstraints`
+---
+
+# Description
+- Load a `SearchConstraints` from the `"constraints"` section of a JSON config file
+- The same JSON file used by `load_config` may also contain a `"constraints"` section
+- Any missing or wrongly-typed fields use `ParameterSet` defaults
+- Returns a default `SearchConstraints()` when the file has no `"constraints"` key
+
+# Arguments
+1. `path::String`: path to a JSON config file
+
+# Returns
+- `::SearchConstraints`: constraints with defaults populated from JSON
+
+# Examples
+```julia
+julia> sc = load_constraints("config/defaults.json");
+julia> sc.defaults.max_stops
+Int16(2)
+```
+"""
+function load_constraints(path::String)::SearchConstraints
+    raw = JSON3.read(read(path, String))
+    raw isa JSON3.Object || return SearchConstraints()
+    cstr = _json_obj(raw, :constraints)
+    cstr === nothing && return SearchConstraints()
+    ps = _parse_constraints_params(cstr)
+    ps === nothing && return SearchConstraints()
+    return SearchConstraints(defaults=ps)
 end
 
 """

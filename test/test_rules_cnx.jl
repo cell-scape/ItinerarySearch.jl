@@ -397,26 +397,86 @@ using Dates
             @test check_cnx_suppcodes(cp, ctx) == PASS
         end
 
-        @testset "passes when TRC has no 'A' at leg_seq" begin
-            # leg_sequence_number=1, trc[1]='B' — 'B' is a traffic restriction but not 'A'
-            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="B", leg_sequence_number=UInt8(1))
-            cp = _test_connection(from_rec=from_rec)
-            @test check_cnx_suppcodes(cp, ctx) == PASS
+        @testset "passes for informational codes (Z, J, P, R, S, U)" begin
+            for code in ["Z", "J", "P", "R", "S", "U"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                cp = _test_connection(from_rec=from_rec)
+                @test check_cnx_suppcodes(cp, ctx) == PASS
+            end
         end
 
-        @testset "fails when from_leg TRC has 'A' at leg_seq" begin
-            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
-            cp = _test_connection(from_rec=from_rec)
-            @test check_cnx_suppcodes(cp, ctx) == FAIL_SUPPCODE
+        @testset "passes for K and V (any connection allowed)" begin
+            for code in ["K", "V"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                cp = _test_connection(from_rec=from_rec)
+                @test check_cnx_suppcodes(cp, ctx) == PASS
+            end
         end
 
-        @testset "fails when to_leg TRC has 'A' at leg_seq" begin
+        @testset "fails for unconditional block codes (A, H, I, B, M, T)" begin
+            for code in ["A", "H", "I", "B", "M", "T"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                cp = _test_connection(from_rec=from_rec)
+                @test check_cnx_suppcodes(cp, ctx) == FAIL_SUPPCODE
+            end
+        end
+
+        @testset "fails when to_leg TRC has unconditional block code" begin
             to_rec = _test_leg_record(departure_station="ORD", arrival_station="LHR", traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
             cp = _test_connection(to_rec=to_rec)
             @test check_cnx_suppcodes(cp, ctx) == FAIL_SUPPCODE
         end
 
-        @testset "passes when 'A' is at different leg_seq position" begin
+        @testset "C (domestic only) — passes for domestic, fails for international" begin
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="C", leg_sequence_number=UInt8(1))
+            dom_status  = StatusBits(DOW_MON)
+            intl_status = StatusBits(DOW_MON | STATUS_INTERNATIONAL)
+            cp_dom  = _test_connection(from_rec=from_rec, status=dom_status)
+            cp_intl = _test_connection(from_rec=from_rec, status=intl_status)
+            @test check_cnx_suppcodes(cp_dom,  ctx) == PASS
+            @test check_cnx_suppcodes(cp_intl, ctx) == FAIL_SUPPCODE
+        end
+
+        @testset "N and W (international only) — passes for international, fails for domestic" begin
+            for code in ["N", "W"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                dom_status  = StatusBits(DOW_MON)
+                intl_status = StatusBits(DOW_MON | STATUS_INTERNATIONAL)
+                cp_dom  = _test_connection(from_rec=from_rec, status=dom_status)
+                cp_intl = _test_connection(from_rec=from_rec, status=intl_status)
+                @test check_cnx_suppcodes(cp_dom,  ctx) == FAIL_SUPPCODE
+                @test check_cnx_suppcodes(cp_intl, ctx) == PASS
+            end
+        end
+
+        @testset "F, Y, E, G, X (online only) — passes for online, fails for interline" begin
+            for code in ["F", "Y", "E", "G", "X"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                online_status   = StatusBits(DOW_MON)
+                interline_status = StatusBits(DOW_MON | STATUS_INTERLINE)
+                cp_online    = _test_connection(from_rec=from_rec, status=online_status)
+                cp_interline = _test_connection(from_rec=from_rec, status=interline_status)
+                @test check_cnx_suppcodes(cp_online,    ctx) == PASS
+                @test check_cnx_suppcodes(cp_interline, ctx) == FAIL_SUPPCODE
+            end
+        end
+
+        @testset "D, O, Q (international online only) — fails if domestic or interline" begin
+            for code in ["D", "O", "Q"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                # domestic online — fails (not international)
+                cp_dom_online = _test_connection(from_rec=from_rec, status=StatusBits(DOW_MON))
+                @test check_cnx_suppcodes(cp_dom_online, ctx) == FAIL_SUPPCODE
+                # international interline — fails (interline)
+                cp_intl_interline = _test_connection(from_rec=from_rec, status=StatusBits(DOW_MON | STATUS_INTERNATIONAL | STATUS_INTERLINE))
+                @test check_cnx_suppcodes(cp_intl_interline, ctx) == FAIL_SUPPCODE
+                # international online — passes
+                cp_intl_online = _test_connection(from_rec=from_rec, status=StatusBits(DOW_MON | STATUS_INTERNATIONAL))
+                @test check_cnx_suppcodes(cp_intl_online, ctx) == PASS
+            end
+        end
+
+        @testset "passes when blocking code is at a different leg_seq position" begin
             # traffic_restriction_for_leg = "XA" but leg_sequence_number=1 => trc[1]='X' => no suppression
             from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="XA", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)
@@ -432,7 +492,7 @@ using Dates
         @testset "default constructor" begin
             rule = MAFTRule()
             @test rule.speed == 400.0
-            @test rule.rest_time == 480.0
+            @test rule.rest_time == 240.0
         end
 
         @testset "round-trip always passes" begin
@@ -442,12 +502,18 @@ using Dates
         end
 
         @testset "normal flight passes (block_time << MAFT)" begin
-            # distance=1000 NM each leg => total=2000 NM
-            # block_time = (2000/400)*60 = 300 min
-            # maft = max(300, 30) + 240 = 540 min
+            # dep=0, arr=150 per leg => block_time = 150 min each, total = 300 min
+            # total_dist = 1000 + 1000 = 2000 NM
+            # maft = max((2000/400)*60, 30) + 240 = max(300,30) + 240 = 540 min
             # 300 <= 540 => PASS
-            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", distance=1000.0f0)
-            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR", distance=1000.0f0)
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD",
+                                         passenger_departure_time=Int16(0),
+                                         passenger_arrival_time=Int16(150),
+                                         distance=1000.0f0)
+            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR",
+                                         passenger_departure_time=Int16(300),
+                                         passenger_arrival_time=Int16(450),
+                                         distance=1000.0f0)
             cp = _test_connection(from_rec=from_rec, to_rec=to_rec,
                                   status=StatusBits(DOW_MON))
             rule = MAFTRule()
@@ -462,7 +528,8 @@ using Dates
         @testset "default constructor" begin
             rule = CircuityRule()
             @test rule.factor == 2.0
-            @test rule.extra_miles == 500.0
+            @test rule.domestic_extra_miles == 500.0
+            @test rule.international_extra_miles == 1000.0
         end
 
         @testset "round-trip always passes" begin
@@ -529,7 +596,7 @@ using Dates
                 station=cnx_stn,
                 status=StatusBits(DOW_MON),
             )
-            rule = CircuityRule(1.0, 0.0)   # very tight rule
+            rule = CircuityRule(1.0, 0.0, 0.0)   # very tight rule
             @test rule(cp, ctx) == FAIL_CIRCUITY
         end
 
@@ -569,38 +636,27 @@ using Dates
             @test check_cnx_trfrest(cp, ctx) == PASS
         end
 
-        @testset "passes for non-blocked TRC code" begin
-            # 'E' is not in the blocked set
-            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="E", leg_sequence_number=UInt8(1))
-            cp = _test_connection(from_rec=from_rec)
-            @test check_cnx_trfrest(cp, ctx) == PASS
+        @testset "passes for non-'A' TRC codes (B, C, D, E, F handled by suppcodes)" begin
+            for code in ["B", "C", "D", "E", "F"]
+                from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg=code, leg_sequence_number=UInt8(1))
+                cp = _test_connection(from_rec=from_rec)
+                @test check_cnx_trfrest(cp, ctx) == PASS
+            end
         end
 
-        @testset "fails for blocked TRC code 'A' on from_leg" begin
+        @testset "fails for TRC code 'A' on from_leg" begin
             from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)
             @test check_cnx_trfrest(cp, ctx) == FAIL_TRFREST
         end
 
-        @testset "fails for blocked TRC code 'B' on from_leg" begin
-            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="B", leg_sequence_number=UInt8(1))
-            cp = _test_connection(from_rec=from_rec)
-            @test check_cnx_trfrest(cp, ctx) == FAIL_TRFREST
-        end
-
-        @testset "fails for blocked TRC code 'C' on to_leg" begin
-            to_rec = _test_leg_record(departure_station="ORD", arrival_station="LHR", traffic_restriction_for_leg="C", leg_sequence_number=UInt8(1))
+        @testset "fails for TRC code 'A' on to_leg" begin
+            to_rec = _test_leg_record(departure_station="ORD", arrival_station="LHR", traffic_restriction_for_leg="A", leg_sequence_number=UInt8(1))
             cp = _test_connection(to_rec=to_rec)
             @test check_cnx_trfrest(cp, ctx) == FAIL_TRFREST
         end
 
-        @testset "fails for blocked TRC code 'D' on to_leg" begin
-            to_rec = _test_leg_record(departure_station="ORD", arrival_station="LHR", traffic_restriction_for_leg="D", leg_sequence_number=UInt8(1))
-            cp = _test_connection(to_rec=to_rec)
-            @test check_cnx_trfrest(cp, ctx) == FAIL_TRFREST
-        end
-
-        @testset "passes when blocked code is at a different leg_seq position" begin
+        @testset "passes when 'A' is at a different leg_seq position" begin
             # traffic_restriction_for_leg="XA" but leg_sequence_number=1 => trc[1]='X' => no block
             from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", traffic_restriction_for_leg="XA", leg_sequence_number=UInt8(1))
             cp = _test_connection(from_rec=from_rec)
@@ -710,7 +766,19 @@ using Dates
         # Verify CircuityRule picks up defaults from constraints
         rule9 = rules[9]::CircuityRule
         @test rule9.factor == constraints.defaults.circuity_factor
-        @test rule9.extra_miles == constraints.defaults.circuity_extra_miles
+        @test rule9.domestic_extra_miles == constraints.defaults.domestic_circuity_extra_miles
+        @test rule9.international_extra_miles == constraints.defaults.international_circuity_extra_miles
+    end
+
+    @testset "build_cnx_rules with maft_enabled=false omits MAFTRule" begin
+        config      = SearchConfig(maft_enabled=false)
+        constraints = SearchConstraints()
+        lookup      = MCTLookup()
+        rules = build_cnx_rules(config, constraints, lookup)
+        @test length(rules) == 9
+        @test !any(r -> r isa MAFTRule, rules)
+        @test rules[8] isa CircuityRule
+        @test rules[9] === check_cnx_trfrest
     end
 
     # ── Allocation regression test ────────────────────────────────────────────
