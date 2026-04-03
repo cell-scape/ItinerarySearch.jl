@@ -3,6 +3,8 @@ using ItinerarySearch
 using InlineStrings
 using Dates
 using JSON3
+using CSV
+import DataFrames
 
 # Internal symbols used by test files — not part of the public API
 import ItinerarySearch:
@@ -70,6 +72,8 @@ import ItinerarySearch:
     EMPTY_MCT_RESULT, MCTCandidateTrace, MCTTrace, MCTAuditConfig,
     # MCT audit log
     MCTAuditLog, open_audit_log, write_audit_entry!, close_audit_log,
+    # MCT replay
+    replay_misconnects, parse_misconnect_row,
     # Connection rules
     check_cnx_roundtrip, check_cnx_backtrack, check_cnx_scope, check_cnx_interline,
     check_cnx_opdays, check_cnx_suppcodes, check_cnx_trfrest,
@@ -596,5 +600,45 @@ include("test_helpers.jl")
         @test length(trace.candidates) == 1
         @test trace.candidates[1].matched == true
         @test trace.codeshare_mode == :none
+    end
+
+    @testset "Misconnect Replayer" begin
+        csv_content = """rcrd_loc,num_in_prty,inbound_operating_carrier,inbound_operating_flight_number,inbound_codeshare_indicator,inbound_carrier,inbound_flight_number,inbound_departure_station,inbound_arrival_station,inbound_departure_dtml,inbound_arrival_dtml,inbound_departure_date,inbound_arrival_date,inbound_departure_country,inbound_departure_state,inbound_aircraft_type,inbound_departure_terminal,inbound_arrival_terminal,inbound_aircraft_configuration,inbound_aircraft_bodytype,outbound_operating_carrier,outbound_operating_flight_number,outbound_codeshare_indicator,outbound_carrier,outbound_flight_number,outbound_departure_station,outbound_arrival_station,outbound_departure_dtml,outbound_departure_date,outbound_departure_country,outbound_departure_state,outbound_aircraft_type,outbound_departure_terminal,outbound_arrival_terminal,outbound_aircraft_configuration,outbound_aircraft_bodytype,international_domestic_status,connection_time,mct,mct_diff,mctrec,owner,dist_channel,aaa,agency_name,agency_id
+TEST01,1,UA,100,N,UA,100,LAX,ORD,2026-06-15T08:00:00.0,2026-06-15T14:00:00.0,2026-06-15,2026-06-15,US,CA,738,7,1,J12Y114,N,UA,200,N,UA,200,ORD,LHR,2026-06-15T15:30:00.0,2026-06-15,GB,,777,1,2,J50Y200,W,DI,90.0,120,-30.0,99999,Host,UA WEB,WEB,,"""
+
+        tmpfile = tempname() * ".csv"
+        write(tmpfile, csv_content)
+
+        # Build a lookup with a known ORD record
+        ord = StationCode("ORD")
+        rec = MCTRecord(
+            arr_carrier = AirlineCode("UA"),
+            dep_carrier = AirlineCode("UA"),
+            specified = MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER,
+            time = Minutes(90),
+            mct_id = Int32(500),
+            specificity = UInt32(1) << 28 | UInt32(1) << 25,
+        )
+        lookup = MCTLookup(
+            stations = Dict(
+                (ord, ord) => (
+                    MCTRecord[],  # DD
+                    [rec],        # DI
+                    MCTRecord[],  # ID
+                    MCTRecord[],  # II
+                ),
+            ),
+        )
+
+        # Replay with summary output
+        outbuf = IOBuffer()
+        replay_misconnects(tmpfile, lookup; output_io=outbuf, detail=:summary)
+        output = String(take!(outbuf))
+        lines = split(strip(output), '\n')
+        @test length(lines) == 2  # header + 1 row
+        @test occursin("TEST01", lines[2])
+        @test occursin("true", lines[2])   # our_resolves: 90 <= 90
+
+        rm(tmpfile)
     end
 end

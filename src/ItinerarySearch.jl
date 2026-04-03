@@ -9,6 +9,8 @@ using JSON3
 using Logging
 using LoggingExtras
 using HTTP
+using CSV
+using DataFrames
 
 # Type system (dependency order matters)
 include("types/aliases.jl")
@@ -40,6 +42,7 @@ include("types/mct_trace.jl")
 include("graph/mct_decode.jl")
 include("graph/mct_trace.jl")
 include("audit/mct_audit_log.jl")
+include("audit/mct_replay.jl")
 include("graph/rules_cnx.jl")
 include("graph/rules_itn.jl")
 include("graph/connect.jl")
