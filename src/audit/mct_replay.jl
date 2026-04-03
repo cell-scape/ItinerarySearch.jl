@@ -190,9 +190,10 @@ function replay_misconnects(
     lookup::MCTLookup;
     output_io::IO = stdout,
     detail::Symbol = :summary,
+    airports::Dict{StationCode,StationRecord} = Dict{StationCode,StationRecord}(),
 )::Nothing
     df = CSV.read(path, DataFrames.DataFrame; stringtype=String)
-    _replay_dataframe(df, lookup; output_io, detail)
+    _replay_dataframe(df, lookup; output_io, detail, airports)
     return nothing
 end
 
@@ -239,6 +240,7 @@ function _replay_dataframe(
     lookup::MCTLookup;
     output_io::IO = stdout,
     detail::Symbol = :summary,
+    airports::Dict{StationCode,StationRecord} = Dict{StationCode,StationRecord}(),
 )
     if detail == :summary
         println(output_io, join(_REPLAY_COLUMNS, ","))
@@ -246,6 +248,15 @@ function _replay_dataframe(
 
     for row in eachrow(df)
         parsed = parse_misconnect_row(row)
+
+        # Resolve region from airports dict
+        prv_region = InlineStrings.InlineString3("")
+        nxt_region = InlineStrings.InlineString3("")
+        prv_info = get(airports, parsed.arr_station, nothing)
+        nxt_info = get(airports, parsed.dep_station, nothing)
+        prv_info !== nothing && (prv_region = prv_info.region)
+        nxt_info !== nothing && (nxt_region = nxt_info.region)
+
         trace = lookup_mct_traced(
             lookup,
             parsed.arr_carrier,
@@ -271,6 +282,8 @@ function _replay_dataframe(
             nxt_country = parsed.nxt_country,
             prv_state = parsed.prv_state,
             nxt_state = parsed.nxt_state,
+            prv_region = prv_region,
+            nxt_region = nxt_region,
             target_date = parsed.target_date,
         )
 

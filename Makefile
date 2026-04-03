@@ -1,4 +1,4 @@
-.PHONY: test demo demo-newssim bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve sysimage app juliac
+.PHONY: test demo demo-newssim bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve mct-inspect mct-replay sysimage app juliac
 
 # Run full test suite
 test:
@@ -58,6 +58,19 @@ cli-info:
 PORT ?= 8080
 serve:
 	julia --project=. bin/itinsearch.jl serve --date $(DATE) --port $(PORT) $(EXTRA)
+
+# MCT audit inspector (interactive)
+# Usage: make mct-inspect FILE=data/input/UA_Misconnect_Report.csv
+#        make mct-inspect FILE=data/input/UAOA_Misconnect_Report.csv
+FILE ?= data/input/UA_Misconnect_Report.csv
+mct-inspect:
+	julia --project=. scripts/mct_inspect.jl $(FILE) $(EXTRA)
+
+# MCT replay (write comparison CSV)
+# Usage: make mct-replay FILE=data/input/UA_Misconnect_Report.csv
+#        make mct-replay FILE=data/input/UA_Misconnect_Report.csv EXTRA="--detailed"
+mct-replay:
+	julia --project=. scripts/mct_inspect.jl $(FILE) --replay $(EXTRA)
 
 # PackageCompiler builds (uses test suite as precompile workload)
 sysimage:
