@@ -66,11 +66,11 @@ import ItinerarySearch:
     # Connection rules
     check_cnx_roundtrip, check_cnx_backtrack, check_cnx_scope, check_cnx_interline,
     check_cnx_opdays, check_cnx_suppcodes, check_cnx_trfrest,
-    MCTRule, MAFTRule, CircuityRule,
+    MCTRule, MAFTRule, CircuityRule, ConnectionTimeRule, ConnectionGeoRule,
     build_cnx_rules,
     PASS, FAIL_ROUNDTRIP, FAIL_SCOPE, FAIL_ONLINE, FAIL_CODESHARE, FAIL_INTERLINE,
     FAIL_TIME_MIN, FAIL_TIME_MAX, FAIL_OPDAYS, FAIL_SUPPCODE,
-    FAIL_MAFT, FAIL_CIRCUITY, FAIL_TRFREST, FAIL_BACKTRACK,
+    FAIL_MAFT, FAIL_CIRCUITY, FAIL_TRFREST, FAIL_BACKTRACK, FAIL_GEO,
     # Itinerary rules
     check_itn_scope, check_itn_opdays, check_itn_circuity,
     check_itn_suppcodes, check_itn_maft,

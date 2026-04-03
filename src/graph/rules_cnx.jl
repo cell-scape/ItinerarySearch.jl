@@ -39,6 +39,8 @@ zero or negative is a fail with a unique diagnostic code.
 - `FAIL_MAFT       = -9` — maximum-feasible-travel-time exceeded
 - `FAIL_CIRCUITY   = -10` — route too circuitous
 - `FAIL_TRFREST    = -11` — traffic restriction code blocks connection
+- `FAIL_BACKTRACK  = -12` — connection backtracks to from_leg's departure station
+- `FAIL_GEO        = -13` — connection station fails geographic allow/deny filter
 """
 const PASS          = Int(1)
 const FAIL_ROUNDTRIP = Int(0)
@@ -54,6 +56,7 @@ const FAIL_MAFT     = Int(-9)
 const FAIL_CIRCUITY = Int(-10)
 const FAIL_TRFREST  = Int(-11)
 const FAIL_BACKTRACK = Int(-12)
+const FAIL_GEO       = Int(-13)
 
 # ── Shared filter helpers ────────────────────────────────────────────────────
 
@@ -988,6 +991,113 @@ function check_cnx_trfrest(cp::GraphConnection, ctx)::Int
     return PASS
 end
 
+# ── Rule 10: ConnectionTimeRule (callable struct) ─────────────────────────────
+
+"""
+    `struct ConnectionTimeRule`
+---
+
+# Description
+- Callable struct enforcing user-configurable minimum and maximum connection time
+  bounds, applied after MCTRule has enforced the SSIM8 schedule minimum
+- Through-flight connections (`cp.is_through == true`) and nonstop
+  self-connections (`cp.from_leg === cp.to_leg`) always pass
+- `min_time` is only checked when it is not `NO_MINUTES` (i.e. `!= Int16(-1)`)
+
+# Fields
+- `min_time::Minutes` — user minimum connection time; `NO_MINUTES` disables
+- `max_time::Minutes` — user maximum connection time
+"""
+struct ConnectionTimeRule
+    min_time::Minutes
+    max_time::Minutes
+end
+
+"""
+    `function (r::ConnectionTimeRule)(cp::GraphConnection, ctx)::Int`
+---
+
+# Description
+- Callable entry-point for `ConnectionTimeRule`
+- Reads `cp.cnx_time` (already set by `MCTRule`) and compares against `min_time`
+  and `max_time`
+
+# Arguments
+1. `cp::GraphConnection`: connection to evaluate
+2. `ctx`: runtime context (no fields accessed)
+
+# Returns
+- `::Int`: `PASS`, `FAIL_TIME_MIN`, or `FAIL_TIME_MAX`
+"""
+function (r::ConnectionTimeRule)(cp::GraphConnection, ctx)::Int
+    cp.from_leg === cp.to_leg && return PASS  # nonstop
+    cp.is_through && return PASS
+    cnx = Int32(cp.cnx_time)
+    r.min_time != NO_MINUTES && cnx < Int32(r.min_time) && return FAIL_TIME_MIN
+    cnx > Int32(r.max_time) && return FAIL_TIME_MAX
+    return PASS
+end
+
+# ── Rule 11: ConnectionGeoRule (callable struct) ───────────────────────────────
+
+"""
+    `struct ConnectionGeoRule`
+---
+
+# Description
+- Callable struct enforcing geographic allow/deny filters on the connection
+  station and the origin/destination station records
+- Each filter set is optional: an empty set means "no restriction"
+- Deny sets are checked before allow sets; a station present in a deny set
+  always fails regardless of allow sets
+
+# Fields
+- `allow_stations::Set{StationCode}` — if non-empty, station code must be in set
+- `deny_stations::Set{StationCode}` — if non-empty, station code must not be in set
+- `allow_countries::Set{InlineString3}` — country filter on connection station record
+- `deny_countries::Set{InlineString3}`
+- `allow_regions::Set{InlineString3}` — region filter on connection station record
+- `deny_regions::Set{InlineString3}`
+- `allow_states::Set{InlineString3}` — state/province filter on connection station record
+- `deny_states::Set{InlineString3}`
+"""
+struct ConnectionGeoRule
+    allow_stations::Set{StationCode}
+    deny_stations::Set{StationCode}
+    allow_countries::Set{InlineString3}
+    deny_countries::Set{InlineString3}
+    allow_regions::Set{InlineString3}
+    deny_regions::Set{InlineString3}
+    allow_states::Set{InlineString3}
+    deny_states::Set{InlineString3}
+end
+
+"""
+    `function (r::ConnectionGeoRule)(cp::GraphConnection, ctx)::Int`
+---
+
+# Description
+- Callable entry-point for `ConnectionGeoRule`
+- Checks the connection station's code, country, region, and state against
+  the configured allow/deny sets via `_check_categorical`
+
+# Arguments
+1. `cp::GraphConnection`: connection to evaluate; `cp.station` must be a `GraphStation`
+2. `ctx`: runtime context (no fields accessed)
+
+# Returns
+- `::Int`: `PASS` or `FAIL_GEO`
+"""
+function (r::ConnectionGeoRule)(cp::GraphConnection, ctx)::Int
+    stn = cp.station::GraphStation
+    _check_categorical(stn.code, r.allow_stations, r.deny_stations) || return FAIL_GEO
+    rec = stn.record
+    _check_categorical(rec.country, r.allow_countries, r.deny_countries) || return FAIL_GEO
+    _check_categorical(rec.region, r.allow_regions, r.deny_regions) || return FAIL_GEO
+    _check_categorical(rec.state, r.allow_states, r.deny_states) || return FAIL_GEO
+    return PASS
+end
+
 # ── Rule chain assembly ────────────────────────────────────────────────────────
 
 """
@@ -995,11 +1105,15 @@ end
 ---
 
 # Description
-- Assembles and returns the canonical 9-rule connection rule chain
+- Assembles and returns the connection rule chain as a `Tuple` of callables
 - Rules are ordered for maximum short-circuit efficiency: cheap structural checks
   first, expensive MCT and geometry checks later
 - `MAFTRule` and `CircuityRule` are constructed from `constraints.defaults`
   parameters; `MCTRule` embeds the provided `mct_lookup`
+- `ConnectionTimeRule` is included only when non-default time bounds are configured
+  (`min_connection_time != NO_MINUTES` or `max_connection_time != 480`)
+- `ConnectionGeoRule` is included only when at least one geographic filter set is
+  non-empty
 
 # Arguments
 1. `config::SearchConfig`: search configuration (scope, interline mode, etc.)
@@ -1007,13 +1121,13 @@ end
 3. `mct_lookup::MCTLookup`: pre-materialised in-memory MCT lookup structure
 
 # Returns
-- `::Tuple`: 9-element tuple of callables, in chain order (Tuple enables full specialization in the O(n²) loop)
+- `::Tuple`: tuple of callables in chain order (Tuple enables full specialization in the O(n²) loop)
 
 # Examples
 ```julia
 julia> rules = build_cnx_rules(SearchConfig(), SearchConstraints(), MCTLookup());
-julia> length(rules)
-9
+julia> length(rules) >= 9
+true
 ```
 """
 function build_cnx_rules(
@@ -1028,9 +1142,13 @@ function build_cnx_rules(
         check_cnx_scope,
         check_cnx_interline,
         MCTRule(mct_lookup),
-        check_cnx_opdays,
-        check_cnx_suppcodes,
     ]
+    # Connection time rule (only when non-default bounds are configured)
+    if p.min_connection_time != NO_MINUTES || p.max_connection_time != Minutes(480)
+        push!(rules, ConnectionTimeRule(p.min_connection_time, p.max_connection_time))
+    end
+    push!(rules, check_cnx_opdays)
+    push!(rules, check_cnx_suppcodes)
     config.maft_enabled && push!(rules, MAFTRule())
     push!(rules,
         CircuityRule(
@@ -1039,6 +1157,18 @@ function build_cnx_rules(
             p.international_circuity_extra_miles,
         ),
     )
+    # Geographic filter (only when any set is non-empty)
+    if !isempty(p.allow_stations) || !isempty(p.deny_stations) ||
+       !isempty(p.allow_countries) || !isempty(p.deny_countries) ||
+       !isempty(p.allow_regions) || !isempty(p.deny_regions) ||
+       !isempty(p.allow_states) || !isempty(p.deny_states)
+        push!(rules, ConnectionGeoRule(
+            p.allow_stations, p.deny_stations,
+            p.allow_countries, p.deny_countries,
+            p.allow_regions, p.deny_regions,
+            p.allow_states, p.deny_states,
+        ))
+    end
     push!(rules, check_cnx_trfrest)
     return Tuple(rules)
 end
