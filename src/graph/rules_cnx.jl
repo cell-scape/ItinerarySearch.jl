@@ -55,6 +55,22 @@ const FAIL_CIRCUITY = Int(-10)
 const FAIL_TRFREST  = Int(-11)
 const FAIL_BACKTRACK = Int(-12)
 
+# ── Shared filter helpers ────────────────────────────────────────────────────
+
+@inline function _check_categorical(value, allow_set::Set, deny_set::Set)::Bool
+    !isempty(deny_set) && value in deny_set && return false
+    !isempty(allow_set) && value ∉ allow_set && return false
+    return true
+end
+
+@inline function _get_trc(rec)::Char
+    trc = rec.traffic_restriction_for_leg
+    (isempty(trc) || trc == InlineString15(".")) && return ' '
+    length(trc) <= 1 && return trc[1]
+    seq = Int(rec.leg_sequence_number)
+    (seq > 0 && seq <= length(trc)) ? trc[seq] : ' '
+end
+
 # ── Rule 1: Roundtrip tagger ──────────────────────────────────────────────────
 
 """
