@@ -63,6 +63,8 @@ import ItinerarySearch:
     MCT_BIT_ARR_ACFT_TYPE, MCT_BIT_DEP_ACFT_TYPE,
     MCT_BIT_ARR_FLT_RNG, MCT_BIT_DEP_FLT_RNG,
     MCT_BIT_PRV_STATE, MCT_BIT_NXT_STATE,
+    # MCT audit trace types
+    EMPTY_MCT_RESULT, MCTCandidateTrace, MCTTrace, MCTAuditConfig,
     # Connection rules
     check_cnx_roundtrip, check_cnx_backtrack, check_cnx_scope, check_cnx_interline,
     check_cnx_opdays, check_cnx_suppcodes, check_cnx_trfrest,
@@ -330,6 +332,59 @@ include("test_helpers.jl")
             @test mct.time == Int16(90)
             @test mct.queried_status == MCT_II
             @test mct.suppressed == false
+        end
+
+        @testset "EMPTY_MCT_RESULT" begin
+            @test EMPTY_MCT_RESULT.time == Minutes(0)
+            @test EMPTY_MCT_RESULT.source == SOURCE_GLOBAL_DEFAULT
+            @test EMPTY_MCT_RESULT.mct_id == Int32(0)
+            @test EMPTY_MCT_RESULT.matched_fields == UInt32(0)
+            @test EMPTY_MCT_RESULT === EMPTY_MCT_RESULT  # isbits identity
+        end
+
+        @testset "MCTCandidateTrace" begin
+            rec = MCTRecord(
+                arr_carrier = AirlineCode("UA"),
+                dep_carrier = AirlineCode("UA"),
+                specified = MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER,
+                time = Minutes(90),
+                mct_id = Int32(100),
+            )
+            ct = MCTCandidateTrace(rec, true, :none, :exception)
+            @test ct.matched == true
+            @test ct.skip_reason == :none
+            @test ct.pass == :exception
+            @test ct.record.time == Minutes(90)
+        end
+
+        @testset "MCTTrace" begin
+            trace = MCTTrace(
+                arr_carrier = AirlineCode("UA"),
+                dep_carrier = AirlineCode("AA"),
+                arr_station = StationCode("ORD"),
+                dep_station = StationCode("ORD"),
+                status = MCT_DD,
+                candidates = MCTCandidateTrace[],
+                result = EMPTY_MCT_RESULT,
+            )
+            @test trace.arr_carrier == AirlineCode("UA")
+            @test trace.codeshare_mode == :none
+            @test trace.marketing_result === EMPTY_MCT_RESULT
+            @test trace.operating_result === EMPTY_MCT_RESULT
+            @test isempty(trace.candidates)
+        end
+
+        @testset "MCTAuditConfig" begin
+            cfg = MCTAuditConfig()
+            @test cfg.enabled == false
+            @test cfg.detail == :summary
+            @test cfg.max_connections == 0
+            @test cfg.max_candidates == 10
+
+            cfg2 = MCTAuditConfig(enabled=true, detail=:detailed, max_connections=100)
+            @test cfg2.enabled == true
+            @test cfg2.detail == :detailed
+            @test cfg2.max_connections == 100
         end
 
         @testset "SegmentRecord" begin
