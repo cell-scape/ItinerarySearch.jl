@@ -208,6 +208,7 @@ and the arrival and departure stations differ (SSIM8 global default = 240 min).
 
 # Fields
 - `stations::Dict{Tuple{StationCode,StationCode}, NTuple{4, Vector{MCTRecord}}}` — per-station-pair records
+- `global_suppressions::NTuple{4, Vector{MCTRecord}}` — blank-station suppression records (apply at all stations); checked after per-station records but before station standard
 - `global_defaults::NTuple{4, Minutes}` — IATA fallback times (DD=60, DI=90, ID=90, II=120)
 - `inter_station_default::Minutes` — fallback for inter-station connections (default 240 min)
 
@@ -223,6 +224,8 @@ true
 @kwdef struct MCTLookup
     stations::Dict{Tuple{StationCode,StationCode}, NTuple{4, Vector{MCTRecord}}} =
         Dict{Tuple{StationCode,StationCode}, NTuple{4, Vector{MCTRecord}}}()
+    global_suppressions::NTuple{4, Vector{MCTRecord}} =
+        (Vector{MCTRecord}(), Vector{MCTRecord}(), Vector{MCTRecord}(), Vector{MCTRecord}())
     global_defaults::NTuple{4, Minutes} =
         (Minutes(60), Minutes(90), Minutes(90), Minutes(120))
     inter_station_default::Minutes = Minutes(240)
@@ -594,6 +597,55 @@ function lookup_mct(
         )
     end
 
+    # ── Pass 1b: global (blank-station) suppressions ────────────────────────
+    # These records had blank arrival/departure stations in the MCT file,
+    # meaning they apply at ALL stations. Per SSIM Ch. 8 Section 8.6
+    # priorities 27-28: stations can be blank "when used with a geographical
+    # (global) suppression." Geography scoping (supp_region/country/state)
+    # is checked against the connection station's geography.
+    global_recs = lookup.global_suppressions[status_idx]
+    if !isempty(global_recs)
+        for rec in global_recs
+            # Date validity
+            if rec.eff_date != UInt32(0) && target_date != UInt32(0)
+                (target_date < rec.eff_date || target_date > rec.dis_date) && continue
+            end
+            _mct_record_matches(
+                rec, arr_carrier, dep_carrier, arr_body, dep_body,
+                prv_stn, nxt_stn, arr_term, dep_term,
+                prv_country, nxt_country,
+                arr_op_carrier, dep_op_carrier,
+                arr_is_codeshare, dep_is_codeshare,
+                arr_acft_type, dep_acft_type,
+                arr_flt_no, dep_flt_no,
+                prv_state, nxt_state,
+                prv_region, nxt_region,
+            ) || continue
+
+            # Suppression geography scope — check against connection station's
+            # geography AND flight endpoint geography
+            if rec.supp_region != _empty
+                rec.supp_region != prv_region && rec.supp_region != nxt_region && continue
+            end
+            if rec.supp_country != _empty
+                rec.supp_country != prv_country && rec.supp_country != nxt_country && continue
+            end
+            if rec.supp_state != _empty
+                rec.supp_state != prv_state && rec.supp_state != nxt_state && continue
+            end
+            return MCTResult(
+                time           = Minutes(0),
+                queried_status = status,
+                matched_status = status,
+                suppressed     = true,
+                source         = SOURCE_EXCEPTION,
+                specificity    = rec.specificity,
+                mct_id         = rec.mct_id,
+                matched_fields = rec.specified,
+            )
+        end
+    end
+
     # ── Pass 2: station standard ──────────────────────────────────────────────
     for rec in records
         rec.station_standard || continue
@@ -663,9 +715,9 @@ function _build_mct_record(r)::Tuple{Tuple{StationCode,StationCode}, MCTStatus, 
     status      = _mct_status_from_string(status_str)
 
     # Station-pair key: use arr_stn and dep_stn directly.
-    # When arr_stn is empty fall back to dep_stn for both sides (legacy dep-only records).
-    arr_key = StationCode(isempty(arr_stn_str) ? dep_stn_str_raw : arr_stn_str)
-    dep_key = StationCode(isempty(dep_stn_str_raw) ? arr_stn_str : dep_stn_str_raw)
+    # Blank stations → NO_STATION sentinel (routed to global_suppressions by caller).
+    arr_key = isempty(arr_stn_str) ? NO_STATION : StationCode(arr_stn_str)
+    dep_key = isempty(dep_stn_str_raw) ? NO_STATION : StationCode(dep_stn_str_raw)
     station_key = (arr_key, dep_key)
 
     arr_carrier_str = strip(_safe_string(r.arr_carrier))
@@ -856,7 +908,8 @@ function materialize_mct_lookup(
             eff_date, dis_date,
             supp_rgn, supp_ctry, supp_state
         FROM mct
-        WHERE (arr_stn IN ($quoted) OR dep_stn IN ($quoted))
+        WHERE (arr_stn IN ($quoted) OR dep_stn IN ($quoted)
+               OR (TRIM(arr_stn) = '' AND TRIM(dep_stn) = '' AND suppress = true))
           AND (suppress = true OR (
               (time_minutes >= ? OR ? = -1)
               AND (time_minutes <= ? OR ? = -1)
@@ -867,22 +920,30 @@ function materialize_mct_lookup(
 
     # Accumulate into a staging dict: (arr_stn, dep_stn) → status_idx → Vector{MCTRecord}
     staging = Dict{Tuple{StationCode,StationCode}, NTuple{4, Vector{MCTRecord}}}()
+    # Blank-station suppressions go into a separate global list
+    global_supps = (
+        Vector{MCTRecord}(), Vector{MCTRecord}(),
+        Vector{MCTRecord}(), Vector{MCTRecord}(),
+    )
 
     for r in result
         station_key, status, rec = _build_mct_record(r)
-        # Both elements of the key must be non-empty
-        (station_key[1] == NO_STATION || station_key[2] == NO_STATION) && continue
+        status_idx = Int(status)
+
+        # Blank-station suppression records → global suppressions list
+        if station_key[1] == NO_STATION || station_key[2] == NO_STATION
+            rec.suppressed || continue  # only suppressions can have blank stations
+            push!(global_supps[status_idx], rec)
+            continue
+        end
 
         if !haskey(staging, station_key)
             staging[station_key] = (
-                Vector{MCTRecord}(),
-                Vector{MCTRecord}(),
-                Vector{MCTRecord}(),
-                Vector{MCTRecord}(),
+                Vector{MCTRecord}(), Vector{MCTRecord}(),
+                Vector{MCTRecord}(), Vector{MCTRecord}(),
             )
         end
 
-        status_idx = Int(status)
         push!(staging[station_key][status_idx], rec)
     end
 
@@ -890,11 +951,15 @@ function materialize_mct_lookup(
     # At equal specificity, later serial numbers win per SSIM Ch. 8 Section 8.5.2:
     # "whenever new data is received, the information contained supersedes
     # previously received data."
+    _sort_key = r -> (r.specificity, r.record_serial)
     for (_, vecs) in staging
         for vec in vecs
-            sort!(vec; by = r -> (r.specificity, r.record_serial), rev = true)
+            sort!(vec; by = _sort_key, rev = true)
         end
     end
+    for vec in global_supps
+        sort!(vec; by = _sort_key, rev = true)
+    end
 
-    MCTLookup(stations = staging)
+    MCTLookup(stations = staging, global_suppressions = global_supps)
 end
