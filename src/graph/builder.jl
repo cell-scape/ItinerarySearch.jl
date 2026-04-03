@@ -277,6 +277,32 @@ function build_graph!(
     end
     @info "Loaded schedule legs" count = length(leg_records) source
 
+    # 2b. Leg-level filters — remove legs that fail distance/service/equipment checks
+    constraints = SearchConstraints()
+    params = constraints.defaults
+    if params.min_leg_distance > Distance(0) || params.max_leg_distance < Distance(Inf32) ||
+       !isempty(params.allow_service_types) || !isempty(params.deny_service_types) ||
+       !isempty(params.allow_aircraft_types) || !isempty(params.deny_aircraft_types) ||
+       !isempty(params.allow_body_types) || !isempty(params.deny_body_types)
+        pre_count = length(leg_records)
+        filter!(leg_records) do rec
+            # Distance filter (skip unknown distances = 0)
+            if rec.distance > Distance(0)
+                rec.distance < params.min_leg_distance && return false
+                rec.distance > params.max_leg_distance && return false
+            end
+            # Service type filter
+            _check_categorical(rec.service_type, params.allow_service_types, params.deny_service_types) || return false
+            # Aircraft type filter
+            _check_categorical(rec.aircraft_type, params.allow_aircraft_types, params.deny_aircraft_types) || return false
+            # Body type filter
+            _check_categorical(rec.body_type, params.allow_body_types, params.deny_body_types) || return false
+            return true
+        end
+        filtered = pre_count - length(leg_records)
+        filtered > 0 && @info "Leg-level filter" removed=filtered remaining=length(leg_records)
+    end
+
     # 3. Create stations — one per unique code
     stations = Dict{StationCode,GraphStation}()
     for rec in leg_records
@@ -410,7 +436,6 @@ function build_graph!(
     emit!(event_log, PhaseEvent(phase = :mct_materialize, action = :start))
     t_mct = time_ns()
     active_stations = Set{StationCode}(keys(stations))
-    constraints = SearchConstraints()
     mct_lookup = materialize_mct_lookup(store, active_stations;
                                        constraints = constraints,
                                        mct_serial_ascending = config.mct_serial_ascending,
