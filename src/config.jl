@@ -102,6 +102,7 @@ the reference — no locking, no mutation.
     allow_roundtrips::Bool = false
     mct_cache_enabled::Bool = true         # cache MCT lookup results during connection build
     mct_serial_ascending::Bool = true      # tiebreaker: true = lower serial wins (earlier record), false = higher serial wins (later record)
+    mct_codeshare_mode::Symbol = :both     # :both = marketing+operating (default), :marketing = marketing only, :operating = operating only
 end
 
 # ── JSON3 field extraction helpers ────────────────────────────────────────────
