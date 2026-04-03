@@ -55,7 +55,7 @@ include("cli.jl")
 export StationCode, Itinerary, Trip, TripLeg, FlightGraph, ConnectionRef
 
 # Config
-export SearchConfig, load_config
+export SearchConfig, load_config, load_constraints
 export ScopeMode, SCOPE_ALL, SCOPE_DOM, SCOPE_INTL
 export InterlineMode, INTERLINE_ONLINE, INTERLINE_CODESHARE, INTERLINE_ALL
 
