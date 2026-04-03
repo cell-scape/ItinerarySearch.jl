@@ -3,8 +3,9 @@
 # Loads schedule, builds graph, creates search context.
 # Expects the caller to have `using ItinerarySearch, Dates` already.
 
-function setup_environment(; target_date::Date = Date(2026, 3, 18))
-    config = SearchConfig()
+function setup_environment(; target_date::Date = Date(2026, 3, 18), config_path::Union{String,Nothing} = nothing)
+    config = config_path !== nothing ? load_config(config_path) : SearchConfig()
+    constraints = config_path !== nothing ? load_constraints(config_path) : SearchConstraints()
     store = DuckDBStore()
 
     try
@@ -31,11 +32,11 @@ function setup_environment(; target_date::Date = Date(2026, 3, 18))
 
     ctx = RuntimeContext(
         config = config,
-        constraints = SearchConstraints(),
-        itn_rules = build_itn_rules(config),
+        constraints = constraints,
+        itn_rules = build_itn_rules(config; constraints=constraints),
     )
 
-    return (; config, store, graph, ctx)
+    return (; config, store, graph, ctx, constraints)
 end
 
 # Default curated OD pairs

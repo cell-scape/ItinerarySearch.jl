@@ -213,9 +213,14 @@ See [docs/src/architecture.md](docs/src/architecture.md) for the full Mermaid di
 | `mct_codeshare_mode` | `:both` | `:both`, `:marketing`, or `:operating` carrier lookup |
 | `mct_schengen_mode` | `:sch_then_eur` | SCH/EUR region priority: `:sch_then_eur`, `:eur_then_sch`, `:sch_only`, `:eur_only` |
 | `mct_suppressions_enabled` | `true` | Include MCT suppression records (`false` = ignore) |
+| `maft_enabled` | `true` | Enable MAFT (Maximum Allowable Flying Time) rule |
+| `interline_dcnx_enabled` | `true` | Enable interline double-connect pattern restriction |
+| `crs_cnx_enabled` | `true` | Enable CRS distance-based max connection time rule |
 | `log_level` | `:info` | Log level (`:debug`, `:info`, `:warn`, `:error`) |
 | `log_json_path` | `""` | DynaTrace-compatible JSON log file (empty = disabled) |
 | `event_log_enabled` | `false` | Structured event log with JSONL sink |
+
+Constraints (numeric ranges, categorical allow/deny filters) are configured via `SearchConstraints` / `ParameterSet` and loaded from JSON via `load_constraints("config.json")`. See [Getting Started](docs/src/getting-started.md) for examples.
 
 ## Benchmarks
 
