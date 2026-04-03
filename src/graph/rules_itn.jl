@@ -191,22 +191,41 @@ end
 # ── Rule 5: MAFT (Maximum Feasible Travel Time) filter ────────────────────────
 
 """
+    `@inline function _leg_block_time(rec)::Int32`
+
+Compute block time in minutes for a leg record, UTC-adjusted.
+
+Formula: `(arr_local - arr_utc_offset + arr_date_variation × 1440) - (dep_local - dep_utc_offset)`.
+Returns at least 0.
+"""
+@inline function _leg_block_time(rec)::Int32
+    max(Int32(0),
+        (Int32(rec.passenger_arrival_time) - Int32(rec.arrival_utc_offset) +
+         Int32(rec.arrival_date_variation) * Int32(1440)) -
+        (Int32(rec.passenger_departure_time) - Int32(rec.departure_utc_offset)))
+end
+
+"""
     `function check_itn_maft(itn::Itinerary, ctx)::Int`
 ---
 
 # Description
-- Validates that the total approximate block time of the itinerary does not
-  exceed the Maximum Feasible Travel Time (MAFT) formula
-- MAFT = `max(gc_dist / 400.0 × 60, 30.0) + 240.0 + num_stops × 120.0`
-  where `gc_dist` is the great-circle origin-to-destination distance in NM
-- Block time is approximated as the sum of per-leg distances divided by the
-  assumed cruise speed (400 knots) converted to minutes
-- Skips the check when the itinerary has no connections or market distance
-  is zero (no coordinates available)
+- Validates that the total actual block time of the itinerary does not exceed
+  the Maximum Feasible Travel Time (MAFT) formula per the C reference
+  (`CheckCnxMaxAllFlyTime`)
+- Skip conditions: no connections, market distance zero, nonstop (`num_stops < 1`),
+  or roundtrip
+- MAFT formula:
+  - `base = max(gc_dist / 400.0 × 60, 30.0)` (where `gc_dist` is in NM/statute miles)
+  - `stop_allowance`: 240 min for 1-stop, 360 min for 2+ stops
+  - `taxi`: 30 min (15 in + 15 out)
+  - `maft = base + stop_allowance + taxi`
+- Block time is computed from actual UTC-adjusted leg times via `_leg_block_time`,
+  deduplicating legs that appear in multiple connections
 
 # Arguments
 1. `itn::Itinerary`: the itinerary to evaluate; accesses `itn.market_distance`,
-   `itn.num_stops`, and `itn.connections`
+   `itn.num_stops`, `itn.status`, and `itn.connections`
 2. `ctx`: runtime context (no fields accessed by this rule)
 
 # Returns
@@ -214,15 +233,29 @@ end
 """
 function check_itn_maft(itn::Itinerary, ctx)::Int
     isempty(itn.connections) && return PASS
+    itn.num_stops < Int16(1) && return PASS
+    is_roundtrip(itn.status) && return PASS
     itn.market_distance <= Distance(0) && return PASS
 
     gc_dist = Float64(itn.market_distance)
-    maft = max((gc_dist / 400.0) * 60.0, 30.0) + 240.0 + Float64(itn.num_stops) * 120.0
+    base_maft = max((gc_dist / 400.0) * 60.0, 30.0)
+    stop_allowance = itn.num_stops == Int16(1) ? 240.0 : 360.0
+    taxi = 30.0
+    maft = base_maft + stop_allowance + taxi
 
-    # Sum block times (approximated from leg distances at 400 knots cruise)
     total_bt = 0.0
+    last_leg = nothing
     for cp in itn.connections
-        total_bt += Float64((cp.from_leg::GraphLeg).distance) / 400.0 * 60.0
+        from_l = cp.from_leg::GraphLeg
+        if from_l !== last_leg
+            total_bt += Float64(_leg_block_time(from_l.record))
+            last_leg = from_l
+        end
+        to_l = cp.to_leg::GraphLeg
+        if !(from_l === to_l) && to_l !== last_leg
+            total_bt += Float64(_leg_block_time(to_l.record))
+            last_leg = to_l
+        end
     end
 
     return total_bt <= maft ? PASS : FAIL_ITN_MAFT

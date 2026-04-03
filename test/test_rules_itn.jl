@@ -305,39 +305,33 @@ using Dates
             @test check_itn_maft(itn, ctx) == PASS
         end
 
-        @testset "nonstop passes (block time << MAFT)" begin
-            # gc_dist=1000, maft = max((1000/400)*60, 30) + 240 + 0*120
-            #               = max(150, 30) + 240 = 390 min
-            # block_time = (1000/400)*60 = 150 min => 150 <= 390 => PASS
+        @testset "nonstop always passes (num_stops < 1 short-circuit)" begin
+            # New formula: nonstop itineraries skip MAFT check entirely
             leg_rec = _itn_leg_record(distance=1000.0f0)
             itn = _nonstop_itn(
                 market_distance=Distance(1000.0f0),
+                num_stops=Int16(0),
                 leg_rec=leg_rec,
             )
             @test check_itn_maft(itn, ctx) == PASS
         end
 
-        @testset "fails when block time exceeds MAFT" begin
-            # gc_dist=100, maft = max((100/400)*60, 30) + 240 + 0*120
-            #              = max(15, 30) + 240 = 270 min
-            # leg distance=10000 => block_time = (10000/400)*60 = 1500 min
-            # 1500 > 270 => FAIL
-            leg_rec = _itn_leg_record(distance=10000.0f0)
-            itn = _nonstop_itn(
-                market_distance=Distance(100.0f0),
-                leg_rec=leg_rec,
-            )
-            @test check_itn_maft(itn, ctx) == FAIL_ITN_MAFT
-        end
-
-        @testset "1-stop itinerary: stop allowance relaxes MAFT" begin
+        @testset "1-stop passes when block time within MAFT" begin
             # gc_dist=1500, num_stops=1
-            # maft = max((1500/400)*60, 30) + 240 + 1*120
-            #       = max(225, 30) + 240 + 120 = 585 min
-            # legs: distance=1000 + 1000 => total_bt = 2*(1000/400)*60 = 300 min
-            # 300 <= 585 => PASS
-            from_rec = _itn_leg_record(departure_station="JFK", arrival_station="ORD", distance=1000.0f0)
-            to_rec   = _itn_leg_record(departure_station="ORD", arrival_station="LHR", distance=1000.0f0)
+            # base = max((1500/400)*60, 30) = max(225, 30) = 225 min
+            # stop_allowance = 240 (1 stop), taxi = 30
+            # maft = 225 + 240 + 30 = 495 min
+            # from_rec: dep=0, arr=150 => block = 150 min
+            # to_rec:   dep=300, arr=450 => block = 150 min
+            # total_bt = 300 min; 300 <= 495 => PASS
+            from_rec = _itn_leg_record(departure_station="JFK", arrival_station="ORD",
+                                        passenger_departure_time=Int16(0),
+                                        passenger_arrival_time=Int16(150),
+                                        distance=1000.0f0)
+            to_rec   = _itn_leg_record(departure_station="ORD", arrival_station="LHR",
+                                        passenger_departure_time=Int16(300),
+                                        passenger_arrival_time=Int16(450),
+                                        distance=1000.0f0)
             itn = _oneStop_itn(
                 market_distance=Distance(1500.0f0),
                 total_distance=Distance(2000.0f0),
@@ -346,6 +340,32 @@ using Dates
                 to_rec=to_rec,
             )
             @test check_itn_maft(itn, ctx) == PASS
+        end
+
+        @testset "1-stop fails when block time exceeds MAFT" begin
+            # gc_dist=100, num_stops=1
+            # base = max((100/400)*60, 30) = max(15, 30) = 30 min
+            # stop_allowance = 240 (1 stop), taxi = 30
+            # maft = 30 + 240 + 30 = 300 min
+            # from_rec: dep=0, arr=300 => block = 300 min
+            # to_rec:   dep=400, arr=700 => block = 300 min
+            # total_bt = 600 min; 600 > 300 => FAIL
+            from_rec = _itn_leg_record(departure_station="JFK", arrival_station="ORD",
+                                        passenger_departure_time=Int16(0),
+                                        passenger_arrival_time=Int16(300),
+                                        distance=500.0f0)
+            to_rec   = _itn_leg_record(departure_station="ORD", arrival_station="LHR",
+                                        passenger_departure_time=Int16(400),
+                                        passenger_arrival_time=Int16(700),
+                                        distance=500.0f0)
+            itn = _oneStop_itn(
+                market_distance=Distance(100.0f0),
+                total_distance=Distance(1000.0f0),
+                num_stops=Int16(1),
+                from_rec=from_rec,
+                to_rec=to_rec,
+            )
+            @test check_itn_maft(itn, ctx) == FAIL_ITN_MAFT
         end
     end
 

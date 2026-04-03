@@ -103,7 +103,7 @@ using Dates
         (
             config = SearchConfig(scope=scope, interline=interline),
             constraints = constraints,
-            build_stats = BuildStats(rule_pass=zeros(Int64, 9), rule_fail=zeros(Int64, 9)),
+            build_stats = BuildStats(rule_pass=zeros(Int64, 10), rule_fail=zeros(Int64, 10)),
             mct_cache = Dict{MCTCacheKey, MCTResult}(),
             gc_cache = Dict{Tuple{StationCode,StationCode}, Float64}(),
             target_date = target_date,

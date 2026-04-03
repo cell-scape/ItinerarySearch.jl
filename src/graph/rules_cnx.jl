@@ -711,9 +711,12 @@ end
 """
     `MAFTRule()`
 
-Construct a `MAFTRule` with default speed (400 knots) and rest time (480 min).
+Construct a `MAFTRule` with default speed (400 knots) and rest time (240 min).
+
+Per the C reference (`CheckCnxMaxAllFlyTime`): MAFT = max(distance/400*60, 30) + 240 minutes
+for a single connection.
 """
-MAFTRule() = MAFTRule(400.0, 480.0)
+MAFTRule() = MAFTRule(400.0, 240.0)
 
 """
     `function (r::MAFTRule)(cp::GraphConnection, ctx)::Int`
@@ -1012,7 +1015,8 @@ function build_cnx_rules(
     constraints::SearchConstraints,
     mct_lookup::MCTLookup,
 )
-    return (
+    p = constraints.defaults
+    rules = Any[
         check_cnx_roundtrip,
         check_cnx_backtrack,
         check_cnx_scope,
@@ -1020,11 +1024,14 @@ function build_cnx_rules(
         MCTRule(mct_lookup),
         check_cnx_opdays,
         check_cnx_suppcodes,
-        MAFTRule(),
+    ]
+    config.maft_enabled && push!(rules, MAFTRule())
+    push!(rules,
         CircuityRule(
-            constraints.defaults.circuity_factor,
-            constraints.defaults.domestic_circuity_extra_miles,
+            p.circuity_factor,
+            p.domestic_circuity_extra_miles,
         ),
-        check_cnx_trfrest,
     )
+    push!(rules, check_cnx_trfrest)
+    return Tuple(rules)
 end

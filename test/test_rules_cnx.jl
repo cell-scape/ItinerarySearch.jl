@@ -492,7 +492,7 @@ using Dates
         @testset "default constructor" begin
             rule = MAFTRule()
             @test rule.speed == 400.0
-            @test rule.rest_time == 480.0
+            @test rule.rest_time == 240.0
         end
 
         @testset "round-trip always passes" begin
@@ -502,12 +502,18 @@ using Dates
         end
 
         @testset "normal flight passes (block_time << MAFT)" begin
-            # distance=1000 NM each leg => total=2000 NM
-            # block_time = (2000/400)*60 = 300 min
-            # maft = max(300, 30) + 240 = 540 min
+            # dep=0, arr=150 per leg => block_time = 150 min each, total = 300 min
+            # total_dist = 1000 + 1000 = 2000 NM
+            # maft = max((2000/400)*60, 30) + 240 = max(300,30) + 240 = 540 min
             # 300 <= 540 => PASS
-            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD", distance=1000.0f0)
-            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR", distance=1000.0f0)
+            from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD",
+                                         passenger_departure_time=Int16(0),
+                                         passenger_arrival_time=Int16(150),
+                                         distance=1000.0f0)
+            to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR",
+                                         passenger_departure_time=Int16(300),
+                                         passenger_arrival_time=Int16(450),
+                                         distance=1000.0f0)
             cp = _test_connection(from_rec=from_rec, to_rec=to_rec,
                                   status=StatusBits(DOW_MON))
             rule = MAFTRule()
@@ -760,6 +766,17 @@ using Dates
         rule9 = rules[9]::CircuityRule
         @test rule9.factor == constraints.defaults.circuity_factor
         @test rule9.extra_miles == constraints.defaults.domestic_circuity_extra_miles
+    end
+
+    @testset "build_cnx_rules with maft_enabled=false omits MAFTRule" begin
+        config      = SearchConfig(maft_enabled=false)
+        constraints = SearchConstraints()
+        lookup      = MCTLookup()
+        rules = build_cnx_rules(config, constraints, lookup)
+        @test length(rules) == 9
+        @test !any(r -> r isa MAFTRule, rules)
+        @test rules[8] isa CircuityRule
+        @test rules[9] === check_cnx_trfrest
     end
 
     # ── Allocation regression test ────────────────────────────────────────────
