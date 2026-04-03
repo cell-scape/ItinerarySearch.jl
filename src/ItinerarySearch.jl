@@ -85,7 +85,7 @@ export itinerary_legs, itinerary_legs_multi, itinerary_legs_json
 
 # MCT audit
 export MCTAuditConfig, MCTTrace, MCTCandidateTrace, EMPTY_MCT_RESULT
-export lookup_mct_traced, decode_matched_fields
+export lookup_mct_traced, lookup_mct_codeshare_traced, decode_matched_fields
 export replay_misconnects, mct_inspect
 
 # Visualization

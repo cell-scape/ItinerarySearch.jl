@@ -129,6 +129,11 @@ function _print_result(io::IO, trace::MCTTrace, params::NamedTuple)
     println(io, "\n  Result: time=$(Int(r.time)) source=$(_source_str(r.source)) mct_id=$(Int(r.mct_id))")
     fields = decode_matched_fields(r.matched_fields)
     !isempty(fields) && println(io, "  Matched fields: $fields")
+    if trace.codeshare_mode != :none
+        println(io, "  Codeshare resolution: winner=$(trace.codeshare_mode)" *
+            " (mkt=$(Int(trace.marketing_result.time))/$(Int(trace.marketing_result.mct_id))" *
+            " op=$(Int(trace.operating_result.time))/$(Int(trace.operating_result.mct_id)))")
+    end
     their_mct = Int(params.their_mct)
     our_mct = Int(r.time)
     time_match = our_mct == their_mct
@@ -170,7 +175,9 @@ function _run_trace(state::InspectorState, params::NamedTuple)::MCTTrace
     # Use prv_stn/nxt_stn from parsed params if available, else NO_STATION
     prv_stn = hasproperty(params, :prv_stn) ? params.prv_stn : NO_STATION
     nxt_stn = hasproperty(params, :nxt_stn) ? params.nxt_stn : NO_STATION
-    lookup_mct_traced(
+    arr_op_flt_no = hasproperty(params, :arr_op_flt_no) ? params.arr_op_flt_no : FlightNumber(0)
+    dep_op_flt_no = hasproperty(params, :dep_op_flt_no) ? params.dep_op_flt_no : FlightNumber(0)
+    lookup_mct_codeshare_traced(
         state.lookup,
         params.arr_carrier, params.dep_carrier,
         params.arr_station, params.dep_station,
@@ -183,6 +190,8 @@ function _run_trace(state::InspectorState, params::NamedTuple)::MCTTrace
         dep_term = params.dep_term,
         arr_op_carrier = params.arr_op_carrier,
         dep_op_carrier = params.dep_op_carrier,
+        arr_op_flt_no = arr_op_flt_no,
+        dep_op_flt_no = dep_op_flt_no,
         arr_is_codeshare = params.arr_is_codeshare,
         dep_is_codeshare = params.dep_is_codeshare,
         arr_acft_type = params.arr_acft_type,

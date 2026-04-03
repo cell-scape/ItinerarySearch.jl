@@ -93,11 +93,13 @@ function parse_misconnect_row(row; acft_body::Dict{String,Char} = Dict{String,Ch
     arr_flt_no = _flt(row.inbound_flight_number)
     dep_flt_no = _flt(row.outbound_flight_number)
 
-    # Operating carriers
+    # Operating carriers and flight numbers
     arr_op_str = strip(_s(row.inbound_operating_carrier))
     dep_op_str = strip(_s(row.outbound_operating_carrier))
     arr_op_carrier = isempty(arr_op_str) ? NO_AIRLINE : AirlineCode(arr_op_str)
     dep_op_carrier = isempty(dep_op_str) ? NO_AIRLINE : AirlineCode(dep_op_str)
+    arr_op_flt_no = _flt(row.inbound_operating_flight_number)
+    dep_op_flt_no = _flt(row.outbound_operating_flight_number)
 
     # Codeshare indicators
     arr_is_codeshare = uppercase(strip(_s(row.inbound_codeshare_indicator))) == "Y"
@@ -145,6 +147,7 @@ function parse_misconnect_row(row; acft_body::Dict{String,Char} = Dict{String,Ch
         arr_acft_type, dep_acft_type,
         arr_flt_no, dep_flt_no,
         arr_op_carrier, dep_op_carrier,
+        arr_op_flt_no, dep_op_flt_no,
         arr_is_codeshare, dep_is_codeshare,
         prv_country, nxt_country,
         prv_state, nxt_state,
@@ -261,7 +264,7 @@ function _replay_dataframe(
         prv_info !== nothing && (prv_region = prv_info.region)
         nxt_info !== nothing && (nxt_region = nxt_info.region)
 
-        trace = lookup_mct_traced(
+        trace = lookup_mct_codeshare_traced(
             lookup,
             parsed.arr_carrier,
             parsed.dep_carrier,
@@ -280,6 +283,8 @@ function _replay_dataframe(
             dep_flt_no = parsed.dep_flt_no,
             arr_op_carrier = parsed.arr_op_carrier,
             dep_op_carrier = parsed.dep_op_carrier,
+            arr_op_flt_no = parsed.arr_op_flt_no,
+            dep_op_flt_no = parsed.dep_op_flt_no,
             arr_is_codeshare = parsed.arr_is_codeshare,
             dep_is_codeshare = parsed.dep_is_codeshare,
             prv_country = parsed.prv_country,
