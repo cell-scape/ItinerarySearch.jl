@@ -15,26 +15,141 @@ State for the interactive MCT inspector REPL loop.
     airports::Dict{StationCode,StationRecord} = Dict{StationCode,StationRecord}()
     cascade_page_size::Int = 25     # candidates per page in cascade display
     cascade_shown::Int = 0          # how many candidates shown so far for current connection
+    style::DisplayStyle = _default_style()
 end
 
-function _print_connection_header(io::IO, idx::Int, total::Int, params::NamedTuple)
-    stn = String(params.arr_station)
-    println(io, "── Connection $idx/$total: $stn ──────────────────────────────────────────")
+# ── Formatting helpers ────────────────────────────────────────────────────────
+
+_format_packed_date(d::UInt32)::String =
+    d == 0 ? "-" : "$(d ÷ 10000)-$(lpad((d % 10000) ÷ 100, 2, '0'))-$(lpad(d % 100, 2, '0'))"
+
+function _format_leg(params::NamedTuple, side::Symbol)::String
+    if side === :arr
+        carrier  = String(params.arr_carrier)
+        flt      = Int(params.arr_flt_no)
+        op_cr    = String(params.arr_op_carrier)
+        op_flt   = hasproperty(params, :arr_op_flt_no) ? Int(params.arr_op_flt_no) : 0
+        is_cs    = params.arr_is_codeshare
+        from_stn = hasproperty(params, :prv_stn) ? String(params.prv_stn) : "---"
+        to_stn   = String(params.arr_station)
+        term     = String(params.arr_term)
+        body     = params.arr_body == ' ' ? "-" : string(params.arr_body)
+        acft     = String(params.arr_acft_type)
+        country  = String(params.prv_country)
+        state    = String(params.prv_state)
+    else
+        carrier  = String(params.dep_carrier)
+        flt      = Int(params.dep_flt_no)
+        op_cr    = String(params.dep_op_carrier)
+        op_flt   = hasproperty(params, :dep_op_flt_no) ? Int(params.dep_op_flt_no) : 0
+        is_cs    = params.dep_is_codeshare
+        from_stn = String(params.dep_station)
+        to_stn   = hasproperty(params, :nxt_stn) ? String(params.nxt_stn) : "---"
+        term     = String(params.dep_term)
+        body     = params.dep_body == ' ' ? "-" : string(params.dep_body)
+        acft     = String(params.dep_acft_type)
+        country  = String(params.nxt_country)
+        state    = String(params.nxt_state)
+    end
+    cs_tag = is_cs ? " (CS)" : ""
+    lines = "    Mkt:   $(carrier) $(flt)$(cs_tag)"
+    if is_cs
+        lines *= "\n    Op:    $(op_cr) $(op_flt)"
+    end
+    lines *= "\n    Route: $(from_stn) → $(to_stn)"
+    lines *= "\n    Term:  $(isempty(strip(term)) ? "-" : term)   Body: $(body)   Acft: $(isempty(strip(acft)) ? "-" : acft)"
+    lines *= "\n    Geo:   $(isempty(strip(country)) ? "-" : country) / $(isempty(strip(state)) ? "-" : state)"
+    lines
+end
+
+function _format_mct_record(rec::MCTRecord)::String
+    lines = String[]
+    push!(lines, "    MCT ID: $(Int(rec.mct_id))   Time: $(Int(rec.time)) min   Spec: 0x$(string(rec.specificity, base=16))   Serial: $(Int(rec.record_serial))")
+    push!(lines, "    Station Std: $(rec.station_standard ? "YES" : "NO")   Suppressed: $(rec.suppressed ? "YES" : "NO")")
+    # Date validity
+    if rec.eff_date != 0 || rec.dis_date != 0
+        push!(lines, "    Valid: $(_format_packed_date(rec.eff_date)) to $(_format_packed_date(rec.dis_date))")
+    end
+    # Specified matching fields with values
+    specified_parts = String[]
+    for (bit, name, rec_fn, _) in _MCT_FIELD_EXTRACTORS
+        if (rec.specified & bit) != 0
+            push!(specified_parts, "$(name)=$(rec_fn(rec))")
+        end
+    end
+    if (rec.specified & MCT_BIT_ARR_FLT_RNG) != 0
+        push!(specified_parts, "ARR_FLT_RNG=$(Int(rec.arr_flt_rng_start))-$(Int(rec.arr_flt_rng_end))")
+    end
+    if (rec.specified & MCT_BIT_DEP_FLT_RNG) != 0
+        push!(specified_parts, "DEP_FLT_RNG=$(Int(rec.dep_flt_rng_start))-$(Int(rec.dep_flt_rng_end))")
+    end
+    if !isempty(specified_parts)
+        push!(lines, "    Specified: $(join(specified_parts, ", "))")
+    end
+    # Suppression geography
+    supp_parts = String[]
+    !isempty(strip(String(rec.supp_region)))  && push!(supp_parts, "region=$(String(rec.supp_region))")
+    !isempty(strip(String(rec.supp_country))) && push!(supp_parts, "country=$(String(rec.supp_country))")
+    !isempty(strip(String(rec.supp_state)))   && push!(supp_parts, "state=$(String(rec.supp_state))")
+    !isempty(supp_parts) && push!(lines, "    Supp Geo: $(join(supp_parts, ", "))")
+    join(lines, "\n")
+end
+
+function _format_codeshare_table(trace::MCTTrace, params::NamedTuple)::String
+    op_time = Int(trace.operating_result.time)
     arr_cr = String(params.arr_carrier)
     dep_cr = String(params.dep_carrier)
-    arr_flt = Int(params.arr_flt_no)
-    dep_flt = Int(params.dep_flt_no)
-    cs_arr = params.arr_is_codeshare ? "(Y)" : ""
-    cs_dep = params.dep_is_codeshare ? "(Y)" : ""
-    println(io, "  $(arr_cr)$(arr_flt)$(cs_arr) → $(stn) → $(dep_cr)$(dep_flt)$(cs_dep)")
+    arr_op = String(params.arr_op_carrier)
+    dep_op = String(params.dep_op_carrier)
+    op_arr = params.arr_is_codeshare ? arr_op : arr_cr
+    op_dep = params.dep_is_codeshare ? dep_op : dep_cr
+
+    header = "    Mode      | Arr CR | Dep CR | Time | MCT ID | Spec     | Floor | Winner"
+    sep    = "    ----------|--------|--------|------|--------|----------|-------|-------"
+    rows = String[]
+
+    function _cs_row(label, result, a_cr, d_cr, mode_sym)
+        result === EMPTY_MCT_RESULT && return nothing
+        t = Int(result.time)
+        id = Int(result.mct_id)
+        spec = "0x" * lpad(string(result.specificity, base=16), 6, '0')
+        floor_ok = mode_sym === :operating ? "---" : (t >= op_time ? "YES" : "NO")
+        winner = trace.codeshare_mode === mode_sym ? ">>>" : ""
+        "    $(rpad(label, 10))| $(rpad(a_cr, 7))| $(rpad(d_cr, 7))| $(lpad(string(t), 4)) | $(lpad(string(id), 6)) | $(spec) | $(rpad(floor_ok, 5)) | $(winner)"
+    end
+
+    r = _cs_row("YY (mkt)", trace.marketing_result, arr_cr, dep_cr, :marketing)
+    r !== nothing && push!(rows, r)
+    r = _cs_row("YN (dep)", trace.dep_cs_result, op_arr, dep_cr, :dep_cs)
+    r !== nothing && push!(rows, r)
+    r = _cs_row("NY (arr)", trace.arr_cs_result, arr_cr, op_dep, :arr_cs)
+    r !== nothing && push!(rows, r)
+    r = _cs_row("NN (op)", trace.operating_result, op_arr, op_dep, :operating)
+    r !== nothing && push!(rows, r)
+
+    join([header, sep, rows...], "\n")
+end
+
+# ── Display functions (PlainStyle) ────────────────────────────────────────────
+
+function _print_connection_header(io::IO, idx::Int, total::Int, params::NamedTuple, ::PlainStyle)
+    stn = String(params.arr_station)
+    println(io, "══ Connection $idx/$total: $stn ══════════════════════════════════════════")
+    println(io, "")
+    println(io, "  Arriving Leg:")
+    println(io, _format_leg(params, :arr))
+    println(io, "")
+    println(io, "  Departing Leg:")
+    println(io, _format_leg(params, :dep))
+    println(io, "")
     status = _status_str(params.status)
     cnx = Int(params.cnx_time)
     their_mct = Int(params.their_mct)
     their_diff = params.their_mct_diff
-    println(io, "  Status: $status | CnxTime: $(cnx) min | Their MCT: $(their_mct) | Their diff: $(their_diff)")
+    println(io, "  Status: $status | CnxTime: $(cnx) min | Their MCT: $(their_mct) | Diff: $(their_diff)")
 end
 
-function _print_cascade(io::IO, trace::MCTTrace, max_candidates::Int; from::Int=1)
+function _print_cascade(io::IO, trace::MCTTrace, max_candidates::Int, style::PlainStyle; from::Int=1)
     cands = trace.candidates
     total = length(cands)
     limit = max_candidates > 0 ? min(max_candidates, total) : total
@@ -48,7 +163,7 @@ function _print_cascade(io::IO, trace::MCTTrace, max_candidates::Int; from::Int=
     end
     for i in from:show_end
         c = cands[i]
-        _print_candidate(io, i, c, trace)
+        _print_candidate(io, i, c, trace, style)
     end
     if show_end < total
         println(io, "  ... $(total - show_end) more (type 'more' to see next page)")
@@ -56,22 +171,22 @@ function _print_cascade(io::IO, trace::MCTTrace, max_candidates::Int; from::Int=
     return show_end
 end
 
-function _print_candidate(io::IO, idx::Int, c::MCTCandidateTrace, trace::MCTTrace)
+function _print_candidate(io::IO, idx::Int, c::MCTCandidateTrace, trace::MCTTrace, ::PlainStyle)
     id = Int(c.record.mct_id)
     t = Int(c.record.time)
     spec = string(c.record.specificity, base=16)
     specified = decode_matched_fields(c.record.specified)
 
     if c.matched && c.skip_reason == :none
-        println(io, "  #$idx [MATCH✓] mct_id=$id time=$t spec=0x$spec")
+        println(io, "  #$idx [MATCH] mct_id=$id time=$t spec=0x$spec")
         !isempty(specified) && println(io, "       specified: $specified")
+        println(io, _format_mct_record(c.record))
     elseif c.skip_reason == :field_mismatch
         mm_str = decode_matched_fields(c.mismatched_fields)
         println(io, "  #$idx [skip: field_mismatch] mct_id=$id time=$t spec=0x$spec")
         !isempty(specified) && println(io, "       specified: $specified")
         !isempty(mm_str) && println(io, "       failed on: $mm_str")
-        # Show expected vs actual for each mismatched field
-        _print_mismatch_values(io, c, trace)
+        _print_mismatch_values(io, c, trace, PlainStyle())
     elseif c.skip_reason == :date_expired
         println(io, "  #$idx [skip: date_expired] mct_id=$id time=$t spec=0x$spec")
     elseif c.skip_reason == :supp_scope_miss
@@ -105,7 +220,7 @@ const _MCT_FIELD_EXTRACTORS = (
     (MCT_BIT_NXT_STATE,     "NXT_STATE",     r -> String(r.nxt_state),     t -> String(t.nxt_state)),
 )
 
-function _print_mismatch_values(io::IO, c::MCTCandidateTrace, trace::MCTTrace)
+function _print_mismatch_values(io::IO, c::MCTCandidateTrace, trace::MCTTrace, ::PlainStyle)
     mm = c.mismatched_fields
     mm == UInt32(0) && return
     for (bit, name, rec_fn, trace_fn) in _MCT_FIELD_EXTRACTORS
@@ -115,7 +230,6 @@ function _print_mismatch_values(io::IO, c::MCTCandidateTrace, trace::MCTTrace)
             println(io, "                 $name: record=\"$rec_val\" connection=\"$trace_val\"")
         end
     end
-    # Flight range mismatches — show range vs actual
     if (mm & MCT_BIT_ARR_FLT_RNG) != 0
         println(io, "                 ARR_FLT_RNG: record=$(Int(c.record.arr_flt_rng_start))-$(Int(c.record.arr_flt_rng_end)) connection=$(Int(trace.arr_flt_no))")
     end
@@ -124,21 +238,14 @@ function _print_mismatch_values(io::IO, c::MCTCandidateTrace, trace::MCTTrace)
     end
 end
 
-function _print_result(io::IO, trace::MCTTrace, params::NamedTuple)
+function _print_result(io::IO, trace::MCTTrace, params::NamedTuple, ::PlainStyle)
     r = trace.result
     println(io, "\n  Result: time=$(Int(r.time)) source=$(_source_str(r.source)) mct_id=$(Int(r.mct_id))")
     fields = decode_matched_fields(r.matched_fields)
     !isempty(fields) && println(io, "  Matched fields: $fields")
     if trace.codeshare_mode != :none
-        parts = "mkt=$(Int(trace.marketing_result.time))/$(Int(trace.marketing_result.mct_id))"
-        if trace.dep_cs_result !== EMPTY_MCT_RESULT
-            parts *= " yn=$(Int(trace.dep_cs_result.time))/$(Int(trace.dep_cs_result.mct_id))"
-        end
-        if trace.arr_cs_result !== EMPTY_MCT_RESULT
-            parts *= " ny=$(Int(trace.arr_cs_result.time))/$(Int(trace.arr_cs_result.mct_id))"
-        end
-        parts *= " op=$(Int(trace.operating_result.time))/$(Int(trace.operating_result.mct_id))"
-        println(io, "  Codeshare resolution: winner=$(trace.codeshare_mode) ($parts)")
+        println(io, "\n  Codeshare Resolution (winner=$(trace.codeshare_mode)):")
+        println(io, _format_codeshare_table(trace, params))
     end
     their_mct = Int(params.their_mct)
     our_mct = Int(r.time)
@@ -147,6 +254,24 @@ function _print_result(io::IO, trace::MCTTrace, params::NamedTuple)
     our_resolves = our_mct <= Int(params.cnx_time)
     println(io, "  Our MCT resolves: $(our_resolves ? "YES" : "NO") ($our_mct ≤ $(Int(params.cnx_time))? $(our_resolves ? "yes" : "no"))")
 end
+
+function _print_help(io::IO, ::PlainStyle)
+    println(io, """
+    MCT Inspector Commands:
+      i / inspect     — Show cascade trace for current connection (paged)
+      more            — Show next page of candidates
+      c / enter       — Move to next connection
+      s N / skip N    — Skip ahead N connections
+      f <expr>        — Add filter (station=ORD, mismatch, resolves, source=exception)
+      m / mismatch    — Shortcut: filter mismatch
+      r / resolves    — Shortcut: filter resolves
+      d / detail      — Toggle auto-cascade on each connection
+      clear           — Clear all filters
+      h / help        — Show this help
+      q / quit        — Exit inspector""")
+end
+
+# ── Filters ───────────────────────────────────────────────────────────────────
 
 function _parse_filter(expr::AbstractString)::Union{Function, Nothing}
     expr = strip(expr)
@@ -171,6 +296,8 @@ function _passes_filters(filters::Vector{Function}, params::NamedTuple, trace::M
     true
 end
 
+# ── Trace runner ──────────────────────────────────────────────────────────────
+
 function _run_trace(state::InspectorState, params::NamedTuple)::MCTTrace
     prv_region = InlineString3("")
     nxt_region = InlineString3("")
@@ -178,7 +305,6 @@ function _run_trace(state::InspectorState, params::NamedTuple)::MCTTrace
     nxt_stn_info = get(state.airports, params.dep_station, nothing)
     prv_stn_info !== nothing && (prv_region = prv_stn_info.region)
     nxt_stn_info !== nothing && (nxt_region = nxt_stn_info.region)
-    # Use prv_stn/nxt_stn from parsed params if available, else NO_STATION
     prv_stn = hasproperty(params, :prv_stn) ? params.prv_stn : NO_STATION
     nxt_stn = hasproperty(params, :nxt_stn) ? params.nxt_stn : NO_STATION
     arr_op_flt_no = hasproperty(params, :arr_op_flt_no) ? params.arr_op_flt_no : FlightNumber(0)
@@ -214,21 +340,7 @@ function _run_trace(state::InspectorState, params::NamedTuple)::MCTTrace
     )
 end
 
-function _print_help(io::IO)
-    println(io, """
-    MCT Inspector Commands:
-      i / inspect     — Show cascade trace for current connection (paged)
-      more            — Show next page of candidates
-      c / enter       — Move to next connection
-      s N / skip N    — Skip ahead N connections
-      f <expr>        — Add filter (station=ORD, mismatch, resolves, source=exception)
-      m / mismatch    — Shortcut: filter mismatch
-      r / resolves    — Shortcut: filter resolves
-      d / detail      — Toggle auto-cascade on each connection
-      clear           — Clear all filters
-      h / help        — Show this help
-      q / quit        — Exit inspector""")
-end
+# ── Entry point ───────────────────────────────────────────────────────────────
 
 """
     `function mct_inspect(lookup::MCTLookup; misconnect::String="", airports=Dict{StationCode,StationRecord}(), io_in::IO=stdin, io_out::IO=stdout)`
@@ -268,12 +380,14 @@ function mct_inspect(
         airports = airports,
     )
 
-    _print_help(io_out)
+    _print_help(io_out, state.style)
     println(io_out, "")
 
     state.position = 1
     _advance_to_next!(state, io_in, io_out)
 end
+
+# ── REPL loop ─────────────────────────────────────────────────────────────────
 
 function _advance_to_next!(state::InspectorState, io_in::IO, io_out::IO; skip::Int=0)
     total = length(state.connections)
@@ -295,11 +409,11 @@ function _advance_to_next!(state::InspectorState, io_in::IO, io_out::IO; skip::I
         end
 
         state.cascade_shown = 0
-        _print_connection_header(io_out, state.position, total, params)
+        _print_connection_header(io_out, state.position, total, params, state.style)
         if state.detail
-            state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size)
+            state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size, state.style)
         end
-        _print_result(io_out, trace, params)
+        _print_result(io_out, trace, params, state.style)
         println(io_out, "")
 
         _command_loop!(state, io_in, io_out, params, trace)
@@ -329,13 +443,13 @@ function _command_loop!(state::InspectorState, io_in::IO, io_out::IO, params::Na
             return
         elseif cmd in ("i", "inspect")
             state.cascade_shown = 0
-            _print_connection_header(io_out, state.position, total, params)
-            state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size)
-            _print_result(io_out, trace, params)
+            _print_connection_header(io_out, state.position, total, params, state.style)
+            state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size, state.style)
+            _print_result(io_out, trace, params, state.style)
             println(io_out, "")
         elseif cmd == "more"
             if state.cascade_shown > 0 && state.cascade_shown < length(trace.candidates)
-                state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size; from=state.cascade_shown + 1)
+                state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size, state.style; from=state.cascade_shown + 1)
             else
                 println(io_out, "No more candidates to show. Use 'i' to restart cascade.")
             end
@@ -373,7 +487,7 @@ function _command_loop!(state::InspectorState, io_in::IO, io_out::IO, params::Na
             empty!(state.filters)
             println(io_out, "Filters cleared.")
         elseif cmd in ("h", "help")
-            _print_help(io_out)
+            _print_help(io_out, state.style)
         else
             println(io_out, "Unknown command: $cmd (type 'h' for help)")
         end

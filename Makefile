@@ -1,4 +1,4 @@
-.PHONY: test demo demo-newssim bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve mct-inspect mct-replay sysimage app juliac
+.PHONY: test demo demo-newssim bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve mct-inspect mct-inspect-styled mct-replay sysimage app juliac
 
 # Run full test suite
 test:
@@ -65,6 +65,11 @@ serve:
 FILE ?= data/input/UA_Misconnect_Report.csv
 mct-inspect:
 	julia --project=. scripts/mct_inspect.jl $(FILE) $(EXTRA)
+
+# MCT audit inspector with Term.jl styled output (colored panels and tables)
+# Usage: make mct-inspect-styled FILE=data/input/UA_Misconnect_Report.csv
+mct-inspect-styled:
+	julia --project=. -e 'using Term; include("scripts/mct_inspect.jl")' -- $(FILE) $(EXTRA)
 
 # MCT replay (write comparison CSV)
 # Usage: make mct-replay FILE=data/input/UA_Misconnect_Report.csv

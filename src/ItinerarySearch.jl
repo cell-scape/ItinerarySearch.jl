@@ -21,6 +21,7 @@ include("types/stats.jl")
 include("types/constraints.jl")
 include("types/graph.jl")
 include("types/mct_audit_config.jl")
+include("types/display.jl")
 include("config.jl")
 include("observe/events.jl")
 include("observe/metrics.jl")
@@ -88,6 +89,7 @@ export itinerary_legs, itinerary_legs_multi, itinerary_legs_json
 export MCTAuditConfig, MCTTrace, MCTCandidateTrace, EMPTY_MCT_RESULT
 export lookup_mct_traced, lookup_mct_codeshare_traced, decode_matched_fields
 export replay_misconnects, mct_inspect
+export DisplayStyle, PlainStyle
 
 # Visualization
 export viz_network_map, viz_timeline, viz_trip_comparison, viz_itinerary_refs

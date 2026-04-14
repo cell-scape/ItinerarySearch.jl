@@ -751,3 +751,46 @@ When a connection involves flights from/to Schengen or European stations, MCT re
 - **`:eur_only`** — only match EUR records (or wildcard)
 
 The fallback is only triggered when the primary lookup did not match on region bits (`MCT_BIT_PRV_REGION | MCT_BIT_NXT_REGION`). This ensures an exact region match always takes priority over a fallback. Non-SCH/EUR regions are unaffected by this setting.
+
+---
+
+## MCT Audit Inspector
+
+**Source:** `src/audit/mct_inspect.jl`, `scripts/mct_inspect.jl`
+
+The interactive MCT inspector (`mct_inspect`) steps through a misconnect report CSV, tracing MCT cascade decisions for each connection. For every connection it shows:
+
+- **Full decoded flight legs** — marketing/operating carrier, flight number, route, terminal, body type, aircraft, origin country/state
+- **MCT cascade trace** — paginated list of all candidate MCT records evaluated, with match/skip status and field-by-field mismatch details
+- **Matched MCT record** — full decoded record fields (specified fields with values, dates, suppression geography)
+- **Codeshare resolution table** — all lookup results (YY/YN/NY/NN) with carriers, time, specificity, floor check, and winner
+- **Comparison** — our MCT vs their MCT, time match/mismatch, whether the connection resolves
+
+### Usage
+
+```bash
+# Interactive inspector
+make mct-inspect FILE=data/input/UA_Misconnect_Report.csv
+
+# Replay mode (write comparison CSV)
+make mct-replay FILE=data/input/UA_Misconnect_Report.csv
+
+# With detailed JSONL output
+make mct-replay FILE=data/input/UA_Misconnect_Report.csv EXTRA="--detailed"
+```
+
+### Term.jl Styled Output
+
+The inspector supports optional styled output via the Term.jl extension. When Term.jl is loaded before ItinerarySearch, the inspector automatically uses colored panels, tables, and markup:
+
+```julia
+using Term              # load Term first
+using ItinerarySearch   # TermExt extension auto-activates
+
+# Inspector now uses TermStyle with colored output
+```
+
+Without Term.jl, the same information is displayed in plain text. The `DisplayStyle` dispatch allows extensions to customize rendering:
+
+- `PlainStyle` (default) — plain text with expanded details
+- `TermStyle` (via `ext/TermExt.jl`) — Term.jl panels, colored candidates, styled tables

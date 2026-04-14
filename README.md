@@ -15,6 +15,7 @@ ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Ti
 - **Trip search with scoring** — multi-leg trip pairing with configurable weighted scoring (`TripScoringWeights`)
 - **Multiple output formats** — CSV files, JSON (full and compact with `ItineraryRef` summary), `itinerary_long_format` / `itinerary_wide_format` tables
 - **Interactive visualizations** — self-contained HTML network map (Leaflet), timeline (D3 Gantt), and trip comparison (D3 stacked bar)
+- **MCT audit inspector** — interactive REPL for stepping through misconnect reports, tracing MCT cascade decisions with full flight leg and MCT record decoding, codeshare resolution tables, and paged candidate inspection. Optional Term.jl extension for colored panels and styled output (`using Term` before `using ItinerarySearch`)
 - **Observability** — structured event log with typed events and JSONL sink, DynaTrace-compatible JSON logging via LoggingExtras TeeLogger, cooperative system metrics polling, Tier 1 instrumentation (rule counters, MCT cascade stats, geographic aggregation)
 - **CLI** — `itinsearch` with 6 commands (search, trip, build, ingest, info, serve), global flags, per-invocation parameter overrides
 - **REST API** — HTTP service with search, trip, station, health, and rebuild endpoints; concurrent request handling; lock-protected graph refresh; per-request constraint overrides
