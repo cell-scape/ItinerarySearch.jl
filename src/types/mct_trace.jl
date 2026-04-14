@@ -70,7 +70,9 @@ Full trace of a single MCT lookup: input parameters, all candidates evaluated
     # ── Codeshare resolution ──
     marketing_result::MCTResult = EMPTY_MCT_RESULT
     operating_result::MCTResult = EMPTY_MCT_RESULT
-    codeshare_mode::Symbol = :none
+    dep_cs_result::MCTResult = EMPTY_MCT_RESULT    # YN: dep CS only (both-CS connections)
+    arr_cs_result::MCTResult = EMPTY_MCT_RESULT    # NY: arr CS only (both-CS connections)
+    codeshare_mode::Symbol = :none                  # :none, :marketing, :operating, :dep_cs, :arr_cs
 end
 
 # MCTAuditConfig is defined in types/mct_audit_config.jl (included before config.jl).

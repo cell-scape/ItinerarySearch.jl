@@ -130,9 +130,15 @@ function _print_result(io::IO, trace::MCTTrace, params::NamedTuple)
     fields = decode_matched_fields(r.matched_fields)
     !isempty(fields) && println(io, "  Matched fields: $fields")
     if trace.codeshare_mode != :none
-        println(io, "  Codeshare resolution: winner=$(trace.codeshare_mode)" *
-            " (mkt=$(Int(trace.marketing_result.time))/$(Int(trace.marketing_result.mct_id))" *
-            " op=$(Int(trace.operating_result.time))/$(Int(trace.operating_result.mct_id)))")
+        parts = "mkt=$(Int(trace.marketing_result.time))/$(Int(trace.marketing_result.mct_id))"
+        if trace.dep_cs_result !== EMPTY_MCT_RESULT
+            parts *= " yn=$(Int(trace.dep_cs_result.time))/$(Int(trace.dep_cs_result.mct_id))"
+        end
+        if trace.arr_cs_result !== EMPTY_MCT_RESULT
+            parts *= " ny=$(Int(trace.arr_cs_result.time))/$(Int(trace.arr_cs_result.mct_id))"
+        end
+        parts *= " op=$(Int(trace.operating_result.time))/$(Int(trace.operating_result.mct_id))"
+        println(io, "  Codeshare resolution: winner=$(trace.codeshare_mode) ($parts)")
     end
     their_mct = Int(params.their_mct)
     our_mct = Int(r.time)

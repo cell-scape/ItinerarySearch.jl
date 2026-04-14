@@ -125,6 +125,20 @@ function _write_detailed_row!(log::MCTAuditLog, trace::MCTTrace, cnx_time::Minut
             "source" => _source_str(trace.marketing_result.source),
         )
     end
+    if trace.dep_cs_result !== EMPTY_MCT_RESULT
+        obj["dep_cs_result"] = Dict(
+            "time" => Int(trace.dep_cs_result.time),
+            "mct_id" => Int(trace.dep_cs_result.mct_id),
+            "source" => _source_str(trace.dep_cs_result.source),
+        )
+    end
+    if trace.arr_cs_result !== EMPTY_MCT_RESULT
+        obj["arr_cs_result"] = Dict(
+            "time" => Int(trace.arr_cs_result.time),
+            "mct_id" => Int(trace.arr_cs_result.mct_id),
+            "source" => _source_str(trace.arr_cs_result.source),
+        )
+    end
     if trace.operating_result !== EMPTY_MCT_RESULT
         obj["operating_result"] = Dict(
             "time" => Int(trace.operating_result.time),

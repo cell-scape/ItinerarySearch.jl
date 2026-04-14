@@ -71,15 +71,18 @@ end
 
 # Description
 - Codeshare-aware traced MCT lookup matching production's `_mct_codeshare_resolve`
-- For codeshare flights, performs two lookups:
-  1. Marketing: marketing carriers + codeshare flags → finds codeshare-specific MCTs
-  2. Operating: operating carriers, no codeshare flags → finds operating carrier MCTs
-- Picks the result with highest specificity (marketing wins ties)
-- For non-codeshare flights, performs a single lookup (no overhead)
-- Both lookups' candidates are merged into the trace
+- For codeshare flights, performs up to four lookups (YY, YN, NY, NN):
+  1. YY — Marketing: marketing carriers + both codeshare flags
+  2. YN — Dep-CS-only: marketing dep + operating arr, dep CS flag (both-CS only)
+  3. NY — Arr-CS-only: operating dep + marketing arr, arr CS flag (both-CS only)
+  4. NN — Operating: operating carriers, no codeshare flags
+- Mixed lookups (YN, NY) only fire when both legs are codeshare
+- NN establishes the time floor; codeshare results must have time >= operating time
+- Picks the result with highest specificity subject to the time floor constraint
+- All lookups' candidates are merged into the trace
 
 # Returns
-- `::MCTTrace`: with `marketing_result`, `operating_result`, and `codeshare_mode` populated
+- `::MCTTrace`: with `marketing_result`, `operating_result`, `dep_cs_result`, `arr_cs_result`, and `codeshare_mode` populated
 """
 function lookup_mct_codeshare_traced(
     lookup::MCTLookup,
@@ -112,7 +115,7 @@ function lookup_mct_codeshare_traced(
     nxt_region::InlineString3 = InlineString3(""),
     target_date::UInt32 = UInt32(0),
 )::MCTTrace
-    # Common kwargs for both lookups
+    # Common kwargs for all lookups
     common = (;
         arr_body, dep_body, prv_stn, nxt_stn, arr_term, dep_term,
         arr_acft_type, dep_acft_type,
@@ -120,7 +123,7 @@ function lookup_mct_codeshare_traced(
         prv_region, nxt_region, target_date,
     )
 
-    # ── Marketing lookup: marketing carriers + flight numbers + codeshare context
+    # ── YY: Marketing lookup — marketing carriers + codeshare context (both sides)
     mkt_candidates = MCTCandidateTrace[]
     marketing_result = lookup_mct(
         lookup, arr_carrier, dep_carrier, arr_station, dep_station, status;
@@ -146,15 +149,17 @@ function lookup_mct_codeshare_traced(
         )
     end
 
-    # ── Operating lookup: operating carriers + flight numbers, no codeshare flags
-    op_arr_carrier = arr_is_codeshare ? arr_op_carrier : arr_carrier
-    op_dep_carrier = dep_is_codeshare ? dep_op_carrier : dep_carrier
+    op_arr_carrier_resolved = arr_is_codeshare ? arr_op_carrier : arr_carrier
+    op_dep_carrier_resolved = dep_is_codeshare ? dep_op_carrier : dep_carrier
     op_arr_flt = arr_is_codeshare ? arr_op_flt_no : arr_flt_no
     op_dep_flt = dep_is_codeshare ? dep_op_flt_no : dep_flt_no
 
+    # ── NN: Operating lookup first — establishes the time floor.
+    # Per SSIM Ch. 8: a marketing carrier can only request a longer MCT
+    # than the operating carrier.
     op_candidates = MCTCandidateTrace[]
     operating_result = lookup_mct(
-        lookup, op_arr_carrier, op_dep_carrier, arr_station, dep_station, status;
+        lookup, op_arr_carrier_resolved, op_dep_carrier_resolved, arr_station, dep_station, status;
         common...,
         arr_op_carrier = NO_AIRLINE,
         dep_op_carrier = NO_AIRLINE,
@@ -165,17 +170,62 @@ function lookup_mct_codeshare_traced(
         trace = op_candidates,
     )
 
-    # Higher specificity wins; marketing preferred at equal specificity
-    if operating_result.specificity > marketing_result.specificity
-        winner = operating_result
-        mode = :operating
-    else
-        winner = marketing_result
+    # Start with operating as baseline; codeshare results must have higher
+    # specificity AND time >= operating time to override
+    best = operating_result
+    mode = :operating
+    all_candidates = vcat(mkt_candidates, op_candidates)
+    dep_cs_result = EMPTY_MCT_RESULT
+    arr_cs_result = EMPTY_MCT_RESULT
+
+    if marketing_result.specificity > best.specificity &&
+       marketing_result.time >= operating_result.time
+        best = marketing_result
         mode = :marketing
     end
 
-    # Merge candidates from both lookups
-    all_candidates = vcat(mkt_candidates, op_candidates)
+    # ── Mixed lookups: only needed when both legs are codeshare ───────────
+    if arr_is_codeshare && dep_is_codeshare
+        # YN: dep CS only — marketing dep carrier + operating arr carrier
+        yn_candidates = MCTCandidateTrace[]
+        dep_cs_result = lookup_mct(
+            lookup, op_arr_carrier_resolved, dep_carrier, arr_station, dep_station, status;
+            common...,
+            arr_op_carrier = NO_AIRLINE,
+            dep_op_carrier,
+            arr_is_codeshare = false,
+            dep_is_codeshare,
+            arr_flt_no = op_arr_flt,
+            dep_flt_no,
+            trace = yn_candidates,
+        )
+        append!(all_candidates, yn_candidates)
+        if dep_cs_result.specificity > best.specificity &&
+           dep_cs_result.time >= operating_result.time
+            best = dep_cs_result
+            mode = :dep_cs
+        end
+
+        # NY: arr CS only — operating dep carrier + marketing arr carrier
+        ny_candidates = MCTCandidateTrace[]
+        arr_cs_result = lookup_mct(
+            lookup, arr_carrier, op_dep_carrier_resolved, arr_station, dep_station, status;
+            common...,
+            arr_op_carrier,
+            dep_op_carrier = NO_AIRLINE,
+            arr_is_codeshare,
+            dep_is_codeshare = false,
+            arr_flt_no,
+            dep_flt_no = op_dep_flt,
+            trace = ny_candidates,
+        )
+        append!(all_candidates, ny_candidates)
+        if arr_cs_result.specificity > best.specificity &&
+           arr_cs_result.time >= operating_result.time
+            best = arr_cs_result
+            mode = :arr_cs
+        end
+    end
 
     MCTTrace(;
         arr_carrier, dep_carrier, arr_station, dep_station, status,
@@ -184,9 +234,11 @@ function lookup_mct_codeshare_traced(
         arr_is_codeshare, dep_is_codeshare,
         arr_flt_no, dep_flt_no,
         candidates = all_candidates,
-        result = winner,
+        result = best,
         marketing_result,
         operating_result,
+        dep_cs_result,
+        arr_cs_result,
         codeshare_mode = mode,
     )
 end
