@@ -101,13 +101,14 @@ the reference — no locking, no mutation.
     distance_formula::Symbol = :haversine  # :haversine or :vincenty
     allow_roundtrips::Bool = false
     mct_cache_enabled::Bool = true         # cache MCT lookup results during connection build
-    mct_serial_ascending::Bool = true      # tiebreaker: true = lower serial wins (earlier record), false = higher serial wins (later record)
+    mct_serial_ascending::Bool = false     # tiebreaker: false = higher serial wins (later record, matches production), true = lower serial wins (earlier record)
     mct_codeshare_mode::Symbol = :both     # :both = marketing+operating (default), :marketing = marketing only, :operating = operating only
     mct_schengen_mode::Symbol = :sch_then_eur  # :sch_then_eur (default), :eur_then_sch, :sch_only, :eur_only
     mct_suppressions_enabled::Bool = true    # false = ignore all suppression records in MCT lookup
     maft_enabled::Bool = true              # enable MAFT rule (both connection and itinerary level)
     interline_dcnx_enabled::Bool = true    # enable interline double-connect restriction
     crs_cnx_enabled::Bool = true           # enable CRS distance-based connection time rule
+    mct_audit::MCTAuditConfig = MCTAuditConfig()    # MCT audit logging configuration
 end
 
 # ── JSON3 field extraction helpers ────────────────────────────────────────────
@@ -477,6 +478,25 @@ function load_config(path::String)::SearchConfig
                 isempty(syms) || (kwargs[:output_formats] = syms)
             end
         end
+    end
+
+    audit = _json_obj(raw, :mct_audit)
+    if audit !== nothing
+        audit_kwargs = Dict{Symbol,Any}()
+        b = _json_bool(audit, :enabled)
+        b !== nothing && (audit_kwargs[:enabled] = b)
+        s = _json_str(audit, :detail)
+        if s !== nothing
+            sym = Symbol(lowercase(s))
+            sym in (:summary, :detailed) && (audit_kwargs[:detail] = sym)
+        end
+        s = _json_str(audit, :output_path)
+        s !== nothing && (audit_kwargs[:output_path] = s)
+        v = _json_int(audit, :max_connections)
+        v !== nothing && (audit_kwargs[:max_connections] = v)
+        v = _json_int(audit, :max_candidates)
+        v !== nothing && (audit_kwargs[:max_candidates] = v)
+        isempty(audit_kwargs) || (kwargs[:mct_audit] = MCTAuditConfig(; audit_kwargs...))
     end
 
     SearchConfig(; kwargs...)

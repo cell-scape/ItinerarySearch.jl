@@ -40,6 +40,16 @@ julia --project=. bin/itinsearch.jl --newssim data/input/schedule.csv --delimite
 
 Julia 1.10+ required.
 
+### MCT Audit Inspector
+
+```bash
+# Interactive inspector with plain text
+make mct-inspect FILE=data/input/UA_Misconnect_Report.csv
+
+# With Term.jl styled output (colored panels and tables)
+julia --project=. -e 'using Term; include("scripts/mct_inspect.jl")' -- data/input/UA_Misconnect_Report.csv
+```
+
 ## Architecture
 
 ### Module Structure
@@ -53,7 +63,9 @@ The main module `ItinerarySearch` (`src/ItinerarySearch.jl`) uses standard `incl
 - **ingest/** — Streaming parsers for SSIM fixed-width files, MCT data, and reference tables. Designed for large files using `Mmap` and byte-range column specs. Also includes `newssim.jl` for CSV ingest of denormalized NewSSIM schedule files (`ingest_newssim!`, `detect_delimiter`) and `newssim_materialize.jl` for materializing NewSSIM data into graph-ready leg records.
 - **store/** — `DuckDBStore` singleton for ingest and query of all tables. SQL-based post-ingest pipeline (join, enrich, filter).
 - **graph/** — Struct-based connection graph (stations, legs, connect points). DFS itinerary search.
+- **audit/** — MCT audit tooling: misconnect replay, interactive inspector, audit logging.
 - **api/** — High-level search interface and `SearchConfig` (JSON-configurable parameters).
+- **ext/** — Package extensions. `TermExt.jl` provides Term.jl styled rendering for the MCT inspector (loaded automatically when Term.jl is available).
 - **observe/** — Logging, metrics, and observability hooks.
 
 ### Key Design Principles

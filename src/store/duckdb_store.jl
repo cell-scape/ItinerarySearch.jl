@@ -75,6 +75,22 @@ function _exec(store::DuckDBStore, sql::String)
     DBInterface.execute(store.db, sql)
 end
 
+# Internal helper: replace a pre-existing table's contents from a DataFrame.
+# The table must already exist (created by _create_tables!); its DDL schema is
+# preserved. The DataFrame column names must match the table's columns.
+function _replace_from_dataframe!(store::DuckDBStore, df::AbstractDataFrame, table::String)::Int
+    staging = "__$(table)_staging"
+    DuckDB.register_table(store.db, df, staging)
+    try
+        _exec(store, "DELETE FROM $table")
+        _exec(store, "INSERT INTO $table BY NAME SELECT * FROM $staging")
+    finally
+        DuckDB.unregister_table(store.db, staging)
+    end
+    result = DBInterface.execute(store.db, "SELECT COUNT(*) AS n FROM $table")
+    Int(first(result).n)
+end
+
 # Internal helper: create all tables
 function _create_tables!(store::DuckDBStore)
     # ── Core schedule tables ──────────────────────────────────────────────────
@@ -393,6 +409,9 @@ function post_ingest_sql!(store::DuckDBStore)::Nothing
     @info "Post-ingest: injecting leg distances from markets..."
     _inject_leg_distances!(store)
 
+    @info "Post-ingest: enriching body types from aircrafts table..."
+    _enrich_body_types!(store)
+
     @info "Post-ingest: creating indexes..."
     _create_indexes!(store)
 
@@ -548,6 +567,55 @@ function _inject_leg_distances!(store::DuckDBStore)
     r = _exec(store, "SELECT COUNT(*) as n FROM legs WHERE distance > 0")
     updated = first(r).n
     @info "Leg distances injected" updated
+end
+
+function _enrich_body_types!(store::DuckDBStore)
+    # Check if aircrafts table has data
+    r = _exec(store, "SELECT COUNT(*) as n FROM aircrafts")
+    acft_count = first(r).n
+    if acft_count == 0
+        @info "No aircrafts loaded, skipping body type enrichment"
+        return
+    end
+
+    # Update legs: prefer aircrafts table lookup, normalize non-W to N
+    _exec(store, """
+    UPDATE legs l
+    SET body_type = CASE WHEN a.body_type = 'W' THEN 'W' ELSE 'N' END
+    FROM aircrafts a
+    WHERE a.code = TRIM(l.aircraft_type)
+    """)
+
+    # Also update expanded_legs
+    _exec(store, """
+    UPDATE expanded_legs el
+    SET body_type = CASE WHEN a.body_type = 'W' THEN 'W' ELSE 'N' END
+    FROM aircrafts a
+    WHERE a.code = TRIM(el.aircraft_type)
+    """)
+
+    # For any remaining blank/unknown body types not in aircrafts table,
+    # normalize: anything not 'W' becomes 'N' (covers 'R' regional, etc.)
+    _exec(store, """
+    UPDATE legs
+    SET body_type = 'N'
+    WHERE body_type NOT IN ('W', 'N') AND TRIM(body_type) != ''
+    """)
+    _exec(store, """
+    UPDATE expanded_legs
+    SET body_type = 'N'
+    WHERE body_type NOT IN ('W', 'N') AND TRIM(body_type) != ''
+    """)
+
+    r = _exec(store, """
+    SELECT
+        COUNT(*) FILTER (WHERE body_type = 'W') as wide,
+        COUNT(*) FILTER (WHERE body_type = 'N') as narrow,
+        COUNT(*) FILTER (WHERE TRIM(body_type) = '' OR body_type IS NULL) as unknown
+    FROM legs
+    """)
+    row = first(r)
+    @info "Body types enriched from aircrafts table" wide=row.wide narrow=row.narrow unknown=row.unknown
 end
 
 function _create_indexes!(store::DuckDBStore)

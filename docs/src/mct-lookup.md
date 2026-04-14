@@ -624,35 +624,57 @@ If ORD had no station standard:
 
 For codeshare flights, the MCT lookup needs to consider both the marketing carrier (with codeshare indicators) and the operating carrier (without). Per SSIM Ch. 8 (p. 398): *"A marketing (Y) flight MCT will override an operating MCT"* and *"A marketing MCT is not necessary unless the marketing Carrier wants a longer MCT than the Codeshare Operating Carrier."*
 
-The `MCTRule` callable in the connection builder performs codeshare-aware resolution:
+### Four-Partition Lookup
 
-1. **Marketing lookup**: Use marketing carriers with codeshare flags set. This finds codeshare-specific MCTs — records with `cs_ind=Y` and optionally `cs_op_carrier` specified.
-2. **Operating lookup** (only if either leg is a codeshare): Use operating carriers without codeshare flags. This finds records filed for the operating carrier directly.
-3. **Pick the best**: The result with higher specificity wins. At equal specificity, the marketing result takes precedence.
+MCT records are partitioned by their codeshare indicator fields into four groups, and the lookup mirrors these partitions:
+
+| Partition | MCT record pattern | Carriers used in lookup |
+|---|---|---|
+| **YY** | dep_cs_ind=Y, arr_cs_ind=Y | marketing dep + marketing arr + both CS carriers |
+| **YN** | dep_cs_ind=Y, arr_cs_ind=blank | marketing dep + operating arr + dep CS carrier |
+| **NY** | dep_cs_ind=blank, arr_cs_ind=Y | operating dep + marketing arr + arr CS carrier |
+| **NN** | no codeshare indicators | operating dep + operating arr, no CS flags |
+
+The mixed partitions (YN, NY) are only searched when **both** legs are codeshare. When only one leg is codeshare, the non-CS side's marketing carrier equals its operating carrier, so the YY and NN lookups already cover all four partitions.
+
+### Time Floor Constraint
+
+The **NN (operating) result establishes the time floor.** A codeshare result (YY, YN, NY) only overrides the operating result if it has both:
+- Higher specificity, AND
+- Time >= the operating time
+
+This enforces the SSIM rule that a marketing carrier can only request a *longer* MCT than the operating carrier — codeshare MCTs cannot shorten the operating MCT.
+
+### Resolution Summary
 
 ```julia
-# Primary: marketing carriers + marketing flight numbers + codeshare context
-marketing_result = _mct_direct_lookup(r, ctx,
-    from_rec.carrier, to_rec.carrier,          # marketing carriers
-    from_rec.flight_number, to_rec.flight_number, # marketing flight numbers
-    ..., arr_op_carrier, dep_op_carrier,
-    arr_is_codeshare, dep_is_codeshare, ...)
-
-# Secondary: operating carriers + operating flight numbers, no codeshare flags
 op_arr = arr_is_codeshare ? arr_op_carrier : from_rec.carrier
 op_dep = dep_is_codeshare ? dep_op_carrier : to_rec.carrier
 op_arr_flt = arr_is_codeshare ? from_rec.operating_flight_number : from_rec.flight_number
 op_dep_flt = dep_is_codeshare ? to_rec.operating_flight_number : to_rec.flight_number
-operating_result = _mct_direct_lookup(r, ctx,
-    op_arr, op_dep, op_arr_flt, op_dep_flt,    # operating carriers + flight numbers
-    ..., NO_AIRLINE, NO_AIRLINE,
-    false, false, ...)
 
-# Higher specificity wins; marketing preferred at equal specificity
-if operating_result.specificity > marketing_result.specificity
-    return operating_result
+# NN: operating lookup — establishes the time floor
+operating_result = _mct_direct_lookup(r, ctx,
+    op_arr, op_dep, op_arr_flt, op_dep_flt,
+    ..., NO_AIRLINE, NO_AIRLINE, false, false, ...)
+
+best = operating_result
+
+# YY: marketing lookup — marketing carriers + codeshare context
+marketing_result = _mct_direct_lookup(r, ctx,
+    from_rec.carrier, to_rec.carrier,
+    from_rec.flight_number, to_rec.flight_number,
+    ..., arr_op_carrier, dep_op_carrier,
+    arr_is_codeshare, dep_is_codeshare, ...)
+if marketing_result.specificity > best.specificity &&
+   marketing_result.time >= operating_result.time
+    best = marketing_result
 end
-return marketing_result
+
+# YN + NY: mixed lookups (only when both legs are codeshare)
+# ... same pattern: specificity > best AND time >= operating floor
+
+return best
 ```
 
 Per SSIM Ch. 8 (p. 400): *"If both the Arrival Carrier and the Arrival Codeshare Operating Carrier are defined, then the flight number will be applied to the Arrival Carrier"* and *"If the Arrival Carrier is not defined, then the flight number will be applied to the Arrival Codeshare Operating Carrier."* The marketing lookup uses marketing flight numbers; the operating lookup uses operating flight numbers.
@@ -678,11 +700,24 @@ MCT records filed at MIA (ID status):
 - Single lookup with `arr_carrier=BA`: MCT 2 matches. **Use 130 min.**
 
 **AA6160 → AA2720** (AA is the marketing carrier, codeshare of BA):
-- Marketing lookup with `arr_carrier=AA, arr_is_codeshare=true, arr_op_carrier=BA`: MCT 1 matches (codeshare Y + operating carrier BA). Specificity includes cs_ind + cs_op + carrier bits.
-- Operating lookup with `arr_carrier=BA, arr_is_codeshare=false`: MCT 2 matches. Lower specificity (carrier only, no codeshare bits).
-- MCT 1 wins (higher specificity). **Use 140 min.**
+- NN (operating) lookup with `arr_carrier=BA, arr_is_codeshare=false`: MCT 2 matches (130 min). This is the time floor.
+- YY (marketing) lookup with `arr_carrier=AA, arr_is_codeshare=true, arr_op_carrier=BA`: MCT 1 matches (140 min). Higher specificity (cs_ind + cs_op + carrier bits) AND 140 >= 130 (meets floor). **MCT 1 wins.**
+- **Use 140 min.**
 
 **AA6160 → AA2718:** MCT 1 applies (140 min). 1500 + 140 = 1720 > 1635. **Connection does not build** — insufficient time.
+
+### Floor Constraint Example
+
+If the MCT data had been filed with a shorter codeshare time (hypothetical):
+
+| arr_carrier | arr_cs_ind | arr_cs_op | dep_carrier | time |
+|---|---|---|---|---|
+| AA | Y | BA | AA | 0120 (MCT 1 — shorter) |
+| BA | | | AA | 0130 (MCT 2) |
+
+- NN lookup: MCT 2 matches (130 min floor).
+- YY lookup: MCT 1 matches (120 min). Higher specificity, BUT 120 < 130 — **fails floor check**.
+- **Use 130 min** (operating result). The marketing carrier cannot shorten the operating MCT.
 
 ---
 
@@ -694,16 +729,16 @@ All MCT-related configuration lives on `SearchConfig`. These settings control th
 |---|---|---|
 | `mct_cache_enabled` | `true` | Cache MCT lookup results during connection build (~77% hit rate) |
 | `mct_serial_ascending` | `true` | Tiebreaker at equal specificity: `true` = lower serial (earlier record) wins; `false` = higher serial (later record) wins |
-| `mct_codeshare_mode` | `:both` | Codeshare carrier resolution: `:both` = marketing + operating lookups (best specificity wins); `:marketing` = marketing carrier only; `:operating` = operating carrier only |
+| `mct_codeshare_mode` | `:both` | Codeshare carrier resolution: `:both` = all applicable partitions (YY, YN, NY, NN) with operating time floor; `:marketing` = marketing carrier only; `:operating` = operating carrier only |
 | `mct_schengen_mode` | `:sch_then_eur` | Schengen/Europe region priority: `:sch_then_eur` = SCH first, EUR fallback; `:eur_then_sch` = EUR first, SCH fallback; `:sch_only` = SCH or wildcard only; `:eur_only` = EUR or wildcard only |
 | `mct_suppressions_enabled` | `true` | Include suppression records in MCT lookup; `false` = ignore all suppressions |
 
 ### Codeshare Mode Details
 
-For codeshare flights (identified by `operating_carrier != carrier` on the leg record), the MCT rule performs one or two `lookup_mct` calls depending on the mode:
+For codeshare flights (identified by `operating_carrier != carrier` on the leg record), the MCT rule performs one to four `lookup_mct` calls depending on the mode:
 
-- **`:both`** — marketing lookup (marketing carrier + codeshare flags + marketing flight number), then operating lookup (operating carrier + operating flight number, no codeshare flags). Best specificity wins; marketing preferred at ties.
-- **`:marketing`** — marketing lookup only. Misses MCT records filed for the operating carrier.
+- **`:both`** — Up to four lookups across codeshare-indicator partitions (YY, YN, NY, NN). The NN (operating) result establishes the time floor; codeshare results (YY, YN, NY) only override if they have higher specificity AND time >= the operating time. When only one leg is codeshare, only YY + NN are needed (two lookups). When both are codeshare, all four partitions are searched.
+- **`:marketing`** — marketing lookup only. Misses MCT records filed for the operating carrier. No floor constraint applied.
 - **`:operating`** — operating lookup only. Misses codeshare-specific MCTs (records with `cs_ind=Y`).
 
 ### Schengen Mode Details
@@ -716,3 +751,46 @@ When a connection involves flights from/to Schengen or European stations, MCT re
 - **`:eur_only`** — only match EUR records (or wildcard)
 
 The fallback is only triggered when the primary lookup did not match on region bits (`MCT_BIT_PRV_REGION | MCT_BIT_NXT_REGION`). This ensures an exact region match always takes priority over a fallback. Non-SCH/EUR regions are unaffected by this setting.
+
+---
+
+## MCT Audit Inspector
+
+**Source:** `src/audit/mct_inspect.jl`, `scripts/mct_inspect.jl`
+
+The interactive MCT inspector (`mct_inspect`) steps through a misconnect report CSV, tracing MCT cascade decisions for each connection. For every connection it shows:
+
+- **Full decoded flight legs** — marketing/operating carrier, flight number, route, terminal, body type, aircraft, origin country/state
+- **MCT cascade trace** — paginated list of all candidate MCT records evaluated, with match/skip status and field-by-field mismatch details
+- **Matched MCT record** — full decoded record fields (specified fields with values, dates, suppression geography)
+- **Codeshare resolution table** — all lookup results (YY/YN/NY/NN) with carriers, time, specificity, floor check, and winner
+- **Comparison** — our MCT vs their MCT, time match/mismatch, whether the connection resolves
+
+### Usage
+
+```bash
+# Interactive inspector
+make mct-inspect FILE=data/input/UA_Misconnect_Report.csv
+
+# Replay mode (write comparison CSV)
+make mct-replay FILE=data/input/UA_Misconnect_Report.csv
+
+# With detailed JSONL output
+make mct-replay FILE=data/input/UA_Misconnect_Report.csv EXTRA="--detailed"
+```
+
+### Term.jl Styled Output
+
+The inspector supports optional styled output via the Term.jl extension. When Term.jl is loaded before ItinerarySearch, the inspector automatically uses colored panels, tables, and markup:
+
+```julia
+using Term              # load Term first
+using ItinerarySearch   # TermExt extension auto-activates
+
+# Inspector now uses TermStyle with colored output
+```
+
+Without Term.jl, the same information is displayed in plain text. The `DisplayStyle` dispatch allows extensions to customize rendering:
+
+- `PlainStyle` (default) — plain text with expanded details
+- `TermStyle` (via `ext/TermExt.jl`) — Term.jl panels, colored candidates, styled tables

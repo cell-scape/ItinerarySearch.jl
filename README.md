@@ -8,12 +8,14 @@ ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Ti
 
 - **SSIM ingest** — streaming fixed-width parser for OAG/SSIM Type 1-5 records, with EDF expansion, codeshare (DEI 50) resolution, and segment building
 - **NewSSIM CSV ingest** — alternative CSV-based ingest path (`ingest_newssim!`) for denormalized schedule files; auto-detects delimiter (comma, pipe, tab) and handles .gz compression
+- **DataFrame ingest** — all ingest functions accept `AbstractDataFrame` directly, so library users with in-memory data can skip file I/O (`ingest_newssim!`, `ingest_mct!`, `load_airports!`, `load_regions!`, `load_aircrafts!`, `load_oa_control!`)
 - **MCT lookup** — full SSIM8 Chapter 8 matching with 29-level specificity cascade, codeshare indicators, aircraft type, flight number ranges, state geography, date validity, suppression geography, and inter-station (multi-airport city) support; result cache with revalidation (~77% hit rate)
 - **Graph-based connection building** — O(n²) rule-chain pass producing `GraphConnection` edges at every station; Tuple-dispatched rules for fully specialized compilation
 - **DFS search with pruning** — depth-first traversal with elapsed-time, circuity, direction, and stop-count pruning
 - **Trip search with scoring** — multi-leg trip pairing with configurable weighted scoring (`TripScoringWeights`)
 - **Multiple output formats** — CSV files, JSON (full and compact with `ItineraryRef` summary), `itinerary_long_format` / `itinerary_wide_format` tables
 - **Interactive visualizations** — self-contained HTML network map (Leaflet), timeline (D3 Gantt), and trip comparison (D3 stacked bar)
+- **MCT audit inspector** — interactive REPL for stepping through misconnect reports, tracing MCT cascade decisions with full flight leg and MCT record decoding, codeshare resolution tables, and paged candidate inspection. Optional Term.jl extension for colored panels and styled output (`using Term` before `using ItinerarySearch`)
 - **Observability** — structured event log with typed events and JSONL sink, DynaTrace-compatible JSON logging via LoggingExtras TeeLogger, cooperative system metrics polling, Tier 1 instrumentation (rule counters, MCT cascade stats, geographic aggregation)
 - **CLI** — `itinsearch` with 6 commands (search, trip, build, ingest, info, serve), global flags, per-invocation parameter overrides
 - **REST API** — HTTP service with search, trip, station, health, and rebuild endpoints; concurrent request handling; lock-protected graph refresh; per-request constraint overrides

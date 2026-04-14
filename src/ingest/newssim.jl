@@ -100,3 +100,43 @@ function ingest_newssim!(
     @info "Ingested newssim CSV" path = abspath_str rows = n delimiter = delim
     return n
 end
+
+"""
+    `function ingest_newssim!(store::DuckDBStore, df::AbstractDataFrame)::Int`
+---
+
+# Description
+- Load a DataFrame directly into DuckDB as the `newssim` table
+- Drops existing `newssim` table if present
+- Useful when the caller already has schedule data in memory (e.g. from a
+  REPL session or upstream pipeline) and does not need to write to a file first
+
+# Arguments
+1. `store::DuckDBStore`: the DuckDB-backed store
+2. `df::AbstractDataFrame`: schedule data with newssim-compatible columns
+
+# Returns
+- `::Int`: number of rows loaded
+
+# Examples
+```julia
+julia> using DataFrames
+julia> df = DataFrame(carrier=["AA","BA"], flight_number=[100,200]);
+julia> store = DuckDBStore();
+julia> ingest_newssim!(store, df)
+2
+```
+"""
+function ingest_newssim!(store::DuckDBStore, df::AbstractDataFrame)::Int
+    _exec(store, "DROP TABLE IF EXISTS newssim")
+    DuckDB.register_table(store.db, df, "__newssim_staging")
+    try
+        _exec(store, "CREATE TABLE newssim AS SELECT * FROM __newssim_staging")
+    finally
+        DuckDB.unregister_table(store.db, "__newssim_staging")
+    end
+    result = DBInterface.execute(store.db, "SELECT COUNT(*) AS n FROM newssim")
+    n = Int(first(result).n)
+    @info "Ingested newssim DataFrame" rows = n columns = ncol(df)
+    return n
+end

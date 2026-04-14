@@ -2,6 +2,9 @@ using Test
 using ItinerarySearch
 using InlineStrings
 using Dates
+using JSON3
+using CSV
+import DataFrames
 
 # Internal symbols used by test files — not part of the public API
 import ItinerarySearch:
@@ -51,7 +54,7 @@ import ItinerarySearch:
     post_ingest_sql!,
     query_schedule_legs, query_schedule_segments,
     # MCT lookup
-    MCTRecord, MCTLookup, MCTCacheKey, lookup_mct, materialize_mct_lookup,
+    MCTRecord, MCTLookup, MCTCacheKey, lookup_mct, lookup_mct_traced, materialize_mct_lookup,
     MCT_BIT_ARR_CARRIER, MCT_BIT_DEP_CARRIER,
     MCT_BIT_ARR_TERM, MCT_BIT_DEP_TERM,
     MCT_BIT_PRV_STN, MCT_BIT_NXT_STN,
@@ -63,6 +66,16 @@ import ItinerarySearch:
     MCT_BIT_ARR_ACFT_TYPE, MCT_BIT_DEP_ACFT_TYPE,
     MCT_BIT_ARR_FLT_RNG, MCT_BIT_DEP_FLT_RNG,
     MCT_BIT_PRV_STATE, MCT_BIT_NXT_STATE,
+    # MCT bitmask decoder
+    decode_matched_fields,
+    # MCT audit trace types
+    EMPTY_MCT_RESULT, MCTCandidateTrace, MCTTrace, MCTAuditConfig,
+    # MCT audit log
+    MCTAuditLog, open_audit_log, write_audit_entry!, close_audit_log,
+    # MCT replay
+    replay_misconnects, parse_misconnect_row,
+    # MCT inspector
+    mct_inspect, InspectorState,
     # Connection rules
     check_cnx_roundtrip, check_cnx_backtrack, check_cnx_scope, check_cnx_interline,
     check_cnx_opdays, check_cnx_suppcodes, check_cnx_trfrest,
@@ -332,6 +345,119 @@ include("test_helpers.jl")
             @test mct.suppressed == false
         end
 
+        @testset "EMPTY_MCT_RESULT" begin
+            @test EMPTY_MCT_RESULT.time == Minutes(0)
+            @test EMPTY_MCT_RESULT.source == SOURCE_GLOBAL_DEFAULT
+            @test EMPTY_MCT_RESULT.mct_id == Int32(0)
+            @test EMPTY_MCT_RESULT.matched_fields == UInt32(0)
+            @test EMPTY_MCT_RESULT === EMPTY_MCT_RESULT  # isbits identity
+        end
+
+        @testset "MCTCandidateTrace" begin
+            rec = MCTRecord(
+                arr_carrier = AirlineCode("UA"),
+                dep_carrier = AirlineCode("UA"),
+                specified = MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER,
+                time = Minutes(90),
+                mct_id = Int32(100),
+            )
+            ct = MCTCandidateTrace(rec, true, :none, :exception, UInt32(0))
+            @test ct.matched == true
+            @test ct.skip_reason == :none
+            @test ct.mismatched_fields == UInt32(0)
+            @test ct.pass == :exception
+            @test ct.record.time == Minutes(90)
+        end
+
+        @testset "MCTTrace" begin
+            trace = MCTTrace(
+                arr_carrier = AirlineCode("UA"),
+                dep_carrier = AirlineCode("AA"),
+                arr_station = StationCode("ORD"),
+                dep_station = StationCode("ORD"),
+                status = MCT_DD,
+                candidates = MCTCandidateTrace[],
+                result = EMPTY_MCT_RESULT,
+            )
+            @test trace.arr_carrier == AirlineCode("UA")
+            @test trace.codeshare_mode == :none
+            @test trace.marketing_result === EMPTY_MCT_RESULT
+            @test trace.operating_result === EMPTY_MCT_RESULT
+            @test isempty(trace.candidates)
+        end
+
+        @testset "MCTAuditConfig" begin
+            cfg = MCTAuditConfig()
+            @test cfg.enabled == false
+            @test cfg.detail == :summary
+            @test cfg.max_connections == 0
+            @test cfg.max_candidates == 10
+
+            cfg2 = MCTAuditConfig(enabled=true, detail=:detailed, max_connections=100)
+            @test cfg2.enabled == true
+            @test cfg2.detail == :detailed
+            @test cfg2.max_connections == 100
+        end
+
+        @testset "lookup_mct trace collection" begin
+            # Build a lookup with known records at ORD
+            rec_specific = MCTRecord(
+                arr_carrier = AirlineCode("UA"),
+                dep_carrier = AirlineCode("UA"),
+                specified = MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER,
+                time = Minutes(45),
+                mct_id = Int32(101),
+                specificity = UInt32(1) << 28 | UInt32(1) << 25,
+            )
+            rec_generic = MCTRecord(
+                time = Minutes(60),
+                mct_id = Int32(102),
+                station_standard = true,
+                specificity = UInt32(0),
+            )
+            ord = StationCode("ORD")
+            lookup = MCTLookup(
+                stations = Dict(
+                    (ord, ord) => (
+                        [rec_specific, rec_generic],  # DD
+                        MCTRecord[],  # DI
+                        MCTRecord[],  # ID
+                        MCTRecord[],  # II
+                    ),
+                ),
+            )
+
+            # Without trace — normal path unchanged
+            result = lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"), ord, ord, MCT_DD)
+            @test result.time == Minutes(45)
+            @test result.mct_id == Int32(101)
+
+            # With trace — captures candidates
+            candidates = MCTCandidateTrace[]
+            result2 = lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"), ord, ord, MCT_DD;
+                                 trace=candidates)
+            @test result2.time == Minutes(45)
+            @test length(candidates) >= 1
+            @test candidates[1].matched == true
+            @test candidates[1].pass == :exception
+            @test candidates[1].record.mct_id == Int32(101)
+
+            # Mismatched carrier — should skip specific, fall to standard
+            candidates2 = MCTCandidateTrace[]
+            result3 = lookup_mct(lookup, AirlineCode("AA"), AirlineCode("AA"), ord, ord, MCT_DD;
+                                 trace=candidates2)
+            @test result3.time == Minutes(60)
+            @test result3.source == SOURCE_STATION_STANDARD
+            @test length(candidates2) >= 2
+            @test candidates2[1].matched == false
+            @test candidates2[1].skip_reason == :field_mismatch
+            @test candidates2[1].mismatched_fields != UInt32(0)
+            @test (candidates2[1].mismatched_fields & MCT_BIT_ARR_CARRIER) != 0
+            @test (candidates2[1].mismatched_fields & MCT_BIT_DEP_CARRIER) != 0
+            @test candidates2[2].matched == true
+            @test candidates2[2].pass == :station_standard
+        end
+
         @testset "SegmentRecord" begin
             @test isbitstype(SegmentRecord)
             seg = SegmentRecord(
@@ -384,5 +510,198 @@ include("test_helpers.jl")
         @test hasmethod(table_stats, Tuple{AbstractStore})
         @test hasmethod(query_schedule_legs, Tuple{AbstractStore, Date, Date})
         @test hasmethod(query_schedule_segments, Tuple{AbstractStore, Date, Date})
+    end
+
+    @testset "MCT Bitmask Decode" begin
+        @test decode_matched_fields(UInt32(0)) == ""
+        @test decode_matched_fields(MCT_BIT_ARR_CARRIER) == "ARR_CARRIER"
+        @test decode_matched_fields(MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER) == "ARR_CARRIER,DEP_CARRIER"
+        @test decode_matched_fields(MCT_BIT_ARR_TERM | MCT_BIT_DEP_BODY | MCT_BIT_PRV_REGION) == "ARR_TERM,PRV_REGION,DEP_BODY"
+        # All bits
+        all_bits = MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER | MCT_BIT_ARR_TERM |
+                   MCT_BIT_DEP_TERM | MCT_BIT_PRV_STN | MCT_BIT_NXT_STN |
+                   MCT_BIT_PRV_COUNTRY | MCT_BIT_NXT_COUNTRY | MCT_BIT_PRV_REGION |
+                   MCT_BIT_NXT_REGION | MCT_BIT_DEP_BODY | MCT_BIT_ARR_BODY
+        decoded = decode_matched_fields(all_bits)
+        @test occursin("ARR_CARRIER", decoded)
+        @test occursin("NXT_REGION", decoded)
+        @test count(==(','), decoded) == 11  # 12 fields, 11 commas
+    end
+
+    @testset "MCT Audit Log Writer" begin
+        # Summary mode to IOBuffer
+        buf = IOBuffer()
+        log = open_audit_log(buf, MCTAuditConfig(enabled=true, detail=:summary))
+
+        trace = MCTTrace(
+            arr_carrier = AirlineCode("UA"),
+            dep_carrier = AirlineCode("AA"),
+            arr_station = StationCode("ORD"),
+            dep_station = StationCode("ORD"),
+            status = MCT_DD,
+            candidates = MCTCandidateTrace[],
+            result = MCTResult(
+                time = Minutes(60), queried_status = MCT_DD, matched_status = MCT_DD,
+                suppressed = false, source = SOURCE_STATION_STANDARD,
+                specificity = UInt32(0), mct_id = Int32(50), matched_fields = UInt32(0),
+            ),
+        )
+        write_audit_entry!(log, trace; cnx_time=Minutes(75))
+        close_audit_log(log)
+
+        output = String(take!(buf))
+        lines = split(strip(output), '\n')
+        @test length(lines) == 2  # header + 1 data row
+        @test startswith(lines[1], "arr_carrier")
+        @test occursin("UA", lines[2])
+        @test occursin("station_standard", lines[2])
+
+        # Detailed mode (JSONL)
+        buf2 = IOBuffer()
+        log2 = open_audit_log(buf2, MCTAuditConfig(enabled=true, detail=:detailed))
+        write_audit_entry!(log2, trace; cnx_time=Minutes(75))
+        close_audit_log(log2)
+
+        output2 = String(take!(buf2))
+        obj = JSON3.read(strip(output2))
+        @test obj.mct_time == 60
+        @test obj.mct_source == "station_standard"
+
+        # max_connections limit
+        buf3 = IOBuffer()
+        log3 = open_audit_log(buf3, MCTAuditConfig(enabled=true, detail=:summary, max_connections=1))
+        write_audit_entry!(log3, trace; cnx_time=Minutes(75))
+        @test write_audit_entry!(log3, trace; cnx_time=Minutes(80)) == false  # over limit
+        close_audit_log(log3)
+    end
+
+    @testset "lookup_mct_traced" begin
+        rec1 = MCTRecord(
+            arr_carrier = AirlineCode("UA"),
+            specified = MCT_BIT_ARR_CARRIER,
+            time = Minutes(50),
+            mct_id = Int32(200),
+            specificity = UInt32(1) << 25,
+        )
+        ord = StationCode("ORD")
+        lookup = MCTLookup(
+            stations = Dict(
+                (ord, ord) => (
+                    [rec1],       # DD
+                    MCTRecord[],  # DI
+                    MCTRecord[],  # ID
+                    MCTRecord[],  # II
+                ),
+            ),
+        )
+
+        trace = lookup_mct_traced(lookup, AirlineCode("UA"), AirlineCode("AA"),
+                                   ord, ord, MCT_DD)
+        @test trace isa MCTTrace
+        @test trace.result.time == Minutes(50)
+        @test trace.arr_carrier == AirlineCode("UA")
+        @test trace.dep_carrier == AirlineCode("AA")
+        @test trace.arr_station == ord
+        @test trace.status == MCT_DD
+        @test length(trace.candidates) == 1
+        @test trace.candidates[1].matched == true
+        @test trace.codeshare_mode == :none
+    end
+
+    @testset "Misconnect Replayer" begin
+        csv_content = """rcrd_loc,num_in_prty,inbound_operating_carrier,inbound_operating_flight_number,inbound_codeshare_indicator,inbound_carrier,inbound_flight_number,inbound_departure_station,inbound_arrival_station,inbound_departure_dtml,inbound_arrival_dtml,inbound_departure_date,inbound_arrival_date,inbound_departure_country,inbound_departure_state,inbound_aircraft_type,inbound_departure_terminal,inbound_arrival_terminal,inbound_aircraft_configuration,inbound_aircraft_bodytype,outbound_operating_carrier,outbound_operating_flight_number,outbound_codeshare_indicator,outbound_carrier,outbound_flight_number,outbound_departure_station,outbound_arrival_station,outbound_departure_dtml,outbound_departure_date,outbound_departure_country,outbound_departure_state,outbound_aircraft_type,outbound_departure_terminal,outbound_arrival_terminal,outbound_aircraft_configuration,outbound_aircraft_bodytype,international_domestic_status,connection_time,mct,mct_diff,mctrec,owner,dist_channel,aaa,agency_name,agency_id
+TEST01,1,UA,100,N,UA,100,LAX,ORD,2026-06-15T08:00:00.0,2026-06-15T14:00:00.0,2026-06-15,2026-06-15,US,CA,738,7,1,J12Y114,N,UA,200,N,UA,200,ORD,LHR,2026-06-15T15:30:00.0,2026-06-15,GB,,777,1,2,J50Y200,W,DI,90.0,120,-30.0,99999,Host,UA WEB,WEB,,"""
+
+        tmpfile = tempname() * ".csv"
+        write(tmpfile, csv_content)
+
+        # Build a lookup with a known ORD record
+        ord = StationCode("ORD")
+        rec = MCTRecord(
+            arr_carrier = AirlineCode("UA"),
+            dep_carrier = AirlineCode("UA"),
+            specified = MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER,
+            time = Minutes(90),
+            mct_id = Int32(500),
+            specificity = UInt32(1) << 28 | UInt32(1) << 25,
+        )
+        lookup = MCTLookup(
+            stations = Dict(
+                (ord, ord) => (
+                    MCTRecord[],  # DD
+                    [rec],        # DI
+                    MCTRecord[],  # ID
+                    MCTRecord[],  # II
+                ),
+            ),
+        )
+
+        # Replay with summary output
+        outbuf = IOBuffer()
+        replay_misconnects(tmpfile, lookup; output_io=outbuf, detail=:summary)
+        output = String(take!(outbuf))
+        lines = split(strip(output), '\n')
+        @test length(lines) == 2  # header + 1 row
+        @test occursin("TEST01", lines[2])
+        @test occursin("true", lines[2])   # our_resolves: 90 <= 90
+
+        rm(tmpfile)
+    end
+
+    @testset "MCT Inspector State" begin
+        lookup = MCTLookup()
+        state = InspectorState(lookup=lookup, connections=NamedTuple[])
+        @test state.position == 0
+        @test isempty(state.connections)
+        @test isempty(state.filters)
+    end
+
+    @testset "MCTAuditConfig in SearchConfig" begin
+        cfg = SearchConfig()
+        @test cfg.mct_audit.enabled == false
+        @test cfg.mct_audit.detail == :summary
+
+        cfg2 = SearchConfig(mct_audit=MCTAuditConfig(enabled=true, detail=:detailed))
+        @test cfg2.mct_audit.enabled == true
+    end
+
+    @testset "Misconnect Replay Integration" begin
+        csv_content = """rcrd_loc,num_in_prty,inbound_operating_carrier,inbound_operating_flight_number,inbound_codeshare_indicator,inbound_carrier,inbound_flight_number,inbound_departure_station,inbound_arrival_station,inbound_departure_dtml,inbound_arrival_dtml,inbound_departure_date,inbound_arrival_date,inbound_departure_country,inbound_departure_state,inbound_aircraft_type,inbound_departure_terminal,inbound_arrival_terminal,inbound_aircraft_configuration,inbound_aircraft_bodytype,outbound_operating_carrier,outbound_operating_flight_number,outbound_codeshare_indicator,outbound_carrier,outbound_flight_number,outbound_departure_station,outbound_arrival_station,outbound_departure_dtml,outbound_departure_date,outbound_departure_country,outbound_departure_state,outbound_aircraft_type,outbound_departure_terminal,outbound_arrival_terminal,outbound_aircraft_configuration,outbound_aircraft_bodytype,international_domestic_status,connection_time,mct,mct_diff,mctrec,owner,dist_channel,aaa,agency_name,agency_id
+A0HHLV,1,AC,8944,Y,UA,8154,YUL,EWR,2026-05-31T18:15:00.0,2026-05-31T19:52:00.0,2026-05-31,2026-05-31,CA,QC,E75,,A,J12Y64,N,UA,3606,N,UA,3606,EWR,GSP,2026-05-31T21:15:00.0,2026-05-31,US,SC,E7W,C,,J12Y64,N,DD,83.0,90,-7.0,89788,Host,UA WEB,WEB,,
+A1V22C,7,UA,972,N,UA,972,ORD,BRU,2026-06-16T18:00:00.0,2026-06-17T09:00:00.0,2026-06-16,2026-06-17,US,IL,781,1,,J44O21Y253,W,SN,3169,Y,UA,9951,BRU,NAP,2026-06-17T09:45:00.0,2026-06-17,IT,,320,,,C18Y150,N,II,45.0,50,-5.0,189105,Host,UA WEB,WEB,,"""
+
+        tmpfile = tempname() * ".csv"
+        write(tmpfile, csv_content)
+
+        df = CSV.read(tmpfile, DataFrames.DataFrame; stringtype=String)
+        for row in eachrow(df)
+            params = parse_misconnect_row(row)
+            @test params.rcrd_loc isa String
+            @test params.arr_carrier isa AirlineCode
+            @test params.cnx_time isa Minutes
+            @test params.their_mct isa Minutes
+        end
+
+        # First row: codeshare inbound (AC→UA), DD status
+        row1 = parse_misconnect_row(eachrow(df)[1])
+        @test row1.rcrd_loc == "A0HHLV"
+        @test row1.arr_carrier == AirlineCode("UA")  # marketing carrier
+        @test row1.arr_op_carrier == AirlineCode("AC")
+        @test row1.arr_is_codeshare == true
+        @test row1.dep_is_codeshare == false
+        @test row1.status == MCT_DD
+        @test row1.cnx_time == Minutes(83)
+        @test row1.their_mct == Minutes(90)
+        @test row1.arr_station == StationCode("EWR")
+
+        # Second row: codeshare outbound (SN→UA), II status
+        row2 = parse_misconnect_row(eachrow(df)[2])
+        @test row2.rcrd_loc == "A1V22C"
+        @test row2.dep_is_codeshare == true
+        @test row2.dep_op_carrier == AirlineCode("SN")
+        @test row2.status == MCT_II
+        @test row2.arr_station == StationCode("BRU")
+
+        rm(tmpfile)
     end
 end

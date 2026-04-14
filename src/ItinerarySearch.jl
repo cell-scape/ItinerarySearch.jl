@@ -9,6 +9,8 @@ using JSON3
 using Logging
 using LoggingExtras
 using HTTP
+using CSV
+using DataFrames
 
 # Type system (dependency order matters)
 include("types/aliases.jl")
@@ -18,6 +20,8 @@ include("types/status.jl")
 include("types/stats.jl")
 include("types/constraints.jl")
 include("types/graph.jl")
+include("types/mct_audit_config.jl")
+include("types/display.jl")
 include("config.jl")
 include("observe/events.jl")
 include("observe/metrics.jl")
@@ -36,6 +40,12 @@ include("ingest/reference.jl")
 include("ingest/newssim.jl")
 include("ingest/newssim_materialize.jl")
 include("graph/mct_lookup.jl")
+include("types/mct_trace.jl")
+include("graph/mct_decode.jl")
+include("graph/mct_trace.jl")
+include("audit/mct_audit_log.jl")
+include("audit/mct_replay.jl")
+include("audit/mct_inspect.jl")
 include("graph/rules_cnx.jl")
 include("graph/rules_itn.jl")
 include("graph/connect.jl")
@@ -64,6 +74,7 @@ export DuckDBStore, table_stats, load_schedule!
 
 # Ingest
 export ingest_ssim!, ingest_mct!, ingest_newssim!
+export load_airports!, load_regions!, load_aircrafts!, load_oa_control!
 
 # Build & search
 export build_graph!, search, search_markets
@@ -73,6 +84,12 @@ export RuntimeContext, SearchConstraints, build_itn_rules
 # Output
 export write_legs, write_itineraries, write_trips
 export itinerary_legs, itinerary_legs_multi, itinerary_legs_json
+
+# MCT audit
+export MCTAuditConfig, MCTTrace, MCTCandidateTrace, EMPTY_MCT_RESULT
+export lookup_mct_traced, lookup_mct_codeshare_traced, decode_matched_fields
+export replay_misconnects, mct_inspect
+export DisplayStyle, PlainStyle
 
 # Visualization
 export viz_network_map, viz_timeline, viz_trip_comparison, viz_itinerary_refs
@@ -117,6 +134,11 @@ using PrecompileTools
         lookup = MCTLookup()
         lookup_mct(lookup, AirlineCode("UA"), AirlineCode("UA"),
                    StationCode("ORD"), StationCode("ORD"), MCT_DD)
+
+        # MCT trace types
+        EMPTY_MCT_RESULT
+        MCTAuditConfig()
+        decode_matched_fields(UInt32(0))
 
         # Rule chain construction
         cnx_rules = build_cnx_rules(config, constraints, lookup)

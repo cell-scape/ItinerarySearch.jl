@@ -14,6 +14,13 @@ load_schedule!
 ingest_ssim!
 ```
 
+## NewSSIM CSV Ingest
+
+```@docs
+ingest_newssim!
+detect_delimiter
+```
+
 ## MCT Ingest
 
 ```@docs

@@ -316,16 +316,24 @@ end
 end
 
 # Codeshare-aware MCT resolution. Per SSIM Ch. 8 (p. 398): "A marketing (Y)
-# flight MCT will override an operating MCT." For codeshare flights, two
-# lookups are performed:
+# flight MCT will override an operating MCT." For codeshare flights, up to
+# four lookups are performed, mirroring the four MCT codeshare-indicator
+# partitions (YY, YN, NY, NN):
 #
-# 1. Marketing lookup: use marketing carriers with codeshare flags set —
-#    finds codeshare-specific MCTs (records with cs_ind=Y)
-# 2. Operating lookup: use operating carriers without codeshare flags —
-#    finds operating carrier MCTs
+# 1. YY — Marketing lookup: marketing carriers with both codeshare flags set
+# 2. YN — Dep-CS-only: marketing dep carrier + operating arr carrier, dep CS flag
+# 3. NY — Arr-CS-only: operating dep carrier + marketing arr carrier, arr CS flag
+# 4. NN — Operating lookup: operating carriers, no codeshare flags
 #
-# The result with higher specificity wins. At equal specificity, the marketing
-# result takes precedence (codeshare MCTs override operating MCTs).
+# The mixed lookups (YN, NY) are only needed when both legs are codeshare;
+# when only one leg is codeshare the non-CS side's marketing carrier already
+# equals its operating carrier, so the marketing and operating lookups cover
+# all four partitions.
+#
+# The operating (NN) result establishes the time floor. Codeshare results
+# (YY, YN, NY) must have higher specificity AND time >= the operating time
+# to override — a marketing carrier can only request a longer MCT (SSIM
+# Ch. 8). At equal specificity, the operating result takes precedence.
 #
 # For non-codeshare connections, a single lookup is performed (no overhead).
 @inline function _mct_codeshare_resolve(
@@ -357,7 +365,7 @@ end
         )
     end
 
-    # ── Marketing lookup: marketing carriers + flight numbers + codeshare context
+    # ── YY: Marketing lookup — marketing carriers + codeshare context (both sides)
     marketing_result = _mct_direct_lookup(
         r, ctx,
         from_rec.carrier, to_rec.carrier,
@@ -369,13 +377,16 @@ end
         prv_region = prv_region, nxt_region = nxt_region,
     )
 
-    # Mode: marketing only — skip operating lookup
+    # Mode: marketing only — skip other lookups
     mode === :marketing && return marketing_result
 
-    # If neither leg is a codeshare, no second lookup needed
+    # If neither leg is a codeshare, no additional lookups needed
     (!arr_is_codeshare && !dep_is_codeshare) && return marketing_result
 
-    # ── Operating lookup: operating carriers + flight numbers, no codeshare flags
+    # ── NN: Operating lookup — operating carriers, no codeshare flags.
+    # Computed first: the operating MCT establishes the time floor.
+    # Per SSIM Ch. 8: a marketing carrier can only request a longer MCT
+    # than the operating carrier.
     operating_result = _mct_direct_lookup(
         r, ctx,
         op_arr_carrier, op_dep_carrier,
@@ -387,11 +398,53 @@ end
         prv_region = prv_region, nxt_region = nxt_region,
     )
 
-    # Higher specificity wins; marketing preferred at equal specificity
-    if operating_result.specificity > marketing_result.specificity
-        return operating_result
+    # Start with operating as baseline; codeshare results must have higher
+    # specificity AND time >= operating time to override
+    best = operating_result
+
+    if marketing_result.specificity > best.specificity &&
+       marketing_result.time >= operating_result.time
+        best = marketing_result
     end
-    return marketing_result
+
+    # ── Mixed lookups: only needed when both legs are codeshare ───────────
+    # When only one leg is CS, marketing carrier = operating carrier on the
+    # non-CS side, so YY+NN already cover YN and NY.
+    if arr_is_codeshare && dep_is_codeshare
+        # YN: dep CS only — marketing dep carrier + operating arr carrier
+        yn_result = _mct_direct_lookup(
+            r, ctx,
+            op_arr_carrier, to_rec.carrier,
+            op_arr_flt, to_rec.flight_number,
+            stn_code, mct_status, from_rec, to_rec,
+            NO_AIRLINE, dep_op_carrier,
+            false, dep_is_codeshare,
+            prv_stn_rec, nxt_stn_rec;
+            prv_region = prv_region, nxt_region = nxt_region,
+        )
+        if yn_result.specificity > best.specificity &&
+           yn_result.time >= operating_result.time
+            best = yn_result
+        end
+
+        # NY: arr CS only — operating dep carrier + marketing arr carrier
+        ny_result = _mct_direct_lookup(
+            r, ctx,
+            from_rec.carrier, op_dep_carrier,
+            from_rec.flight_number, op_dep_flt,
+            stn_code, mct_status, from_rec, to_rec,
+            arr_op_carrier, NO_AIRLINE,
+            arr_is_codeshare, false,
+            prv_stn_rec, nxt_stn_rec;
+            prv_region = prv_region, nxt_region = nxt_region,
+        )
+        if ny_result.specificity > best.specificity &&
+           ny_result.time >= operating_result.time
+            best = ny_result
+        end
+    end
+
+    return best
 end
 
 @inline function _mct_lookup_cached(

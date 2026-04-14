@@ -138,6 +138,49 @@ function ingest_mct!(store::DuckDBStore, path::String;
     nothing
 end
 
+"""
+    `function ingest_mct!(store::DuckDBStore, df::AbstractDataFrame)::Nothing`
+---
+
+# Description
+- Load MCT records from a DataFrame directly into the `mct` table
+- Clears existing `mct` rows and replaces with DataFrame contents
+- DataFrame columns must match the `mct` table DDL (39 columns)
+- Useful when the caller already has MCT data in memory
+
+# Arguments
+1. `store::DuckDBStore`: initialized store (tables must already exist)
+2. `df::AbstractDataFrame`: MCT data with columns matching the `mct` table schema
+
+# Returns
+- `nothing`
+
+# Examples
+```julia
+julia> using DataFrames
+julia> df = DataFrame(mct_id=Int32[1], record_serial=UInt32[1], arr_stn=["ORD"],
+           dep_stn=["ORD"], mct_status=["DD"], time_minutes=Int16[60],
+           arr_carrier=[""], arr_cs_ind=[""], arr_cs_op_carrier=[""],
+           dep_carrier=[""], dep_cs_ind=[""], dep_cs_op_carrier=[""],
+           arr_acft_type=[""], arr_acft_body=[""], dep_acft_type=[""],
+           dep_acft_body=[""], arr_term=[""], dep_term=[""],
+           prv_ctry=[""], prv_stn=[""], nxt_ctry=[""], nxt_stn=[""],
+           arr_flt_rng_start=Int16[0], arr_flt_rng_end=Int16[0],
+           dep_flt_rng_start=Int16[0], dep_flt_rng_end=Int16[0],
+           prv_state=[""], nxt_state=[""], prv_rgn=[""], nxt_rgn=[""],
+           eff_date=[Date(1900,1,1)], dis_date=[Date(2099,12,31)],
+           suppress=[false], supp_rgn=[""], supp_ctry=[""], supp_state=[""],
+           submitting_carrier=[""], station_standard=[true], specificity=UInt32[0]);
+julia> store = DuckDBStore();
+julia> ingest_mct!(store, df);
+```
+"""
+function ingest_mct!(store::DuckDBStore, df::AbstractDataFrame)::Nothing
+    n = _replace_from_dataframe!(store, df, "mct")
+    @info "Ingested MCT DataFrame" rows = n columns = ncol(df)
+    nothing
+end
+
 function _append_mct!(appender::DuckDB.Appender, mct_id::Int, line::String)
     _s(a, b) = strip(line[a:min(b, length(line))])
     _sb(pos) = pos <= length(line) ? strip(string(line[pos])) : ""

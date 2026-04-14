@@ -65,7 +65,7 @@ function _infer_body_type(eqp::AbstractString)::Char
     isempty(eqp) && return ' '
     c = eqp[1]
     (c == '7' && length(eqp) >= 2 && eqp[2] in ('4', '6', '7', '8', '9')) && return 'W'
-    (c == '3' && length(eqp) >= 2 && eqp[2] in ('3', '5', '8')) && return 'W'
+    (c == '3' && length(eqp) >= 2 && eqp[2] in ('3', '4', '5', '8')) && return 'W'
     'N'
 end
 
