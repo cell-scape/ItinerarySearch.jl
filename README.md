@@ -8,6 +8,7 @@ ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Ti
 
 - **SSIM ingest** — streaming fixed-width parser for OAG/SSIM Type 1-5 records, with EDF expansion, codeshare (DEI 50) resolution, and segment building
 - **NewSSIM CSV ingest** — alternative CSV-based ingest path (`ingest_newssim!`) for denormalized schedule files; auto-detects delimiter (comma, pipe, tab) and handles .gz compression
+- **DataFrame ingest** — all ingest functions accept `AbstractDataFrame` directly, so library users with in-memory data can skip file I/O (`ingest_newssim!`, `ingest_mct!`, `load_airports!`, `load_regions!`, `load_aircrafts!`, `load_oa_control!`)
 - **MCT lookup** — full SSIM8 Chapter 8 matching with 29-level specificity cascade, codeshare indicators, aircraft type, flight number ranges, state geography, date validity, suppression geography, and inter-station (multi-airport city) support; result cache with revalidation (~77% hit rate)
 - **Graph-based connection building** — O(n²) rule-chain pass producing `GraphConnection` edges at every station; Tuple-dispatched rules for fully specialized compilation
 - **DFS search with pruning** — depth-first traversal with elapsed-time, circuity, direction, and stop-count pruning

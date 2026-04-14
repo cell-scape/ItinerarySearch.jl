@@ -55,6 +55,24 @@ julia --project=. bin/itinsearch.jl --newssim data/demo/sample_newssim.csv.gz \
     search ORD LHR 2026-06-15
 ```
 
+### Alternative: DataFrame Ingest
+
+All ingest functions also accept `AbstractDataFrame` directly, so library users with in-memory data can skip writing to files first:
+
+```julia
+using DataFrames
+
+store = DuckDBStore()
+ingest_newssim!(store, my_schedule_df)          # schedule data
+ingest_mct!(store, my_mct_df)                   # MCT records
+load_airports!(store, my_airports_df)           # station reference
+load_regions!(store, my_regions_df)             # region mappings
+load_aircrafts!(store, my_aircrafts_df)         # aircraft reference
+load_oa_control!(store, my_oa_control_df)       # OA control table
+```
+
+DataFrame column names must match the corresponding DuckDB table schema (column order does not matter). See the docstrings for each function for the expected columns.
+
 ## Step 2: Build the Flight Graph
 
 ```julia

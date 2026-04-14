@@ -73,6 +73,7 @@ export DuckDBStore, table_stats, load_schedule!
 
 # Ingest
 export ingest_ssim!, ingest_mct!, ingest_newssim!
+export load_airports!, load_regions!, load_aircrafts!, load_oa_control!
 
 # Build & search
 export build_graph!, search, search_markets

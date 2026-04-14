@@ -75,6 +75,22 @@ function _exec(store::DuckDBStore, sql::String)
     DBInterface.execute(store.db, sql)
 end
 
+# Internal helper: replace a pre-existing table's contents from a DataFrame.
+# The table must already exist (created by _create_tables!); its DDL schema is
+# preserved. The DataFrame column names must match the table's columns.
+function _replace_from_dataframe!(store::DuckDBStore, df::AbstractDataFrame, table::String)::Int
+    staging = "__$(table)_staging"
+    DuckDB.register_table(store.db, df, staging)
+    try
+        _exec(store, "DELETE FROM $table")
+        _exec(store, "INSERT INTO $table BY NAME SELECT * FROM $staging")
+    finally
+        DuckDB.unregister_table(store.db, staging)
+    end
+    result = DBInterface.execute(store.db, "SELECT COUNT(*) AS n FROM $table")
+    Int(first(result).n)
+end
+
 # Internal helper: create all tables
 function _create_tables!(store::DuckDBStore)
     # ── Core schedule tables ──────────────────────────────────────────────────

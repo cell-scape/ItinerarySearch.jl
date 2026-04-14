@@ -126,6 +126,29 @@ function load_airports!(store::DuckDBStore, path::String)::Nothing
 end
 
 """
+    `function load_airports!(store::DuckDBStore, df::AbstractDataFrame)::Nothing`
+---
+
+# Description
+- Load airport/station reference data from a DataFrame into the `stations` table
+- Clears existing rows and replaces with DataFrame contents
+- DataFrame columns must match: `code`, `country`, `state`, `city`, `region`,
+  `latitude`, `longitude`, `utc_offset`
+
+# Arguments
+1. `store::DuckDBStore`: initialized store (stations table must already exist)
+2. `df::AbstractDataFrame`: airport data
+
+# Returns
+- `nothing`
+"""
+function load_airports!(store::DuckDBStore, df::AbstractDataFrame)::Nothing
+    n = _replace_from_dataframe!(store, df, "stations")
+    @info "Loaded airports from DataFrame" count = n
+    nothing
+end
+
+"""
     `load_regions!(store::DuckDBStore, path::String)::Nothing`
 ---
 
@@ -168,6 +191,28 @@ function load_regions!(store::DuckDBStore, path::String)::Nothing
     end
     @info "Loaded regions" count = loaded
     @debug "Regions detail" path count = loaded
+    nothing
+end
+
+"""
+    `function load_regions!(store::DuckDBStore, df::AbstractDataFrame)::Nothing`
+---
+
+# Description
+- Load region-to-airport mapping from a DataFrame into the `regions` table
+- Clears existing rows and replaces with DataFrame contents
+- DataFrame columns must match: `region`, `airport`, `metro_area`
+
+# Arguments
+1. `store::DuckDBStore`: initialized store (regions table must already exist)
+2. `df::AbstractDataFrame`: region mapping data
+
+# Returns
+- `nothing`
+"""
+function load_regions!(store::DuckDBStore, df::AbstractDataFrame)::Nothing
+    n = _replace_from_dataframe!(store, df, "regions")
+    @info "Loaded regions from DataFrame" count = n
     nothing
 end
 
@@ -229,6 +274,29 @@ function load_oa_control!(store::DuckDBStore, path::String)::Nothing
 end
 
 """
+    `function load_oa_control!(store::DuckDBStore, df::AbstractDataFrame)::Nothing`
+---
+
+# Description
+- Load OA control table from a DataFrame into the `oa_control` table
+- Clears existing rows and replaces with DataFrame contents
+- DataFrame columns must match: `carrier_cd`, `exception_carrier`, `irrops_window`,
+  `joint_venture`, `carrier_group`, `eligible_wet_leases`
+
+# Arguments
+1. `store::DuckDBStore`: initialized store (oa_control table must already exist)
+2. `df::AbstractDataFrame`: OA control data
+
+# Returns
+- `nothing`
+"""
+function load_oa_control!(store::DuckDBStore, df::AbstractDataFrame)::Nothing
+    n = _replace_from_dataframe!(store, df, "oa_control")
+    @info "Loaded OA control from DataFrame" count = n
+    nothing
+end
+
+"""
     `load_aircrafts!(store::DuckDBStore, path::String)::Nothing`
 ---
 
@@ -272,5 +340,27 @@ function load_aircrafts!(store::DuckDBStore, path::String)::Nothing
     end
     @info "Loaded aircrafts" count = loaded
     @debug "Aircrafts detail" path count = loaded
+    nothing
+end
+
+"""
+    `function load_aircrafts!(store::DuckDBStore, df::AbstractDataFrame)::Nothing`
+---
+
+# Description
+- Load aircraft reference data from a DataFrame into the `aircrafts` table
+- Clears existing rows and replaces with DataFrame contents
+- DataFrame columns must match: `code`, `body_type`, `description`
+
+# Arguments
+1. `store::DuckDBStore`: initialized store (aircrafts table must already exist)
+2. `df::AbstractDataFrame`: aircraft reference data
+
+# Returns
+- `nothing`
+"""
+function load_aircrafts!(store::DuckDBStore, df::AbstractDataFrame)::Nothing
+    n = _replace_from_dataframe!(store, df, "aircrafts")
+    @info "Loaded aircrafts from DataFrame" count = n
     nothing
 end
