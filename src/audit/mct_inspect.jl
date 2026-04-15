@@ -631,6 +631,7 @@ function _print_help(io::IO, ::PlainStyle)
       x / mct         — Show legs + matched MCT record in unified view
       x yy|yn|ny|nn   — Show detail for a specific codeshare lookup option
       c / enter       — Move to next connection
+      b / back        — Move to previous connection
       s N / skip N    — Skip ahead N connections
       f <expr>        — Add filter (station=ORD, mismatch, resolves, source=exception)
       m / mismatch    — Shortcut: filter mismatch
@@ -850,6 +851,28 @@ function _advance_to_next!(state::InspectorState, io_in::IO, io_out::IO; skip::I
     println(io_out, "No more connections$(isempty(state.filters) ? "." : " matching filters.")")
 end
 
+function _advance_to_prev!(state::InspectorState, io_in::IO, io_out::IO)
+    pos = state.position - 1
+    while pos >= 1
+        params = state.connections[pos]
+        trace = _run_trace(state, params)
+        if isempty(state.filters) || _passes_filters(state.filters, params, trace)
+            state.position = pos
+            state.cascade_shown = 0
+            _print_connection_header(io_out, state.position, length(state.connections), params, state.style)
+            if state.detail
+                state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size, state.style)
+            end
+            _print_result(io_out, trace, params, state.style)
+            println(io_out, "")
+            _command_loop!(state, io_in, io_out, params, trace)
+            return
+        end
+        pos -= 1
+    end
+    println(io_out, "No previous connections$(isempty(state.filters) ? "." : " matching filters.")")
+end
+
 function _command_loop!(state::InspectorState, io_in::IO, io_out::IO, params::NamedTuple, trace::MCTTrace)
     total = length(state.connections)
     while true
@@ -867,6 +890,9 @@ function _command_loop!(state::InspectorState, io_in::IO, io_out::IO, params::Na
         elseif cmd in ("", "c", "continue")
             state.position += 1
             _advance_to_next!(state, io_in, io_out)
+            return
+        elseif cmd in ("b", "back")
+            _advance_to_prev!(state, io_in, io_out)
             return
         elseif cmd in ("i", "inspect")
             state.cascade_shown = 0

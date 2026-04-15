@@ -223,6 +223,7 @@ function ItinerarySearch._print_help(io::IO, ::TermStyle)
 {cyan bold}x{/cyan bold} / {cyan bold}mct{/cyan bold}         Show legs + matched MCT record in unified view
 {cyan bold}x yy{/cyan bold}|{cyan bold}yn{/cyan bold}|{cyan bold}ny{/cyan bold}|{cyan bold}nn{/cyan bold}   Show detail for a specific codeshare lookup option
 {cyan bold}c{/cyan bold} / {cyan bold}enter{/cyan bold}       Move to next connection
+{cyan bold}b{/cyan bold} / {cyan bold}back{/cyan bold}        Move to previous connection
 {cyan bold}s N{/cyan bold} / {cyan bold}skip N{/cyan bold}    Skip ahead N connections
 {cyan bold}f{/cyan bold} <expr>        Add filter (station=ORD, mismatch, resolves, source=exception)
 {cyan bold}m{/cyan bold} / {cyan bold}mismatch{/cyan bold}    Shortcut: filter mismatch
