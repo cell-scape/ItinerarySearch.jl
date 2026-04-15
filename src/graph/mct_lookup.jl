@@ -274,9 +274,12 @@ end
 # Returns
 - `::UInt32`: specificity weight (0 = completely generic, larger = more specific)
 """
-function _compute_specificity(specified::UInt32, eff_date::UInt32)::UInt32
+function _compute_specificity(specified::UInt32, eff_date::UInt32, dis_date::UInt32=UInt32(0))::UInt32
     sp = specified
     s = UInt32(0)
+    # Default date sentinels from MCT ingest (not explicitly set)
+    _EFF_DEFAULT = UInt32(19000101)
+    _DIS_DEFAULT = UInt32(20991231)
     # Priority 2-4: Dep codeshare + carrier
     (sp & MCT_BIT_DEP_CS_IND)    != 0 && (s += UInt32(1) << 29)
     (sp & MCT_BIT_DEP_CARRIER)   != 0 && (s += UInt32(1) << 28)
@@ -309,13 +312,17 @@ function _compute_specificity(specified::UInt32, eff_date::UInt32)::UInt32
     # Priority 24-25: Aircraft body
     (sp & MCT_BIT_DEP_BODY)      != 0 && (s += UInt32(1) << 9)
     (sp & MCT_BIT_ARR_BODY)      != 0 && (s += UInt32(1) << 8)
-    # Priority 26-27: Effective dates
-    (eff_date != UInt32(0))              && (s += UInt32(1) << 7)
+    # Priority 26: Effective From date (only if explicitly set, not default 1900-01-01)
+    eff_explicit = eff_date != UInt32(0) && eff_date != _EFF_DEFAULT
+    eff_explicit && (s += UInt32(1) << 7)
+    # Priority 27: Effective To date (only if explicitly set, not default 2099-12-31)
+    dis_explicit = dis_date != UInt32(0) && dis_date != _DIS_DEFAULT
+    dis_explicit && (s += UInt32(1) << 6)
     return s
 end
 
 # Convenience overload for backward compatibility (tests use MCTRecord directly)
-_compute_specificity(rec::MCTRecord)::UInt32 = _compute_specificity(rec.specified, rec.eff_date)
+_compute_specificity(rec::MCTRecord)::UInt32 = _compute_specificity(rec.specified, rec.eff_date, rec.dis_date)
 
 # ── Field matching ────────────────────────────────────────────────────────────
 
@@ -952,8 +959,8 @@ function _build_mct_record(r)::Tuple{Tuple{StationCode,StationCode}, MCTStatus, 
     mct_id_val = Int32(_safe_missing(r.mct_id, 0))
     serial_val = UInt32(_safe_missing(r.record_serial, 0))
 
-    # Compute specificity from bitmask and eff_date directly — avoids double MCTRecord construction
-    spec = _compute_specificity(sp, eff_packed)
+    # Compute specificity from bitmask and dates directly — avoids double MCTRecord construction
+    spec = _compute_specificity(sp, eff_packed, dis_packed)
 
     rec = MCTRecord(
         arr_carrier    = isempty(arr_carrier_str) ? NO_AIRLINE : AirlineCode(arr_carrier_str),
