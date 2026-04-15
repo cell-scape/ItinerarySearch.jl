@@ -760,24 +760,25 @@ The fallback is only triggered when the primary lookup did not match on region b
 
 The interactive MCT inspector (`mct_inspect`) steps through a misconnect report CSV, tracing MCT cascade decisions for each connection. For every connection it shows:
 
-- **Full decoded flight legs** — marketing/operating carrier, flight number, route, terminal, body type, aircraft, origin country/state
-- **MCT cascade trace** — paginated list of all candidate MCT records evaluated, with match/skip status and field-by-field mismatch details
-- **Unified leg + MCT detail view** (`x` command) — 7-column table showing both legs side-by-side with the matched MCT record's values and per-side match indicators (✓/✗). Includes flight number ranges, date validity, and suppression geography (scoped to the connection station)
+- **Unified leg + MCT detail view** (`x` command) — 7-column table showing operating carrier/flight, codeshare indicator, marketing carrier/flight, terminal, body, aircraft, geography, flight ranges, date validity, and suppression geography side-by-side with per-side match indicators (✓/✗)
+- **Sorted cascade browser** (`i` command) — all candidate MCT records sorted by match quality (best first), each shown with the full detail table one at a time. Matches sort first, then near-misses ranked by (matched field specificity - mismatched field specificity), then date expired/scope misses
 - **Codeshare option selector** (`x yy`, `x yn`, `x ny`, `x nn`) — view the detail table for any codeshare lookup alternative, with carrier/flight comparisons adjusted to the effective lookup mode
-- **Codeshare resolution table** — all lookup results with carriers, time, specificity, floor check, and winner. Labels reflect actual partitions (e.g. "YN (mkt)" when only arr is codeshare)
-- **Schengen/EUR region resolution** — mirrors production `sch_then_eur` logic: primary lookup with SCH-preferred regions, fallback to EUR if primary didn't match on region bits
+- **Codeshare resolution table** — valid codeshare alternatives with carriers, time, specificity, floor check, and winner. Only shows alternatives where the matched record has cs_ind=Y and a carrier specified. Labels reflect actual partitions (e.g. "YN (mkt)" when only arr is codeshare)
+- **Schengen/EUR region resolution** — mirrors production `sch_then_eur` logic with SCH-preferred regions and EUR fallback
+- **Suppression geography** — scoped to the connection station per IATA MCT User Guide (e.g. supp_country=CU suppresses at Cuban stations)
 - **Comparison** — our MCT vs their MCT, time match/mismatch, whether the connection resolves
 
 ### Commands
 
 | Command | Description |
 |---|---|
-| `i` / `inspect` | Show cascade trace for current connection (paged) |
-| `more` | Show next page of candidates |
+| `i` / `inspect` | Browse cascade candidates sorted by match quality (one at a time) |
+| `more` | Show next candidate in cascade |
 | `l` / `legs` | Show all fields for both connecting legs side by side |
-| `x` / `mct` | Show legs + matched MCT record in unified view |
+| `x` / `mct` | Show legs + matched MCT record in unified detail view |
 | `x yy\|yn\|ny\|nn` | Show detail for a specific codeshare lookup option |
 | `c` / enter | Move to next connection |
+| `b` / `back` | Move to previous connection |
 | `s N` / `skip N` | Skip ahead N connections |
 | `f <expr>` | Add filter (`station=ORD`, `mismatch`, `resolves`, `source=exception`) |
 | `m` / `mismatch` | Shortcut: filter mismatch |
