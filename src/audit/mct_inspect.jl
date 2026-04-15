@@ -168,9 +168,11 @@ function _format_mct_detail(rec::MCTRecord, trace::MCTTrace, params::NamedTuple;
     rows = R[]
 
     # ── Station (arr_station / dep_station — may differ for multi-airport cities) ──
+    arr_stn_mk = _v(params.arr_station) == _v(trace.arr_station) ? "✓" : "✗"
+    dep_stn_mk = _v(params.dep_station) == _v(trace.dep_station) ? "✓" : "✗"
     push!(rows, ("Station",
-        _v(params.arr_station), _v(trace.arr_station),  "-",
-        _v(params.dep_station), _v(trace.dep_station),  "-"))
+        _v(params.arr_station), _v(trace.arr_station), arr_stn_mk,
+        _v(params.dep_station), _v(trace.dep_station), dep_stn_mk))
 
     # ── Carrier ──
     push!(rows, ("Carrier",
