@@ -283,7 +283,7 @@ end
     arr_flt_no::FlightNumber, dep_flt_no::FlightNumber,
     stn_code, mct_status, from_rec, to_rec,
     arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare,
-    prv_stn_rec, nxt_stn_rec;
+    prv_stn_rec, nxt_stn_rec, cnx_stn_rec;
     prv_region::InlineString3 = prv_stn_rec.region,
     nxt_region::InlineString3 = nxt_stn_rec.region,
 )::MCTResult
@@ -312,6 +312,9 @@ end
         prv_region = prv_region,
         nxt_region = nxt_region,
         target_date = ctx.target_date,
+        cnx_country = cnx_stn_rec.country,
+        cnx_state = cnx_stn_rec.state,
+        cnx_region = cnx_stn_rec.region,
     )
 end
 
@@ -342,7 +345,7 @@ end
 @inline function _mct_codeshare_resolve(
     r::MCTRule, ctx, stn_code, mct_status, from_rec, to_rec,
     arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare,
-    prv_stn_rec, nxt_stn_rec;
+    prv_stn_rec, nxt_stn_rec, cnx_stn_rec;
     prv_region::InlineString3 = prv_stn_rec.region,
     nxt_region::InlineString3 = nxt_stn_rec.region,
 )::MCTResult
@@ -363,7 +366,7 @@ end
             stn_code, mct_status, from_rec, to_rec,
             NO_AIRLINE, NO_AIRLINE,
             false, false,
-            prv_stn_rec, nxt_stn_rec;
+            prv_stn_rec, nxt_stn_rec, cnx_stn_rec;
             prv_region = prv_region, nxt_region = nxt_region,
         )
     end
@@ -376,7 +379,7 @@ end
         stn_code, mct_status, from_rec, to_rec,
         arr_op_carrier, dep_op_carrier,
         arr_is_codeshare, dep_is_codeshare,
-        prv_stn_rec, nxt_stn_rec;
+        prv_stn_rec, nxt_stn_rec, cnx_stn_rec;
         prv_region = prv_region, nxt_region = nxt_region,
     )
 
@@ -397,7 +400,7 @@ end
         stn_code, mct_status, from_rec, to_rec,
         NO_AIRLINE, NO_AIRLINE,
         false, false,
-        prv_stn_rec, nxt_stn_rec;
+        prv_stn_rec, nxt_stn_rec, cnx_stn_rec;
         prv_region = prv_region, nxt_region = nxt_region,
     )
 
@@ -432,7 +435,7 @@ end
             stn_code, mct_status, from_rec, to_rec,
             NO_AIRLINE, dep_op_carrier,
             false, dep_is_codeshare,
-            prv_stn_rec, nxt_stn_rec;
+            prv_stn_rec, nxt_stn_rec, cnx_stn_rec;
             prv_region = prv_region, nxt_region = nxt_region,
         )
         if _cs_overrides(yn_result, operating_result) && yn_result.specificity > best.specificity
@@ -447,7 +450,7 @@ end
             stn_code, mct_status, from_rec, to_rec,
             arr_op_carrier, NO_AIRLINE,
             arr_is_codeshare, false,
-            prv_stn_rec, nxt_stn_rec;
+            prv_stn_rec, nxt_stn_rec, cnx_stn_rec;
             prv_region = prv_region, nxt_region = nxt_region,
         )
         if _cs_overrides(ny_result, operating_result) && ny_result.specificity > best.specificity
@@ -461,7 +464,7 @@ end
 @inline function _mct_lookup_cached(
     r::MCTRule, ctx, stn_code, mct_status, from_rec, to_rec,
     arr_op_carrier, dep_op_carrier, arr_is_codeshare, dep_is_codeshare,
-    prv_stn_rec, nxt_stn_rec;
+    prv_stn_rec, nxt_stn_rec, cnx_stn_rec;
     prv_region::InlineString3 = prv_stn_rec.region,
     nxt_region::InlineString3 = nxt_stn_rec.region,
 )::MCTResult
@@ -469,7 +472,7 @@ end
         return _mct_codeshare_resolve(r, ctx, stn_code, mct_status, from_rec, to_rec,
                                       arr_op_carrier, dep_op_carrier,
                                       arr_is_codeshare, dep_is_codeshare,
-                                      prv_stn_rec, nxt_stn_rec;
+                                      prv_stn_rec, nxt_stn_rec, cnx_stn_rec;
                                       prv_region = prv_region, nxt_region = nxt_region)
     end
 
@@ -497,7 +500,7 @@ end
     result = _mct_codeshare_resolve(r, ctx, stn_code, mct_status, from_rec, to_rec,
                                     arr_op_carrier, dep_op_carrier,
                                     arr_is_codeshare, dep_is_codeshare,
-                                    prv_stn_rec, nxt_stn_rec;
+                                    prv_stn_rec, nxt_stn_rec, cnx_stn_rec;
                                     prv_region = prv_region, nxt_region = nxt_region)
     if cached === nothing
         ctx.mct_cache[cache_key] = result
@@ -544,7 +547,9 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
     nxt_stn_rec = (to_leg.dst::GraphStation).record
 
     # Cascade lookup — same station for both arr and dep (intra-station connection)
-    stn_code = (cp.station::GraphStation).code
+    cnx_stn = cp.station::GraphStation
+    stn_code = cnx_stn.code
+    cnx_stn_rec = cnx_stn.record
 
     # ── Schengen/Europe region resolution ────────────────────────────────
     # Determine primary region codes based on mct_schengen_mode. For SCH/EUR
@@ -556,7 +561,7 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
     result = _mct_lookup_cached(r, ctx, stn_code, mct_status, from_rec, to_rec,
                                 arr_op_carrier, dep_op_carrier,
                                 arr_is_codeshare, dep_is_codeshare,
-                                prv_stn_rec, nxt_stn_rec;
+                                prv_stn_rec, nxt_stn_rec, cnx_stn_rec;
                                 prv_region = prv_rgn, nxt_region = nxt_rgn)
 
     # Schengen fallback: if a fallback region exists and the primary lookup
@@ -571,7 +576,7 @@ function (r::MCTRule)(cp::GraphConnection, ctx)::Int
             fb_result = _mct_lookup_cached(r, ctx, stn_code, mct_status, from_rec, to_rec,
                                            arr_op_carrier, dep_op_carrier,
                                            arr_is_codeshare, dep_is_codeshare,
-                                           prv_stn_rec, nxt_stn_rec;
+                                           prv_stn_rec, nxt_stn_rec, cnx_stn_rec;
                                            prv_region = fb_prv, nxt_region = fb_nxt)
             if fb_result.specificity > result.specificity
                 result = fb_result

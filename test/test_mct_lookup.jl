@@ -804,6 +804,9 @@
     end
 
     @testset "Suppression geography" begin
+        # Suppression geography is scoped to the CONNECTION STATION, not prv/nxt.
+        # supp_region=EUR means suppress at stations in EUR region.
+
         # Suppression record scoped to EUR region
         supp_eur = MCTRecord(
             time        = Minutes(0),
@@ -819,32 +822,22 @@
             ),
         )
 
-        # Connection with prv_region = EUR → suppressed
+        # Connection station in EUR → suppressed
         result_eur = lookup_mct(
             lookup,
             AirlineCode("BA"), AirlineCode("LH"),
             StationCode("LHR"), StationCode("LHR"), MCT_DD;
-            prv_region = InlineString3("EUR"),
+            cnx_region = InlineString3("EUR"),
         )
         @test result_eur.suppressed
         @test result_eur.source == SOURCE_EXCEPTION
 
-        # Connection with nxt_region = EUR → suppressed
-        result_eur2 = lookup_mct(
-            lookup,
-            AirlineCode("BA"), AirlineCode("LH"),
-            StationCode("LHR"), StationCode("LHR"), MCT_DD;
-            nxt_region = InlineString3("EUR"),
-        )
-        @test result_eur2.suppressed
-
-        # Connection with prv_region = NOA (not EUR) → NOT suppressed → global default
+        # Connection station NOT in EUR → NOT suppressed → global default
         result_noa = lookup_mct(
             lookup,
             AirlineCode("BA"), AirlineCode("LH"),
             StationCode("LHR"), StationCode("LHR"), MCT_DD;
-            prv_region = InlineString3("NOA"),
-            nxt_region = InlineString3("NOA"),
+            cnx_region = InlineString3("NOA"),
         )
         @test !result_noa.suppressed
         @test result_noa.source == SOURCE_GLOBAL_DEFAULT
@@ -863,22 +856,21 @@
                 ),
             ),
         )
-        # prv_country = US → suppressed
+        # Connection station in US → suppressed
         result_us = lookup_mct(
             lookup_ctry,
             AirlineCode("UA"), AirlineCode("DL"),
             StationCode("JFK"), StationCode("JFK"), MCT_DD;
-            prv_country = InlineString3("US"),
+            cnx_country = InlineString3("US"),
         )
         @test result_us.suppressed
 
-        # prv_country = CA → not suppressed
+        # Connection station in CA → not suppressed
         result_ca = lookup_mct(
             lookup_ctry,
             AirlineCode("UA"), AirlineCode("DL"),
             StationCode("JFK"), StationCode("JFK"), MCT_DD;
-            prv_country = InlineString3("CA"),
-            nxt_country = InlineString3("CA"),
+            cnx_country = InlineString3("CA"),
         )
         @test !result_ca.suppressed
         @test result_ca.source == SOURCE_GLOBAL_DEFAULT
@@ -897,22 +889,21 @@
                 ),
             ),
         )
-        # prv_state = TX → suppressed
+        # Connection station in TX → suppressed
         result_tx = lookup_mct(
             lookup_state,
             AirlineCode("AA"), AirlineCode("WN"),
             StationCode("DFW"), StationCode("DFW"), MCT_DD;
-            prv_state = InlineString3("TX"),
+            cnx_state = InlineString3("TX"),
         )
         @test result_tx.suppressed
 
-        # prv_state = IL → not suppressed
+        # Connection station in IL → not suppressed
         result_il = lookup_mct(
             lookup_state,
             AirlineCode("AA"), AirlineCode("WN"),
             StationCode("DFW"), StationCode("DFW"), MCT_DD;
-            prv_state = InlineString3("IL"),
-            nxt_state = InlineString3("IL"),
+            cnx_state = InlineString3("IL"),
         )
         @test !result_il.suppressed
     end

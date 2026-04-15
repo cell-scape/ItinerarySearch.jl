@@ -600,6 +600,10 @@ function lookup_mct(
     nxt_region::InlineString3 = InlineString3(""),
     # New — date validity
     target_date::UInt32 = UInt32(0),
+    # Connection station geography — for suppression scope matching
+    cnx_country::InlineString3 = InlineString3(""),
+    cnx_state::InlineString3 = InlineString3(""),
+    cnx_region::InlineString3 = InlineString3(""),
     # Trace collection — when non-nothing, collects MCTCandidateTrace at each decision point
     trace::Union{Nothing, Vector{MCTCandidateTrace}} = nothing,
 )::MCTResult
@@ -671,21 +675,23 @@ function lookup_mct(
         end
 
         if rec.suppressed
-            # Suppression geography scope — only suppress if connection is in scope
+            # Suppression geography scope — scoped to the CONNECTION STATION's
+            # geography (not the origin/destination of the flights).
+            # e.g. supp_country="CU" suppresses connections at stations in Cuba.
             if rec.supp_region != _empty
-                if rec.supp_region != prv_region && rec.supp_region != nxt_region
+                if rec.supp_region != cnx_region
                     trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :exception, UInt32(0)))
                     continue
                 end
             end
             if rec.supp_country != _empty
-                if rec.supp_country != prv_country && rec.supp_country != nxt_country
+                if rec.supp_country != cnx_country
                     trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :exception, UInt32(0)))
                     continue
                 end
             end
             if rec.supp_state != _empty
-                if rec.supp_state != prv_state && rec.supp_state != nxt_state
+                if rec.supp_state != cnx_state
                     trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :exception, UInt32(0)))
                     continue
                 end
@@ -761,22 +767,21 @@ function lookup_mct(
                 continue
             end
 
-            # Suppression geography scope — check against connection station's
-            # geography AND flight endpoint geography
+            # Suppression geography scope — scoped to the CONNECTION STATION
             if rec.supp_region != _empty
-                if rec.supp_region != prv_region && rec.supp_region != nxt_region
+                if rec.supp_region != cnx_region
                     trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :global_suppression, UInt32(0)))
                     continue
                 end
             end
             if rec.supp_country != _empty
-                if rec.supp_country != prv_country && rec.supp_country != nxt_country
+                if rec.supp_country != cnx_country
                     trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :global_suppression, UInt32(0)))
                     continue
                 end
             end
             if rec.supp_state != _empty
-                if rec.supp_state != prv_state && rec.supp_state != nxt_state
+                if rec.supp_state != cnx_state
                     trace !== nothing && push!(trace, MCTCandidateTrace(rec, true, :supp_scope_miss, :global_suppression, UInt32(0)))
                     continue
                 end
