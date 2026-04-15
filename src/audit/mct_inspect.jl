@@ -192,11 +192,18 @@ function _format_mct_detail(rec::MCTRecord, trace::MCTTrace, params::NamedTuple;
     arr_flt_mk = arr_flt_spec ? (arr_flt_in ? "✓" : "✗") : "-"
     dep_flt_mk = dep_flt_spec ? (dep_flt_in ? "✓" : "✗") : "-"
 
-    # ── Operating carrier + flight (primary MCT identity) ──
+    # ── Operating carrier (primary MCT identity) ──
+    # For CS records (cs_ind=Y): the MCT carrier field is the marketing carrier,
+    # so show cs_op_carrier as the MCT's operating carrier (if specified).
+    # For non-CS records: the MCT carrier field IS the operating carrier.
+    arr_cs_rec = _vc(rec.arr_cs_ind) == "Y"
+    dep_cs_rec = _vc(rec.dep_cs_ind) == "Y"
+    arr_mct_op = arr_cs_rec ? _v(rec.arr_cs_op_carrier) : _v(rec.arr_carrier)
+    dep_mct_op = dep_cs_rec ? _v(rec.dep_cs_op_carrier) : _v(rec.dep_carrier)
     push!(rows, ("Op Carrier",
-        _v(params.arr_op_carrier), _v(rec.arr_carrier),
+        _v(params.arr_op_carrier), arr_mct_op,
         _mk_carrier(MCT_BIT_ARR_CARRIER, _v(rec.arr_carrier), eff_arr_carrier),
-        _v(params.dep_op_carrier), _v(rec.dep_carrier),
+        _v(params.dep_op_carrier), dep_mct_op,
         _mk_carrier(MCT_BIT_DEP_CARRIER, _v(rec.dep_carrier), eff_dep_carrier)))
 
     push!(rows, ("Op Flight No",
@@ -213,9 +220,13 @@ function _format_mct_detail(rec::MCTRecord, trace::MCTTrace, params::NamedTuple;
         _mk((rec.specified & MCT_BIT_DEP_CS_IND)!=0, _vc(rec.dep_cs_ind), eff_dep_cs)))
 
     # ── Marketing carrier + flight ──
+    # For CS records: MCT carrier field is the marketing carrier.
+    # For non-CS records: show the same carrier (marketing = operating).
+    arr_mct_mkt = _v(rec.arr_carrier)
+    dep_mct_mkt = _v(rec.dep_carrier)
     push!(rows, ("Mkt Carrier",
-        _v(params.arr_carrier), "-", "-",
-        _v(params.dep_carrier), "-", "-"))
+        _v(params.arr_carrier), arr_mct_mkt, "-",
+        _v(params.dep_carrier), dep_mct_mkt, "-"))
 
     push!(rows, ("Mkt Flight No",
         _flt(params.arr_flt_no), arr_uses_op ? "-" : arr_flt_rng, arr_uses_op ? "-" : arr_flt_mk,
