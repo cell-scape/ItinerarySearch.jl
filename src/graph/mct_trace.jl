@@ -178,16 +178,22 @@ function lookup_mct_codeshare_traced(
         trace = op_candidates,
     )
 
-    # Start with operating as baseline; codeshare results must have higher
-    # specificity AND time >= operating time to override
+    # Start with operating as baseline.
+    # Codeshare override requires: higher specificity, time >= operating floor,
+    # AND the matched record must have a carrier specified with cs_ind=Y.
     best = operating_result
     mode = :operating
     all_candidates = vcat(mkt_candidates, op_candidates)
     dep_cs_result = EMPTY_MCT_RESULT
     arr_cs_result = EMPTY_MCT_RESULT
 
+    _cs_ind_bits = MCT_BIT_ARR_CS_IND | MCT_BIT_DEP_CS_IND
+    _carrier_bits = MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER
+    _cs_ok(r) = (r.matched_fields & _cs_ind_bits) != 0 && (r.matched_fields & _carrier_bits) != 0
+
     if marketing_result.specificity > best.specificity &&
-       marketing_result.time >= operating_result.time
+       marketing_result.time >= operating_result.time &&
+       _cs_ok(marketing_result)
         best = marketing_result
         mode = :marketing
     end
@@ -209,7 +215,8 @@ function lookup_mct_codeshare_traced(
         )
         append!(all_candidates, yn_candidates)
         if dep_cs_result.specificity > best.specificity &&
-           dep_cs_result.time >= operating_result.time
+           dep_cs_result.time >= operating_result.time &&
+           _cs_ok(dep_cs_result)
             best = dep_cs_result
             mode = :dep_cs
         end
@@ -229,7 +236,8 @@ function lookup_mct_codeshare_traced(
         )
         append!(all_candidates, ny_candidates)
         if arr_cs_result.specificity > best.specificity &&
-           arr_cs_result.time >= operating_result.time
+           arr_cs_result.time >= operating_result.time &&
+           _cs_ok(arr_cs_result)
             best = arr_cs_result
             mode = :arr_cs
         end
