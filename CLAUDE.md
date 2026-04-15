@@ -49,8 +49,8 @@ make mct-inspect FILE=data/input/UA_Misconnect_Report.csv
 # Interactive inspector (Term.jl styled — colored panels and tables)
 make mct-inspect-styled FILE=data/input/UA_Misconnect_Report.csv
 
-# Key commands: x (detail view), x nn (operating fallback), l (legs), i (cascade),
-#   m (filter mismatches), d (auto-detail), c (next), s N (skip), h (help)
+# Key commands: x (detail view), x nn (operating fallback), i (sorted cascade),
+#   b (back), c (next), s N (skip), m (filter mismatches), d (auto-detail), h (help)
 ```
 
 ## Architecture

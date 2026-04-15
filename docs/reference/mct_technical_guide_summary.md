@@ -121,10 +121,18 @@ This document is aimed at development teams implementing the SSIM Chapter 8 MCT 
 
 ## Implementation Notes
 
-Key differences/clarifications from this guide vs our current implementation:
+Items addressed in our implementation:
 
-1. **Global defaults** — DD=30, DI=60, ID=90, II=90 (fixed in code to match SSIM Ch. 8 and IATA FAQ)
-2. **Subset flight ranges take priority** over parent ranges — our specificity calculation should account for this
-3. **Aircraft type is exact match only** — "737" ≠ "73H"/"738" etc.
-4. **File order is irrelevant** — we should not rely on record serial for hierarchy resolution (only as tiebreaker when specificity is equal)
-5. **Connection Building Filter** (Record Type 3) is not yet implemented — this is a separate pre-MCT check that supersedes all MCT matching
+1. **Global defaults** — DD=30, DI=60, ID=90, II=90 (fixed to match SSIM Ch. 8 and IATA FAQ)
+2. **Codeshare indicator is not a wildcard** — blank cs_ind is equivalent to 'N'. A record without cs_ind only matches non-codeshare flights; a codeshare flight requires cs_ind='Y' to match.
+3. **Codeshare override requires cs_ind + carrier** — a marketing MCT only overrides the operating floor when the matched record has both a carrier specified and cs_ind='Y'.
+4. **Suppression geography scoped to connection station** — supp_region/country/state refers to the geography of the connecting station, not the origin/destination of the flights.
+5. **Effective/discontinue dates contribute separately to specificity** — both eff_date and dis_date have their own hierarchy bits (priorities 25-26), excluding default sentinel values.
+6. **Schengen region resolution** — SCH takes priority over EUR (SCH is a subset of EUR). Fallback to EUR when primary didn't match on region bits.
+
+Items remaining:
+
+1. **Subset flight ranges take priority** over parent ranges — our specificity calculation should account for this
+2. **Aircraft type is exact match only** — "737" ≠ "73H"/"738" etc. (verify our matching)
+3. **Connection Building Filter** (Record Type 3, effective 01NOV22) is not yet implemented — this is a separate pre-MCT check that supersedes all MCT matching
+4. **File order is irrelevant** — we use record serial only as tiebreaker when specificity is equal (correct)
