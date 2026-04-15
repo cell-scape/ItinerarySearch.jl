@@ -506,9 +506,29 @@ function _print_connection_header(io::IO, idx::Int, total::Int, params::NamedTup
     println(io, "  Status: $status | CnxTime: $(cnx) min | Their MCT: $(their_mct) | Diff: $(their_diff)")
 end
 
-function _print_cascade(io::IO, trace::MCTTrace, max_candidates::Int, style::PlainStyle; from::Int=1)
+# Compute a match quality score for sorting candidates.
+# Full matches get their full specificity. Field mismatches get the specificity
+# of fields that matched minus fields that didn't. Other skip reasons score 0.
+function _match_score(c::MCTCandidateTrace)::Int64
+    if c.matched && c.skip_reason == :none
+        return Int64(c.record.specificity) + Int64(1) << 32  # matches always sort first
+    elseif c.skip_reason == :field_mismatch
+        matched_bits = c.record.specified & ~c.mismatched_fields
+        matched_spec = Int64(_compute_specificity(matched_bits, UInt32(0)))
+        mismatch_spec = Int64(_compute_specificity(c.mismatched_fields, UInt32(0)))
+        return matched_spec - mismatch_spec
+    end
+    return Int64(0)
+end
+
+function _print_cascade(io::IO, trace::MCTTrace, max_candidates::Int, style::PlainStyle;
+                        from::Int=1, params::NamedTuple=(;))
     cands = trace.candidates
     total = length(cands)
+
+    # Sort by match quality — best matches first
+    sorted_idx = sortperm(cands; by=_match_score, rev=true)
+
     limit = max_candidates > 0 ? min(max_candidates, total) : total
     show_end = min(from + limit - 1, total)
     if from > total
@@ -516,11 +536,12 @@ function _print_cascade(io::IO, trace::MCTTrace, max_candidates::Int, style::Pla
         return show_end
     end
     if from == 1
-        println(io, "\n  Cascade ($total candidates evaluated):")
+        println(io, "\n  Cascade ($total candidates, sorted by match quality):")
     end
+    has_params = length(params) > 0
     for i in from:show_end
-        c = cands[i]
-        _print_candidate(io, i, c, trace, style)
+        c = cands[sorted_idx[i]]
+        _print_candidate(io, i, c, trace, PlainStyle(); params=has_params ? params : nothing)
     end
     if show_end < total
         println(io, "  ... $(total - show_end) more (type 'more' to see next page)")
@@ -528,29 +549,36 @@ function _print_cascade(io::IO, trace::MCTTrace, max_candidates::Int, style::Pla
     return show_end
 end
 
-function _print_candidate(io::IO, idx::Int, c::MCTCandidateTrace, trace::MCTTrace, ::PlainStyle)
+function _print_candidate(io::IO, idx::Int, c::MCTCandidateTrace, trace::MCTTrace, ::PlainStyle;
+                          params::Union{Nothing,NamedTuple}=nothing)
     id = Int(c.record.mct_id)
     t = Int(c.record.time)
     spec = string(c.record.specificity, base=16)
+    score = _match_score(c)
     specified = decode_matched_fields(c.record.specified;
         eff_date=c.record.eff_date, dis_date=c.record.dis_date)
 
     if c.matched && c.skip_reason == :none
-        println(io, "  #$idx [MATCH] mct_id=$id time=$t spec=0x$spec")
+        println(io, "  #$idx [MATCH] serial=$id time=$t spec=0x$spec")
         !isempty(specified) && println(io, "       specified: $specified")
-        println(io, _format_mct_record(c.record))
+        # Show full detail table if params available
+        if params !== nothing
+            println(io, _format_mct_detail(c.record, trace, params))
+        else
+            println(io, _format_mct_record(c.record))
+        end
     elseif c.skip_reason == :field_mismatch
         mm_str = decode_matched_fields(c.mismatched_fields)
-        println(io, "  #$idx [skip: field_mismatch] mct_id=$id time=$t spec=0x$spec")
+        println(io, "  #$idx [skip: field_mismatch] serial=$id time=$t spec=0x$spec score=$score")
         !isempty(specified) && println(io, "       specified: $specified")
         !isempty(mm_str) && println(io, "       failed on: $mm_str")
         _print_mismatch_values(io, c, trace, PlainStyle())
     elseif c.skip_reason == :date_expired
-        println(io, "  #$idx [skip: date_expired] mct_id=$id time=$t spec=0x$spec")
+        println(io, "  #$idx [skip: date_expired] serial=$id time=$t spec=0x$spec")
     elseif c.skip_reason == :supp_scope_miss
-        println(io, "  #$idx [skip: supp_scope_miss] mct_id=$id time=$t spec=0x$spec")
+        println(io, "  #$idx [skip: supp_scope_miss] serial=$id time=$t spec=0x$spec")
     else
-        println(io, "  #$idx [skip: $(c.skip_reason)] mct_id=$id time=$t spec=0x$spec")
+        println(io, "  #$idx [skip: $(c.skip_reason)] serial=$id time=$t spec=0x$spec")
     end
 end
 
@@ -839,7 +867,7 @@ function _advance_to_next!(state::InspectorState, io_in::IO, io_out::IO; skip::I
         state.cascade_shown = 0
         _print_connection_header(io_out, state.position, total, params, state.style)
         if state.detail
-            state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size, state.style)
+            state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size, state.style; params=params)
         end
         _print_result(io_out, trace, params, state.style)
         println(io_out, "")
@@ -861,7 +889,7 @@ function _advance_to_prev!(state::InspectorState, io_in::IO, io_out::IO)
             state.cascade_shown = 0
             _print_connection_header(io_out, state.position, length(state.connections), params, state.style)
             if state.detail
-                state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size, state.style)
+                state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size, state.style; params=params)
             end
             _print_result(io_out, trace, params, state.style)
             println(io_out, "")
@@ -897,12 +925,12 @@ function _command_loop!(state::InspectorState, io_in::IO, io_out::IO, params::Na
         elseif cmd in ("i", "inspect")
             state.cascade_shown = 0
             _print_connection_header(io_out, state.position, total, params, state.style)
-            state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size, state.style)
+            state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size, state.style; params=params)
             _print_result(io_out, trace, params, state.style)
             println(io_out, "")
         elseif cmd == "more"
             if state.cascade_shown > 0 && state.cascade_shown < length(trace.candidates)
-                state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size, state.style; from=state.cascade_shown + 1)
+                state.cascade_shown = _print_cascade(io_out, trace, state.cascade_page_size, state.style; from=state.cascade_shown + 1, params=params)
             else
                 println(io_out, "No more candidates to show. Use 'i' to restart cascade.")
             end
