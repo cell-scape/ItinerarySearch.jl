@@ -42,11 +42,16 @@ const _MCT_BIT_NAMES = (
 # Returns
 - `::String`: comma-separated field names (e.g. "ARR_CARRIER,DEP_CARRIER,ARR_TERM")
 """
-function decode_matched_fields(bitmask::UInt32)::String
-    bitmask == UInt32(0) && return ""
+function decode_matched_fields(bitmask::UInt32;
+        eff_date::UInt32=UInt32(0), dis_date::UInt32=UInt32(0))::String
     parts = String[]
     for (bit, name) in _MCT_BIT_NAMES
         (bitmask & bit) != 0 && push!(parts, name)
     end
+    # Date fields are not in the bitmask but contribute to specificity
+    _EFF_DEFAULT = UInt32(19000101)
+    _DIS_DEFAULT = UInt32(20991231)
+    (eff_date != UInt32(0) && eff_date != _EFF_DEFAULT) && push!(parts, "EFF_DATE")
+    (dis_date != UInt32(0) && dis_date != _DIS_DEFAULT) && push!(parts, "DIS_DATE")
     join(parts, ",")
 end

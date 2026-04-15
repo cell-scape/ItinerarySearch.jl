@@ -132,7 +132,8 @@ function ItinerarySearch._print_candidate(io::IO, idx::Int, c::MCTCandidateTrace
     id = Int(c.record.mct_id)
     t = Int(c.record.time)
     spec = string(c.record.specificity, base=16)
-    specified = decode_matched_fields(c.record.specified)
+    specified = decode_matched_fields(c.record.specified;
+        eff_date=c.record.eff_date, dis_date=c.record.dis_date)
 
     if c.matched && c.skip_reason == :none
         tprintln(io, "  {green bold}#$idx \\[MATCH]{/green bold} mct_id={bold}$id{/bold} time={bold}$t{/bold} spec=0x$spec")
@@ -184,7 +185,13 @@ function ItinerarySearch._print_result(io::IO, trace::MCTTrace, params::NamedTup
     src = _source_str(r.source)
     src_color = r.source == SOURCE_EXCEPTION ? "green" : r.source == SOURCE_STATION_STANDARD ? "yellow" : "dim"
     tprintln(io, "\n  Result: time={bold}$(Int(r.time)){/bold} source={$(src_color)}$src{/$(src_color)} mct_id={bold}$(Int(r.mct_id)){/bold}")
-    fields = decode_matched_fields(r.matched_fields)
+    matched_rec = ItinerarySearch._find_record_by_id(trace, r.mct_id)
+    fields = if matched_rec !== nothing
+        decode_matched_fields(r.matched_fields;
+            eff_date=matched_rec.eff_date, dis_date=matched_rec.dis_date)
+    else
+        decode_matched_fields(r.matched_fields)
+    end
     !isempty(fields) && tprintln(io, "  {dim}Matched fields: $fields{/dim}")
 
     if trace.codeshare_mode != :none

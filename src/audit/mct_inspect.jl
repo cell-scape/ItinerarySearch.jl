@@ -532,7 +532,8 @@ function _print_candidate(io::IO, idx::Int, c::MCTCandidateTrace, trace::MCTTrac
     id = Int(c.record.mct_id)
     t = Int(c.record.time)
     spec = string(c.record.specificity, base=16)
-    specified = decode_matched_fields(c.record.specified)
+    specified = decode_matched_fields(c.record.specified;
+        eff_date=c.record.eff_date, dis_date=c.record.dis_date)
 
     if c.matched && c.skip_reason == :none
         println(io, "  #$idx [MATCH] mct_id=$id time=$t spec=0x$spec")
@@ -598,7 +599,13 @@ end
 function _print_result(io::IO, trace::MCTTrace, params::NamedTuple, ::PlainStyle)
     r = trace.result
     println(io, "\n  Result: time=$(Int(r.time)) source=$(_source_str(r.source)) mct_id=$(Int(r.mct_id))")
-    fields = decode_matched_fields(r.matched_fields)
+    matched_rec = _find_record_by_id(trace, r.mct_id)
+    fields = if matched_rec !== nothing
+        decode_matched_fields(r.matched_fields;
+            eff_date=matched_rec.eff_date, dis_date=matched_rec.dis_date)
+    else
+        decode_matched_fields(r.matched_fields)
+    end
     !isempty(fields) && println(io, "  Matched fields: $fields")
     if trace.codeshare_mode != :none
         cs_table = _format_codeshare_table(trace, params)
