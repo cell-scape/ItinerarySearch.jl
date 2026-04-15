@@ -407,15 +407,21 @@ _compute_specificity(rec::MCTRecord)::UInt32 = _compute_specificity(rec.specifie
     (sp & MCT_BIT_PRV_REGION) != 0 && rec.prv_region != prv_region && return false
     (sp & MCT_BIT_NXT_REGION) != 0 && rec.nxt_region != nxt_region && return false
 
-    # Codeshare matching: 'Y' means MCT applies to codeshare flights
+    # Codeshare matching: cs_ind is not a wildcard — blank means non-codeshare.
+    # cs_ind='Y' specified + flight is NOT codeshare → reject
+    # cs_ind NOT specified + flight IS codeshare → reject
     if (sp & MCT_BIT_DEP_CS_IND) != 0
         rec.dep_cs_ind == 'Y' && !dep_is_codeshare && return false
+    else
+        dep_is_codeshare && return false
     end
     if (sp & MCT_BIT_DEP_CS_OP) != 0
         rec.dep_cs_op_carrier != dep_op_carrier && return false
     end
     if (sp & MCT_BIT_ARR_CS_IND) != 0
         rec.arr_cs_ind == 'Y' && !arr_is_codeshare && return false
+    else
+        arr_is_codeshare && return false
     end
     if (sp & MCT_BIT_ARR_CS_OP) != 0
         rec.arr_cs_op_carrier != arr_op_carrier && return false
@@ -480,12 +486,16 @@ Used only in the trace path to provide detailed mismatch information.
     (sp & MCT_BIT_NXT_REGION) != 0 && rec.nxt_region != nxt_region && (mm |= MCT_BIT_NXT_REGION)
     if (sp & MCT_BIT_DEP_CS_IND) != 0
         rec.dep_cs_ind == 'Y' && !dep_is_codeshare && (mm |= MCT_BIT_DEP_CS_IND)
+    else
+        dep_is_codeshare && (mm |= MCT_BIT_DEP_CS_IND)
     end
     if (sp & MCT_BIT_DEP_CS_OP) != 0
         rec.dep_cs_op_carrier != dep_op_carrier && (mm |= MCT_BIT_DEP_CS_OP)
     end
     if (sp & MCT_BIT_ARR_CS_IND) != 0
         rec.arr_cs_ind == 'Y' && !arr_is_codeshare && (mm |= MCT_BIT_ARR_CS_IND)
+    else
+        arr_is_codeshare && (mm |= MCT_BIT_ARR_CS_IND)
     end
     if (sp & MCT_BIT_ARR_CS_OP) != 0
         rec.arr_cs_op_carrier != arr_op_carrier && (mm |= MCT_BIT_ARR_CS_OP)
