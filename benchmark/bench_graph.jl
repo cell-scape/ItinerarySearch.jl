@@ -1,6 +1,7 @@
 # benchmark/bench_graph.jl — Graph build, search, and output benchmarks
 
 using ItinerarySearch
+import ItinerarySearch: aggregate_geo_stats
 using Chairmarks
 using Dates
 using Logging
