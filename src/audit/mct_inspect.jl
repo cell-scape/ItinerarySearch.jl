@@ -698,7 +698,17 @@ function _run_traced_lookup(state::InspectorState, params::NamedTuple,
         prv_region = prv_region,
         nxt_region = nxt_region,
         target_date = params.target_date,
+        cnx_country = _cnx_geo(state, params.arr_station).country,
+        cnx_state = _cnx_geo(state, params.arr_station).state,
+        cnx_region = _cnx_geo(state, params.arr_station).region,
     )
+end
+
+# Look up connection station geography from the airports dict
+function _cnx_geo(state::InspectorState, stn::StationCode)::@NamedTuple{country::InlineString3, state::InlineString3, region::InlineString3}
+    info = get(state.airports, stn, nothing)
+    info === nothing && return (country=InlineString3(""), state=InlineString3(""), region=InlineString3(""))
+    (country=info.country, state=info.state, region=info.region)
 end
 
 function _run_trace(state::InspectorState, params::NamedTuple)::MCTTrace

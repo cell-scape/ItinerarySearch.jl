@@ -63,6 +63,11 @@ Full trace of a single MCT lookup: input parameters, all candidates evaluated
     nxt_region::InlineString3 = InlineString3("")
     target_date::UInt32 = UInt32(0)
 
+    # ── Connection station geography (for suppression scope) ──
+    cnx_country::InlineString3 = InlineString3("")
+    cnx_state::InlineString3 = InlineString3("")
+    cnx_region::InlineString3 = InlineString3("")
+
     # ── Cascade output ──
     candidates::Vector{MCTCandidateTrace} = MCTCandidateTrace[]
     result::MCTResult = EMPTY_MCT_RESULT

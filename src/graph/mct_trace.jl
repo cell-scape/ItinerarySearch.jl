@@ -43,6 +43,9 @@ function lookup_mct_traced(
     prv_region::InlineString3 = InlineString3(""),
     nxt_region::InlineString3 = InlineString3(""),
     target_date::UInt32 = UInt32(0),
+    cnx_country::InlineString3 = InlineString3(""),
+    cnx_state::InlineString3 = InlineString3(""),
+    cnx_region::InlineString3 = InlineString3(""),
 )::MCTTrace
     candidates = MCTCandidateTrace[]
     result = lookup_mct(
@@ -52,6 +55,7 @@ function lookup_mct_traced(
         arr_acft_type, dep_acft_type, arr_flt_no, dep_flt_no,
         prv_country, nxt_country, prv_state, nxt_state,
         prv_region, nxt_region, target_date,
+        cnx_country, cnx_state, cnx_region,
         trace = candidates,
     )
     MCTTrace(;
@@ -114,6 +118,9 @@ function lookup_mct_codeshare_traced(
     prv_region::InlineString3 = InlineString3(""),
     nxt_region::InlineString3 = InlineString3(""),
     target_date::UInt32 = UInt32(0),
+    cnx_country::InlineString3 = InlineString3(""),
+    cnx_state::InlineString3 = InlineString3(""),
+    cnx_region::InlineString3 = InlineString3(""),
 )::MCTTrace
     # Common kwargs for all lookups
     common = (;
@@ -121,6 +128,7 @@ function lookup_mct_codeshare_traced(
         arr_acft_type, dep_acft_type,
         prv_country, nxt_country, prv_state, nxt_state,
         prv_region, nxt_region, target_date,
+        cnx_country, cnx_state, cnx_region,
     )
 
     # ── YY: Marketing lookup — marketing carriers + codeshare context (both sides)
