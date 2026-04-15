@@ -15,7 +15,7 @@
 
 using ItinerarySearch
 import ItinerarySearch: materialize_mct_lookup, DuckDBStore, ingest_mct!,
-    load_airports!, load_aircrafts!, StationRecord
+    load_airports!, load_aircrafts!, load_regions!, StationRecord
 
 # ── Parse arguments ──────────────────────────────────────────────────────────
 
@@ -24,6 +24,7 @@ function parse_args()
     mct_path = ""
     airports_path = ""
     aircrafts_path = ""
+    regions_path = ""
     replay = false
     detailed = false
 
@@ -38,6 +39,9 @@ function parse_args()
             i += 2
         elseif arg == "--aircrafts" && i < length(ARGS)
             aircrafts_path = ARGS[i + 1]
+            i += 2
+        elseif arg == "--regions" && i < length(ARGS)
+            regions_path = ARGS[i + 1]
             i += 2
         elseif arg == "--replay"
             replay = true
@@ -62,8 +66,9 @@ function parse_args()
     isempty(mct_path) && (mct_path = _default("MCTIMFILUA.DAT"))
     isempty(airports_path) && (airports_path = _default("mdstua.txt"))
     isempty(aircrafts_path) && (aircrafts_path = _default("aircraft.txt"))
+    isempty(regions_path) && (regions_path = _default("REGIMFILUA.DAT"))
 
-    return (; misconnect_path, mct_path, airports_path, aircrafts_path, replay, detailed)
+    return (; misconnect_path, mct_path, airports_path, aircrafts_path, regions_path, replay, detailed)
 end
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -90,6 +95,7 @@ function main()
     println("  Misconnect: $(args.misconnect_path)")
     println("  MCT file:   $(args.mct_path)")
     println("  Airports:   $(args.airports_path)")
+    println("  Regions:    $(args.regions_path)")
     println("  Aircrafts:  $(args.aircrafts_path)")
     println()
 
@@ -118,6 +124,39 @@ function main()
             )
         end
         println("  Loaded $(length(airports)) airports")
+
+        # Load regions and join onto airports.
+        # For SCH/EUR: prefer SCH on the StationRecord (matches default sch_then_eur mode),
+        # but track all regions so the inspector can do Schengen fallback.
+        station_regions = Dict{StationCode,Set{InlineStrings.InlineString3}}()
+        if isfile(args.regions_path)
+            load_regions!(store, args.regions_path)
+            result = DBInterface.execute(store.db,
+                "SELECT airport, region FROM regions")
+            for r in result
+                code = StationCode(strip(string(r.airport)))
+                rgn = InlineStrings.InlineString3(strip(string(something(r.region, ""))))
+                isempty(rgn) && continue
+                push!(get!(station_regions, code, Set{InlineStrings.InlineString3}()), rgn)
+            end
+            # Set the primary region on StationRecord: prefer SCH over EUR
+            region_count = 0
+            _SCH = InlineStrings.InlineString3("SCH")
+            _EUR = InlineStrings.InlineString3("EUR")
+            for (code, rgns) in station_regions
+                haskey(airports, code) || continue
+                # Pick primary: SCH if available, else first non-empty
+                primary = _SCH in rgns ? _SCH :
+                          _EUR in rgns ? _EUR : first(rgns)
+                old = airports[code]
+                airports[code] = StationRecord(
+                    code=old.code, country=old.country, state=old.state,
+                    city=old.city, region=primary, latitude=old.latitude,
+                    longitude=old.longitude, utc_offset=old.utc_offset)
+                region_count += 1
+            end
+            println("  Joined $(region_count) regions onto airports (SCH preferred)")
+        end
     end
 
     # Load aircrafts for body type resolution
@@ -156,6 +195,7 @@ function main()
         mct_inspect(lookup;
             misconnect=args.misconnect_path,
             airports=airports,
+            station_regions=station_regions,
             acft_body=acft_body)
     end
 end

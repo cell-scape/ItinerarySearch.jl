@@ -762,15 +762,39 @@ The interactive MCT inspector (`mct_inspect`) steps through a misconnect report 
 
 - **Full decoded flight legs** — marketing/operating carrier, flight number, route, terminal, body type, aircraft, origin country/state
 - **MCT cascade trace** — paginated list of all candidate MCT records evaluated, with match/skip status and field-by-field mismatch details
-- **Matched MCT record** — full decoded record fields (specified fields with values, dates, suppression geography)
-- **Codeshare resolution table** — all lookup results (YY/YN/NY/NN) with carriers, time, specificity, floor check, and winner
+- **Unified leg + MCT detail view** (`x` command) — 7-column table showing both legs side-by-side with the matched MCT record's values and per-side match indicators (✓/✗). Includes flight number ranges, date validity, and suppression geography (scoped to the connection station)
+- **Codeshare option selector** (`x yy`, `x yn`, `x ny`, `x nn`) — view the detail table for any codeshare lookup alternative, with carrier/flight comparisons adjusted to the effective lookup mode
+- **Codeshare resolution table** — all lookup results with carriers, time, specificity, floor check, and winner. Labels reflect actual partitions (e.g. "YN (mkt)" when only arr is codeshare)
+- **Schengen/EUR region resolution** — mirrors production `sch_then_eur` logic: primary lookup with SCH-preferred regions, fallback to EUR if primary didn't match on region bits
 - **Comparison** — our MCT vs their MCT, time match/mismatch, whether the connection resolves
+
+### Commands
+
+| Command | Description |
+|---|---|
+| `i` / `inspect` | Show cascade trace for current connection (paged) |
+| `more` | Show next page of candidates |
+| `l` / `legs` | Show all fields for both connecting legs side by side |
+| `x` / `mct` | Show legs + matched MCT record in unified view |
+| `x yy\|yn\|ny\|nn` | Show detail for a specific codeshare lookup option |
+| `c` / enter | Move to next connection |
+| `s N` / `skip N` | Skip ahead N connections |
+| `f <expr>` | Add filter (`station=ORD`, `mismatch`, `resolves`, `source=exception`) |
+| `m` / `mismatch` | Shortcut: filter mismatch |
+| `r` / `resolves` | Shortcut: filter resolves |
+| `d` / `detail` | Toggle auto-cascade on each connection |
+| `clear` | Clear all filters |
+| `h` / `help` | Show this help |
+| `q` / `quit` | Exit inspector |
 
 ### Usage
 
 ```bash
-# Interactive inspector
+# Interactive inspector (plain text)
 make mct-inspect FILE=data/input/UA_Misconnect_Report.csv
+
+# Interactive inspector (Term.jl styled output)
+make mct-inspect-styled FILE=data/input/UA_Misconnect_Report.csv
 
 # Replay mode (write comparison CSV)
 make mct-replay FILE=data/input/UA_Misconnect_Report.csv
@@ -781,16 +805,9 @@ make mct-replay FILE=data/input/UA_Misconnect_Report.csv EXTRA="--detailed"
 
 ### Term.jl Styled Output
 
-The inspector supports optional styled output via the Term.jl extension. When Term.jl is loaded before ItinerarySearch, the inspector automatically uses colored panels, tables, and markup:
-
-```julia
-using Term              # load Term first
-using ItinerarySearch   # TermExt extension auto-activates
-
-# Inspector now uses TermStyle with colored output
-```
-
-Without Term.jl, the same information is displayed in plain text. The `DisplayStyle` dispatch allows extensions to customize rendering:
+The inspector supports optional styled output via the Term.jl extension. When Term.jl is loaded, the inspector automatically uses colored panels, tables, and markup:
 
 - `PlainStyle` (default) — plain text with expanded details
 - `TermStyle` (via `ext/TermExt.jl`) — Term.jl panels, colored candidates, styled tables
+
+The `DisplayStyle` dispatch allows extensions to customize rendering without changing the base package.

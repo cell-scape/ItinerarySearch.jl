@@ -10,7 +10,9 @@ using ItinerarySearch: DisplayStyle, PlainStyle, MCTTrace, MCTCandidateTrace,
     MCTRecord, EMPTY_MCT_RESULT, MCTLookup, InspectorState,
     _print_connection_header, _print_cascade, _print_candidate,
     _print_mismatch_values, _print_result, _print_help,
+    _print_legs_detail, _print_mct_detail,
     _format_leg, _format_mct_record, _format_codeshare_table,
+    _format_legs_detail, _format_mct_detail, _resolve_cs_mode,
     _format_packed_date, _MCT_FIELD_EXTRACTORS,
     _source_str, _status_str, decode_matched_fields,
     MCT_BIT_ARR_FLT_RNG, MCT_BIT_DEP_FLT_RNG,
@@ -208,6 +210,9 @@ function ItinerarySearch._print_help(io::IO, ::TermStyle)
     content = """
 {cyan bold}i{/cyan bold} / {cyan bold}inspect{/cyan bold}     Show cascade trace for current connection (paged)
 {cyan bold}more{/cyan bold}            Show next page of candidates
+{cyan bold}l{/cyan bold} / {cyan bold}legs{/cyan bold}        Show all fields for both connecting legs side by side
+{cyan bold}x{/cyan bold} / {cyan bold}mct{/cyan bold}         Show legs + matched MCT record in unified view
+{cyan bold}x yy{/cyan bold}|{cyan bold}yn{/cyan bold}|{cyan bold}ny{/cyan bold}|{cyan bold}nn{/cyan bold}   Show detail for a specific codeshare lookup option
 {cyan bold}c{/cyan bold} / {cyan bold}enter{/cyan bold}       Move to next connection
 {cyan bold}s N{/cyan bold} / {cyan bold}skip N{/cyan bold}    Skip ahead N connections
 {cyan bold}f{/cyan bold} <expr>        Add filter (station=ORD, mismatch, resolves, source=exception)
@@ -218,6 +223,76 @@ function ItinerarySearch._print_help(io::IO, ::TermStyle)
 {cyan bold}h{/cyan bold} / {cyan bold}help{/cyan bold}        Show this help
 {cyan bold}q{/cyan bold} / {cyan bold}quit{/cyan bold}        Exit inspector"""
     panel = Panel(content; title="MCT Inspector Commands", style="cyan", fit=true, padding=(1, 1, 0, 0))
+    print(io, panel)
+    println(io)
+end
+
+# ── Legs detail ──────────────────────────────────────────────────────────────
+
+function ItinerarySearch._print_legs_detail(io::IO, params::NamedTuple, ::TermStyle)
+    stn = String(params.arr_station)
+    content = _format_legs_detail(params)
+    panel = Panel(content; title="Connecting Legs at $stn", style="cyan", fit=true, padding=(1, 1, 0, 0))
+    print(io, panel)
+    println(io)
+end
+
+# ── MCT record detail ────────────────────────────────────────────────────────
+
+function ItinerarySearch._print_mct_detail(io::IO, trace::MCTTrace, params::NamedTuple, ::TermStyle;
+        mode::AbstractString="",
+        airports::Dict{StationCode,StationRecord}=Dict{StationCode,StationRecord}())
+    stn = String(params.arr_station)
+    cnx_info = get(airports, params.arr_station, nothing)
+
+    if !isempty(mode)
+        resolved = _resolve_cs_mode(mode, trace, params)
+        if resolved === nothing
+            tprintln(io, "  {red}Unknown codeshare mode: $mode (use: yy, yn, ny, nn){/red}")
+            return
+        end
+        label, r, lm = resolved
+        if r === EMPTY_MCT_RESULT
+            tprintln(io, "  {dim}$label: no result (lookup not performed for this connection).{/dim}")
+            return
+        end
+        if r.mct_id == Int32(0)
+            tprintln(io, "\n  {dim}$label: global default ($(Int(r.time)) min), no specific MCT record.{/dim}")
+            return
+        end
+        rec = ItinerarySearch._find_record_by_id(trace, r.mct_id)
+        if rec === nothing
+            tprintln(io, "\n  {dim}$label: serial=$(Int(r.mct_id)) time=$(Int(r.time)) min (record not in trace candidates).{/dim}")
+            return
+        end
+        content = _format_mct_detail(rec, trace, params; lookup_mode=lm, cnx_stn_info=cnx_info)
+        panel = Panel(content; title="$label — Serial $(Int(rec.record_serial)) at $stn", style="magenta", fit=true, padding=(1, 1, 0, 0))
+        print(io, panel)
+        println(io)
+        return
+    end
+
+    r = trace.result
+    if r.mct_id == Int32(0)
+        tprintln(io, "\n  {dim}No specific MCT record matched (global default).{/dim}")
+        content = _format_legs_detail(params)
+        panel = Panel(content; title="Connecting Legs at $stn", style="cyan", fit=true, padding=(1, 1, 0, 0))
+        print(io, panel)
+        println(io)
+        return
+    end
+    rec = ItinerarySearch._find_record_by_id(trace, r.mct_id)
+    if rec === nothing
+        tprintln(io, "\n  {dim}MCT record serial=$(Int(r.mct_id)) not found in trace candidates.{/dim}")
+        return
+    end
+    winner_mode = trace.codeshare_mode
+    winner_label = winner_mode == :none ? "" : " ($(winner_mode) winner)"
+    lm = winner_mode in (:operating,) ? :operating :
+         winner_mode in (:dep_cs,) ? :dep_cs :
+         winner_mode in (:arr_cs,) ? :arr_cs : :marketing
+    content = _format_mct_detail(rec, trace, params; lookup_mode=lm, cnx_stn_info=cnx_info)
+    panel = Panel(content; title="Legs + MCT Serial $(Int(rec.record_serial)) at $stn$winner_label", style="green", fit=true, padding=(1, 1, 0, 0))
     print(io, panel)
     println(io)
 end

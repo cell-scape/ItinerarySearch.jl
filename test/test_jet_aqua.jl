@@ -8,5 +8,5 @@ using ItinerarySearch
 end
 
 @testset "Aqua" begin
-    Aqua.test_all(ItinerarySearch)
+    Aqua.test_all(ItinerarySearch; stale_deps=(ignore=[:Term],))
 end

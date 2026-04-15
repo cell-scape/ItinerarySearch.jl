@@ -43,11 +43,14 @@ Julia 1.10+ required.
 ### MCT Audit Inspector
 
 ```bash
-# Interactive inspector with plain text
+# Interactive inspector (plain text)
 make mct-inspect FILE=data/input/UA_Misconnect_Report.csv
 
-# With Term.jl styled output (colored panels and tables)
-julia --project=. -e 'using Term; include("scripts/mct_inspect.jl")' -- data/input/UA_Misconnect_Report.csv
+# Interactive inspector (Term.jl styled — colored panels and tables)
+make mct-inspect-styled FILE=data/input/UA_Misconnect_Report.csv
+
+# Key commands: x (detail view), x nn (operating fallback), l (legs), i (cascade),
+#   m (filter mismatches), d (auto-detail), c (next), s N (skip), h (help)
 ```
 
 ## Architecture
