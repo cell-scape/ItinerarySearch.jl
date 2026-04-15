@@ -189,9 +189,11 @@ function ItinerarySearch._print_result(io::IO, trace::MCTTrace, params::NamedTup
 
     if trace.codeshare_mode != :none
         cs_content = _format_codeshare_table(trace, params)
-        panel = Panel(cs_content; title="Codeshare Resolution (winner=$(trace.codeshare_mode))", style="magenta", fit=true, padding=(1, 1, 0, 0))
-        print(io, panel)
-        println(io)
+        if !isempty(cs_content)
+            panel = Panel(cs_content; title="Codeshare Resolution (winner=$(trace.codeshare_mode))", style="magenta", fit=true, padding=(1, 1, 0, 0))
+            print(io, panel)
+            println(io)
+        end
     end
 
     their_mct = Int(params.their_mct)
