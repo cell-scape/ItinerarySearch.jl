@@ -330,10 +330,13 @@ end
 # equals its operating carrier, so the marketing and operating lookups cover
 # all four partitions.
 #
-# The operating (NN) result establishes the time floor. Codeshare results
-# (YY, YN, NY) must have higher specificity AND time >= the operating time
-# to override — a marketing carrier can only request a longer MCT (SSIM
-# Ch. 8). At equal specificity, the operating result takes precedence.
+# The operating (NN) result establishes the time floor. A codeshare result
+# only overrides the operating MCT when ALL of:
+#   1. The matched record has a carrier specified (MCT_BIT_*_CARRIER)
+#   2. The matched record has a codeshare indicator set (MCT_BIT_*_CS_IND)
+#   3. The codeshare time >= the operating time (SSIM Ch. 8 floor rule)
+#   4. The codeshare specificity > the operating specificity
+# At equal specificity, the operating result takes precedence.
 #
 # For non-codeshare connections, a single lookup is performed (no overhead).
 @inline function _mct_codeshare_resolve(
@@ -398,12 +401,22 @@ end
         prv_region = prv_region, nxt_region = nxt_region,
     )
 
-    # Start with operating as baseline; codeshare results must have higher
-    # specificity AND time >= operating time to override
+    # Start with operating as baseline
     best = operating_result
 
-    if marketing_result.specificity > best.specificity &&
-       marketing_result.time >= operating_result.time
+    # Codeshare override check: the matched MCT record must have a carrier
+    # specified AND a codeshare indicator set to qualify as a codeshare MCT.
+    # Without both, it's a regular carrier MCT and cannot override the operating floor.
+    _CS_IND_BITS = MCT_BIT_ARR_CS_IND | MCT_BIT_DEP_CS_IND
+    _CARRIER_BITS = MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER
+    @inline function _cs_overrides(cs_result::MCTResult, op_result::MCTResult)::Bool
+        cs_result.specificity > op_result.specificity &&
+        cs_result.time >= op_result.time &&
+        (cs_result.matched_fields & _CS_IND_BITS) != 0 &&
+        (cs_result.matched_fields & _CARRIER_BITS) != 0
+    end
+
+    if _cs_overrides(marketing_result, operating_result)
         best = marketing_result
     end
 
@@ -422,8 +435,7 @@ end
             prv_stn_rec, nxt_stn_rec;
             prv_region = prv_region, nxt_region = nxt_region,
         )
-        if yn_result.specificity > best.specificity &&
-           yn_result.time >= operating_result.time
+        if _cs_overrides(yn_result, operating_result) && yn_result.specificity > best.specificity
             best = yn_result
         end
 
@@ -438,8 +450,7 @@ end
             prv_stn_rec, nxt_stn_rec;
             prv_region = prv_region, nxt_region = nxt_region,
         )
-        if ny_result.specificity > best.specificity &&
-           ny_result.time >= operating_result.time
+        if _cs_overrides(ny_result, operating_result) && ny_result.specificity > best.specificity
             best = ny_result
         end
     end
