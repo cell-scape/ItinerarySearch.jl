@@ -1,7 +1,10 @@
 # benchmark/bench_graph.jl — Graph build, search, and output benchmarks
 
 using ItinerarySearch
-import ItinerarySearch: aggregate_geo_stats
+import ItinerarySearch: aggregate_geo_stats, build_cnx_rules, BuildStats,
+    build_connections!, MCTCacheKey, resolve_leg, resolve_legs,
+    lookup_mct, materialize_mct_lookup,
+    AirlineCode, StationCode, FlightNumber, MCT_DD, MCT_II, TripLeg
 using Chairmarks
 using Dates
 using Logging
