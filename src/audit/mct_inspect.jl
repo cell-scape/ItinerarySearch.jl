@@ -193,13 +193,16 @@ function _format_mct_detail(rec::MCTRecord, trace::MCTTrace, params::NamedTuple;
     dep_flt_mk = dep_flt_spec ? (dep_flt_in ? "✓" : "✗") : "-"
 
     # ── Operating carrier (primary MCT identity) ──
-    # For CS records (cs_ind=Y): the MCT carrier field is the marketing carrier,
-    # so show cs_op_carrier as the MCT's operating carrier (if specified).
-    # For non-CS records: the MCT carrier field IS the operating carrier.
+    # For CS records (cs_ind=Y): show cs_op_carrier only if MCT_BIT_*_CS_OP is specified.
+    # For non-CS records: show carrier only if MCT_BIT_*_CARRIER is specified.
     arr_cs_rec = _vc(rec.arr_cs_ind) == "Y"
     dep_cs_rec = _vc(rec.dep_cs_ind) == "Y"
-    arr_mct_op = arr_cs_rec ? _v(rec.arr_cs_op_carrier) : _v(rec.arr_carrier)
-    dep_mct_op = dep_cs_rec ? _v(rec.dep_cs_op_carrier) : _v(rec.dep_carrier)
+    arr_mct_op = arr_cs_rec ?
+        ((rec.specified & MCT_BIT_ARR_CS_OP) != 0 ? _v(rec.arr_cs_op_carrier) : "-") :
+        ((rec.specified & MCT_BIT_ARR_CARRIER) != 0 ? _v(rec.arr_carrier) : "-")
+    dep_mct_op = dep_cs_rec ?
+        ((rec.specified & MCT_BIT_DEP_CS_OP) != 0 ? _v(rec.dep_cs_op_carrier) : "-") :
+        ((rec.specified & MCT_BIT_DEP_CARRIER) != 0 ? _v(rec.dep_carrier) : "-")
     push!(rows, ("Op Carrier",
         _v(params.arr_op_carrier), arr_mct_op,
         _mk_carrier(MCT_BIT_ARR_CARRIER, _v(rec.arr_carrier), eff_arr_carrier),
@@ -212,18 +215,20 @@ function _format_mct_detail(rec::MCTRecord, trace::MCTTrace, params::NamedTuple;
         hasproperty(params,:dep_op_flt_no) ? _flt(params.dep_op_flt_no) : "-",
         dep_uses_op ? dep_flt_rng : "-", dep_uses_op ? dep_flt_mk : "-"))
 
-    # ── CS fields ──
+    # ── CS fields — only show values if specified in the MCT record ──
+    arr_cs_mct = (rec.specified & MCT_BIT_ARR_CS_IND) != 0 ? _vc(rec.arr_cs_ind) : "-"
+    dep_cs_mct = (rec.specified & MCT_BIT_DEP_CS_IND) != 0 ? _vc(rec.dep_cs_ind) : "-"
     push!(rows, ("CS Indicator",
-        params.arr_is_codeshare ? "Y" : "N", _vc(rec.arr_cs_ind),
+        params.arr_is_codeshare ? "Y" : "N", arr_cs_mct,
         _mk((rec.specified & MCT_BIT_ARR_CS_IND)!=0, _vc(rec.arr_cs_ind), eff_arr_cs),
-        params.dep_is_codeshare ? "Y" : "N", _vc(rec.dep_cs_ind),
+        params.dep_is_codeshare ? "Y" : "N", dep_cs_mct,
         _mk((rec.specified & MCT_BIT_DEP_CS_IND)!=0, _vc(rec.dep_cs_ind), eff_dep_cs)))
 
     # ── Marketing carrier + flight ──
-    # For CS records: MCT carrier field is the marketing carrier.
-    # For non-CS records: show the same carrier (marketing = operating).
-    arr_mct_mkt = _v(rec.arr_carrier)
-    dep_mct_mkt = _v(rec.dep_carrier)
+    # For CS records: MCT carrier field is the marketing carrier — show if specified.
+    # For non-CS records: carrier is the operating carrier, show it here too if specified.
+    arr_mct_mkt = (rec.specified & MCT_BIT_ARR_CARRIER) != 0 ? _v(rec.arr_carrier) : "-"
+    dep_mct_mkt = (rec.specified & MCT_BIT_DEP_CARRIER) != 0 ? _v(rec.dep_carrier) : "-"
     push!(rows, ("Mkt Carrier",
         _v(params.arr_carrier), arr_mct_mkt, "-",
         _v(params.dep_carrier), dep_mct_mkt, "-"))
