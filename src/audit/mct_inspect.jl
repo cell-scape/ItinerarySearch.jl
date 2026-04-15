@@ -539,14 +539,21 @@ function _print_cascade(io::IO, trace::MCTTrace, max_candidates::Int, style::Pla
         println(io, "\n  Cascade ($total candidates, sorted by match quality):")
     end
     has_params = length(params) > 0
+    shown = from - 1
     for i in from:show_end
         c = cands[sorted_idx[i]]
         _print_candidate(io, i, c, trace, PlainStyle(); params=has_params ? params : nothing)
+        shown = i
+        # Break after showing a matched candidate with detail table — one at a time
+        if has_params && c.matched && c.skip_reason == :none && i < show_end
+            println(io, "  ... $(total - i) more (type 'more' to see next)")
+            return shown
+        end
     end
-    if show_end < total
-        println(io, "  ... $(total - show_end) more (type 'more' to see next page)")
+    if shown < total
+        println(io, "  ... $(total - shown) more (type 'more' to see next page)")
     end
-    return show_end
+    return shown
 end
 
 function _print_candidate(io::IO, idx::Int, c::MCTCandidateTrace, trace::MCTTrace, ::PlainStyle;
