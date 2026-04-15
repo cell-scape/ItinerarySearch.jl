@@ -544,8 +544,8 @@ function _print_cascade(io::IO, trace::MCTTrace, max_candidates::Int, style::Pla
         c = cands[sorted_idx[i]]
         _print_candidate(io, i, c, trace, PlainStyle(); params=has_params ? params : nothing)
         shown = i
-        # Break after showing a matched candidate with detail table — one at a time
-        if has_params && c.matched && c.skip_reason == :none && i < show_end
+        # Break after each candidate with a detail table — one at a time
+        if has_params && i < show_end
             println(io, "  ... $(total - i) more (type 'more' to see next)")
             return shown
         end
@@ -565,27 +565,27 @@ function _print_candidate(io::IO, idx::Int, c::MCTCandidateTrace, trace::MCTTrac
     specified = decode_matched_fields(c.record.specified;
         eff_date=c.record.eff_date, dis_date=c.record.dis_date)
 
+    # Header line
     if c.matched && c.skip_reason == :none
         println(io, "  #$idx [MATCH] serial=$id time=$t spec=0x$spec")
-        !isempty(specified) && println(io, "       specified: $specified")
-        # Show full detail table if params available
-        if params !== nothing
-            println(io, _format_mct_detail(c.record, trace, params))
-        else
-            println(io, _format_mct_record(c.record))
-        end
     elseif c.skip_reason == :field_mismatch
         mm_str = decode_matched_fields(c.mismatched_fields)
         println(io, "  #$idx [skip: field_mismatch] serial=$id time=$t spec=0x$spec score=$score")
-        !isempty(specified) && println(io, "       specified: $specified")
         !isempty(mm_str) && println(io, "       failed on: $mm_str")
-        _print_mismatch_values(io, c, trace, PlainStyle())
     elseif c.skip_reason == :date_expired
         println(io, "  #$idx [skip: date_expired] serial=$id time=$t spec=0x$spec")
     elseif c.skip_reason == :supp_scope_miss
         println(io, "  #$idx [skip: supp_scope_miss] serial=$id time=$t spec=0x$spec")
     else
         println(io, "  #$idx [skip: $(c.skip_reason)] serial=$id time=$t spec=0x$spec")
+    end
+    !isempty(specified) && println(io, "       specified: $specified")
+
+    # Detail table for all candidates when params available
+    if params !== nothing
+        println(io, _format_mct_detail(c.record, trace, params))
+    elseif c.matched && c.skip_reason == :none
+        println(io, _format_mct_record(c.record))
     end
 end
 

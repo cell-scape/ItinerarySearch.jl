@@ -127,8 +127,8 @@ function ItinerarySearch._print_cascade(io::IO, trace::MCTTrace, max_candidates:
         c = cands[sorted_idx[i]]
         ItinerarySearch._print_candidate(io, i, c, trace, style; params=has_params ? params : nothing)
         shown = i
-        # Break after showing a matched candidate with detail table — one at a time
-        if has_params && c.matched && c.skip_reason == :none && i < show_end
+        # Break after each candidate with a detail table — one at a time
+        if has_params && i < show_end
             tprintln(io, "  {dim}... $(total - i) more (type 'more' to see next){/dim}")
             return shown
         end
@@ -150,32 +150,34 @@ function ItinerarySearch._print_candidate(io::IO, idx::Int, c::MCTCandidateTrace
     specified = decode_matched_fields(c.record.specified;
         eff_date=c.record.eff_date, dis_date=c.record.dis_date)
 
+    # Header line
     if c.matched && c.skip_reason == :none
         tprintln(io, "  {green bold}#$idx \\[MATCH]{/green bold} serial={bold}$id{/bold} time={bold}$t{/bold} spec=0x$spec")
-        !isempty(specified) && tprintln(io, "       {dim}specified: $specified{/dim}")
-        if params !== nothing
-            content = _format_mct_detail(c.record, trace, params)
-            panel = Panel(content; title="Matched MCT Serial $id", style="green", fit=true, padding=(1, 1, 0, 0))
-            print(io, panel)
-            println(io)
-        else
-            rec_content = _format_mct_record(c.record)
-            panel = Panel(rec_content; title="Matched MCT Serial $id", style="green", fit=true, padding=(1, 1, 0, 0))
-            print(io, panel)
-            println(io)
-        end
     elseif c.skip_reason == :field_mismatch
         mm_str = decode_matched_fields(c.mismatched_fields)
         tprintln(io, "  {red}#$idx \\[skip: field_mismatch]{/red} serial=$id time=$t spec=0x$spec score=$score")
-        !isempty(specified) && tprintln(io, "       {dim}specified: $specified{/dim}")
         !isempty(mm_str) && tprintln(io, "       {red}failed on: $mm_str{/red}")
-        ItinerarySearch._print_mismatch_values(io, c, trace, TermStyle())
     elseif c.skip_reason == :date_expired
         tprintln(io, "  {yellow}#$idx \\[skip: date_expired]{/yellow} {dim}serial=$id time=$t spec=0x$spec{/dim}")
     elseif c.skip_reason == :supp_scope_miss
         tprintln(io, "  {yellow}#$idx \\[skip: supp_scope_miss]{/yellow} {dim}serial=$id time=$t spec=0x$spec{/dim}")
     else
         tprintln(io, "  {dim}#$idx \\[skip: $(c.skip_reason)] serial=$id time=$t spec=0x$spec{/dim}")
+    end
+    !isempty(specified) && tprintln(io, "       {dim}specified: $specified{/dim}")
+
+    # Detail table for all candidates when params available
+    if params !== nothing
+        panel_style = c.matched && c.skip_reason == :none ? "green" : "red"
+        content = _format_mct_detail(c.record, trace, params)
+        panel = Panel(content; title="MCT Serial $id", style=panel_style, fit=true, padding=(1, 1, 0, 0))
+        print(io, panel)
+        println(io)
+    elseif c.matched && c.skip_reason == :none
+        rec_content = _format_mct_record(c.record)
+        panel = Panel(rec_content; title="Matched MCT Serial $id", style="green", fit=true, padding=(1, 1, 0, 0))
+        print(io, panel)
+        println(io)
     end
 end
 
