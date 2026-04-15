@@ -445,6 +445,16 @@ function _format_codeshare_table(trace::MCTTrace, params::NamedTuple)::String
     sep    = "    ----------|--------|--------|------|------------|-------|-------"
     rows = String[]
 
+    # A codeshare result is only valid if the matched record has cs_ind + carrier
+    _cs_ind_bits = MCT_BIT_ARR_CS_IND | MCT_BIT_DEP_CS_IND
+    _carrier_bits = MCT_BIT_ARR_CARRIER | MCT_BIT_DEP_CARRIER
+    function _cs_valid(result)
+        result === EMPTY_MCT_RESULT && return false
+        (result.matched_fields & _cs_ind_bits) != 0 &&
+        (result.matched_fields & _carrier_bits) != 0 &&
+        Int(result.time) >= op_time
+    end
+
     function _cs_row(label, result, a_cr, d_cr, mode_sym)
         result === EMPTY_MCT_RESULT && return nothing
         t = Int(result.time)
@@ -454,20 +464,23 @@ function _format_codeshare_table(trace::MCTTrace, params::NamedTuple)::String
         "    $(rpad(label, 10))| $(rpad(a_cr, 7))| $(rpad(d_cr, 7))| $(lpad(string(t), 4)) | $(rpad(spec, 10)) | $(rpad(floor_ok, 5)) | $(winner)"
     end
 
-    # Label the marketing lookup based on which legs are actually codeshare:
-    # both CS → YY, arr CS only → NY, dep CS only → YN, neither → (shouldn't be here)
+    # Label the marketing lookup based on which legs are actually codeshare
     arr_cs = params.arr_is_codeshare
     dep_cs = params.dep_is_codeshare
     # Y/N notation: first letter = arr cs_ind, second = dep cs_ind
     mkt_label = (arr_cs && dep_cs) ? "YY (mkt)" :
                 (arr_cs && !dep_cs) ? "YN (mkt)" :
                 (!arr_cs && dep_cs) ? "NY (mkt)" : "-- (mkt)"
-    r = _cs_row(mkt_label, trace.marketing_result, arr_cr, dep_cr, :marketing)
-    r !== nothing && push!(rows, r)
-    r = _cs_row("YN (arr)", trace.arr_cs_result, arr_cr, op_dep, :arr_cs)
-    r !== nothing && push!(rows, r)
-    r = _cs_row("NY (dep)", trace.dep_cs_result, op_arr, dep_cr, :dep_cs)
-    r !== nothing && push!(rows, r)
+
+    # Only show codeshare alternatives that are valid overrides
+    _cs_valid(trace.marketing_result) && (r = _cs_row(mkt_label, trace.marketing_result, arr_cr, dep_cr, :marketing); r !== nothing && push!(rows, r))
+    _cs_valid(trace.arr_cs_result)    && (r = _cs_row("YN (arr)", trace.arr_cs_result, arr_cr, op_dep, :arr_cs); r !== nothing && push!(rows, r))
+    _cs_valid(trace.dep_cs_result)    && (r = _cs_row("NY (dep)", trace.dep_cs_result, op_arr, dep_cr, :dep_cs); r !== nothing && push!(rows, r))
+
+    # If no valid codeshare alternatives, don't show the table at all
+    isempty(rows) && return ""
+
+    # Operating row always shows as the baseline
     r = _cs_row("NN (op)", trace.operating_result, op_arr, op_dep, :operating)
     r !== nothing && push!(rows, r)
 
@@ -588,8 +601,11 @@ function _print_result(io::IO, trace::MCTTrace, params::NamedTuple, ::PlainStyle
     fields = decode_matched_fields(r.matched_fields)
     !isempty(fields) && println(io, "  Matched fields: $fields")
     if trace.codeshare_mode != :none
-        println(io, "\n  Codeshare Resolution (winner=$(trace.codeshare_mode)):")
-        println(io, _format_codeshare_table(trace, params))
+        cs_table = _format_codeshare_table(trace, params)
+        if !isempty(cs_table)
+            println(io, "\n  Codeshare Resolution (winner=$(trace.codeshare_mode)):")
+            println(io, cs_table)
+        end
     end
     their_mct = Int(params.their_mct)
     our_mct = Int(r.time)
