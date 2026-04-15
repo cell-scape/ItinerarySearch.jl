@@ -168,13 +168,21 @@ function _format_mct_detail(rec::MCTRecord, trace::MCTTrace, params::NamedTuple;
     rows = R[]
 
     # ── Station (arr_station / dep_station — may differ for multi-airport cities) ──
-    arr_stn_match = _v(params.arr_station) == _v(trace.arr_station) ? "✓" : "✗"
-    dep_stn_match = _v(params.dep_station) == _v(trace.dep_station) ? "✓" : "✗"
     push!(rows, ("Station",
-        _v(params.arr_station), _v(trace.arr_station), arr_stn_match,
-        _v(params.dep_station), _v(trace.dep_station), dep_stn_match))
+        _v(params.arr_station), _v(trace.arr_station),  "-",
+        _v(params.dep_station), _v(trace.dep_station),  "-"))
+
+    # ── Carrier ──
+    push!(rows, ("Carrier",
+        _v(params.arr_carrier), _v(rec.arr_carrier),
+        _mk_carrier(MCT_BIT_ARR_CARRIER, _v(rec.arr_carrier), eff_arr_carrier),
+        _v(params.dep_carrier), _v(rec.dep_carrier),
+        _mk_carrier(MCT_BIT_DEP_CARRIER, _v(rec.dep_carrier), eff_dep_carrier)))
 
     # ── Flight ranges: determine which row gets the range based on lookup mode ──
+    # The lookup compares against marketing or operating flight numbers depending
+    # on the mode. The range belongs on the row with the flight number that was
+    # actually compared.
     arr_flt_spec = (rec.specified & MCT_BIT_ARR_FLT_RNG) != 0
     dep_flt_spec = (rec.specified & MCT_BIT_DEP_FLT_RNG) != 0
     arr_flt_rng = arr_flt_spec ? "$(Int(rec.arr_flt_rng_start))-$(Int(rec.arr_flt_rng_end))" : "-"
@@ -192,42 +200,33 @@ function _format_mct_detail(rec::MCTRecord, trace::MCTTrace, params::NamedTuple;
     arr_flt_mk = arr_flt_spec ? (arr_flt_in ? "✓" : "✗") : "-"
     dep_flt_mk = dep_flt_spec ? (dep_flt_in ? "✓" : "✗") : "-"
 
-    # ── Operating carrier + flight first (primary MCT matching identity) ──
-    push!(rows, ("Carrier",
-        _v(params.arr_op_carrier), _v(rec.arr_carrier),
-        _mk_carrier(MCT_BIT_ARR_CARRIER, _v(rec.arr_carrier), eff_arr_carrier),
-        _v(params.dep_op_carrier), _v(rec.dep_carrier),
-        _mk_carrier(MCT_BIT_DEP_CARRIER, _v(rec.dep_carrier), eff_dep_carrier)))
-
-    arr_op_flt = hasproperty(params,:arr_op_flt_no) ? _flt(params.arr_op_flt_no) : "-"
-    dep_op_flt = hasproperty(params,:dep_op_flt_no) ? _flt(params.dep_op_flt_no) : "-"
-    arr_op_mct = arr_uses_op ? arr_flt_rng : "-"
-    dep_op_mct = dep_uses_op ? dep_flt_rng : "-"
+    # Flight No row: show range here unless this side uses operating flt
     push!(rows, ("Flight No",
-        arr_op_flt, arr_uses_op ? arr_flt_rng : "-", arr_uses_op ? arr_flt_mk : "-",
-        dep_op_flt, dep_uses_op ? dep_flt_rng : "-", dep_uses_op ? dep_flt_mk : "-"))
+        _flt(params.arr_flt_no), arr_uses_op ? "-" : arr_flt_rng, arr_uses_op ? "-" : arr_flt_mk,
+        _flt(params.dep_flt_no), dep_uses_op ? "-" : dep_flt_rng, dep_uses_op ? "-" : dep_flt_mk))
 
-    # ── Codeshare fields ──
+    # ── CS fields ──
     push!(rows, ("CS Indicator",
         params.arr_is_codeshare ? "Y" : "N", _vc(rec.arr_cs_ind),
         _mk((rec.specified & MCT_BIT_ARR_CS_IND)!=0, _vc(rec.arr_cs_ind), eff_arr_cs),
         params.dep_is_codeshare ? "Y" : "N", _vc(rec.dep_cs_ind),
         _mk((rec.specified & MCT_BIT_DEP_CS_IND)!=0, _vc(rec.dep_cs_ind), eff_dep_cs)))
 
-    push!(rows, ("CS Op Carrier",
+    push!(rows, ("Op Carrier",
         _v(params.arr_op_carrier), _v(rec.arr_cs_op_carrier),
         _mk((rec.specified & MCT_BIT_ARR_CS_OP)!=0, _v(rec.arr_cs_op_carrier), eff_arr_op),
         _v(params.dep_op_carrier), _v(rec.dep_cs_op_carrier),
         _mk((rec.specified & MCT_BIT_DEP_CS_OP)!=0, _v(rec.dep_cs_op_carrier), eff_dep_op)))
 
-    # ── Marketing carrier + flight (codeshare marketing identity) ──
-    push!(rows, ("Mkt Carrier",
-        _v(params.arr_carrier), "-", "-",
-        _v(params.dep_carrier), "-", "-"))
-
-    push!(rows, ("Mkt Flight No",
-        _flt(params.arr_flt_no), arr_uses_op ? "-" : arr_flt_rng, arr_uses_op ? "-" : arr_flt_mk,
-        _flt(params.dep_flt_no), dep_uses_op ? "-" : dep_flt_rng, dep_uses_op ? "-" : dep_flt_mk))
+    # Op Flight No row: show range here when this side uses operating flt
+    # Also show the effective carrier being compared when range is present
+    arr_op_flt = hasproperty(params,:arr_op_flt_no) ? _flt(params.arr_op_flt_no) : "-"
+    dep_op_flt = hasproperty(params,:dep_op_flt_no) ? _flt(params.dep_op_flt_no) : "-"
+    arr_op_mct = arr_uses_op ? arr_flt_rng : "-"
+    dep_op_mct = dep_uses_op ? dep_flt_rng : "-"
+    push!(rows, ("Op Flight No",
+        arr_op_flt, arr_op_mct, arr_uses_op ? arr_flt_mk : "-",
+        dep_op_flt, dep_op_mct, dep_uses_op ? dep_flt_mk : "-"))
 
 
     # ── Terminal / body / aircraft ──
