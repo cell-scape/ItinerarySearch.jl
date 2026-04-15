@@ -216,7 +216,7 @@ using Dates
         @test cp.from_leg === arr_leg
         @test cp.to_leg   === dep_leg
         @test cp.cnx_time == Minutes(120)
-        @test cp.mct      == Minutes(60)   # global MCT_DD default
+        @test cp.mct      == Minutes(30)   # global MCT_DD default
     end
 
     # ── Self-reference skipped ─────────────────────────────────────────────────
@@ -703,7 +703,7 @@ using Dates
     # ── Rule-chain short-circuit (MCT failure) ────────────────────────────────
 
     @testset "MCT failure rejects connection" begin
-        # cnx_time = 30 min < MCT_DD default 60 min → rejected
+        # cnx_time = 20 min < MCT_DD default 30 min → rejected
         jfk_rec = _make_station_record("JFK", "US", "NAM")
         ord_rec = _make_station_record("ORD", "US", "NAM")
         lax_rec = _make_station_record("LAX", "US", "NAM")
@@ -719,7 +719,7 @@ using Dates
         )
         dep_rec = _make_leg_record(
             departure_station="ORD", arrival_station="LAX",
-            passenger_departure_time=Int16(570),    # 09:30 dep → cnx_time = 30 min
+            passenger_departure_time=Int16(560),    # 09:20 dep → cnx_time = 20 min
             dep_intl_dom='D',
         )
         arr_leg = GraphLeg(arr_rec, jfk_stn, ord_stn)

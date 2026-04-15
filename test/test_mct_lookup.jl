@@ -13,7 +13,7 @@
             lookup, AirlineCode("UA"), AirlineCode("AA"),
             StationCode("ORD"), StationCode("ORD"), MCT_DD,
         )
-        @test result.time == Minutes(60)       # DD default
+        @test result.time == Minutes(30)       # DD default
         @test result.source == SOURCE_GLOBAL_DEFAULT
         @test !result.suppressed
     end
@@ -111,7 +111,7 @@
         @test lookup_mct(
             lookup, AirlineCode("UA"), AirlineCode("AA"),
             StationCode("ORD"), StationCode("ORD"), MCT_II,
-        ).time == Minutes(120)
+        ).time == Minutes(90)
     end
 
     @testset "_mct_record_matches" begin
@@ -210,19 +210,19 @@
         )
         @test !result.suppressed
         @test result.source == SOURCE_GLOBAL_DEFAULT
-        @test result.time == Minutes(60)
+        @test result.time == Minutes(30)
     end
 
     @testset "Global defaults per status" begin
         lookup = MCTLookup()
         @test lookup_mct(lookup, AirlineCode("UA"), AirlineCode("AA"),
-                         StationCode("ORD"), StationCode("ORD"), MCT_DD).time == Minutes(60)
+                         StationCode("ORD"), StationCode("ORD"), MCT_DD).time == Minutes(30)
         @test lookup_mct(lookup, AirlineCode("UA"), AirlineCode("AA"),
-                         StationCode("ORD"), StationCode("ORD"), MCT_DI).time == Minutes(90)
+                         StationCode("ORD"), StationCode("ORD"), MCT_DI).time == Minutes(60)
         @test lookup_mct(lookup, AirlineCode("UA"), AirlineCode("AA"),
                          StationCode("ORD"), StationCode("ORD"), MCT_ID).time == Minutes(90)
         @test lookup_mct(lookup, AirlineCode("UA"), AirlineCode("AA"),
-                         StationCode("ORD"), StationCode("ORD"), MCT_II).time == Minutes(120)
+                         StationCode("ORD"), StationCode("ORD"), MCT_II).time == Minutes(90)
     end
 
     @testset "mct_id propagation" begin
@@ -406,7 +406,7 @@
             arr_is_codeshare = false,
         )
         @test result_non_cs.source == SOURCE_GLOBAL_DEFAULT
-        @test result_non_cs.time == Minutes(60)
+        @test result_non_cs.time == Minutes(30)
     end
 
     @testset "Flight number range matching" begin
@@ -965,13 +965,13 @@
         @test result_unknown.time == Minutes(240)
         @test result_unknown.source == SOURCE_GLOBAL_DEFAULT
 
-        # Unknown intra-station pair → normal global default (60 min for DD)
+        # Unknown intra-station pair → normal global default (30 min for DD)
         result_unknown_intra = lookup_mct(
             lookup,
             AirlineCode("UA"), AirlineCode("AA"),
             StationCode("BOS"), StationCode("BOS"), MCT_DD,
         )
-        @test result_unknown_intra.time == Minutes(60)
+        @test result_unknown_intra.time == Minutes(30)
         @test result_unknown_intra.source == SOURCE_GLOBAL_DEFAULT
 
         # Verify inter_station_default field

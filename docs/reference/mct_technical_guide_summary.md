@@ -123,7 +123,7 @@ This document is aimed at development teams implementing the SSIM Chapter 8 MCT 
 
 Key differences/clarifications from this guide vs our current implementation:
 
-1. **Global defaults** should be DD=30, DI=60, ID=90, II=90 (our code uses DD=60, DI=90, ID=90, II=120 — needs verification against which source is authoritative)
+1. **Global defaults** — DD=30, DI=60, ID=90, II=90 (fixed in code to match SSIM Ch. 8 and IATA FAQ)
 2. **Subset flight ranges take priority** over parent ranges — our specificity calculation should account for this
 3. **Aircraft type is exact match only** — "737" ≠ "73H"/"738" etc.
 4. **File order is irrelevant** — we should not rely on record serial for hierarchy resolution (only as tiebreaker when specificity is equal)

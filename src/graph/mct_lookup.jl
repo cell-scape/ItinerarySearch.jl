@@ -209,7 +209,7 @@ and the arrival and departure stations differ (SSIM8 global default = 240 min).
 # Fields
 - `stations::Dict{Tuple{StationCode,StationCode}, NTuple{4, Vector{MCTRecord}}}` — per-station-pair records
 - `global_suppressions::NTuple{4, Vector{MCTRecord}}` — blank-station suppression records (apply at all stations); checked after per-station records but before station standard
-- `global_defaults::NTuple{4, Minutes}` — IATA fallback times (DD=60, DI=90, ID=90, II=120)
+- `global_defaults::NTuple{4, Minutes}` — IATA fallback times (DD=30, DI=60, ID=90, II=90)
 - `inter_station_default::Minutes` — fallback for inter-station connections (default 240 min)
 
 # Examples
@@ -227,7 +227,7 @@ true
     global_suppressions::NTuple{4, Vector{MCTRecord}} =
         (Vector{MCTRecord}(), Vector{MCTRecord}(), Vector{MCTRecord}(), Vector{MCTRecord}())
     global_defaults::NTuple{4, Minutes} =
-        (Minutes(60), Minutes(90), Minutes(90), Minutes(120))
+        (Minutes(30), Minutes(60), Minutes(90), Minutes(90))
     inter_station_default::Minutes = Minutes(240)
 end
 

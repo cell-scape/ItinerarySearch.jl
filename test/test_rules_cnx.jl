@@ -271,9 +271,9 @@ using Dates
             @test rule(cp, ctx) == PASS
         end
 
-        @testset "sufficient cnx_time passes (DD default=60 min)" begin
+        @testset "sufficient cnx_time passes (DD default=30 min)" begin
             # from_leg arrives at passenger_arrival_time=540 (09:00), to_leg departs passenger_departure_time=660 (11:00)
-            # cnx_time = 660 - 540 = 120 min > 60 min MCT_DD default
+            # cnx_time = 660 - 540 = 120 min > 30 min MCT_DD default
             from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD",
                                         passenger_departure_time=Int16(300), passenger_arrival_time=Int16(540),
                                         arr_intl_dom='D')
@@ -285,16 +285,16 @@ using Dates
             rule = MCTRule(lookup)
             @test rule(cp, ctx) == PASS
             @test cp.cnx_time == Minutes(120)
-            @test cp.mct == Minutes(60)  # global default DD
+            @test cp.mct == Minutes(30)  # global default DD
         end
 
         @testset "insufficient cnx_time fails with FAIL_TIME_MIN" begin
-            # from_leg arrives at 540, to_leg departs at 570 => cnx_time=30 < MCT_DD=60
+            # from_leg arrives at 540, to_leg departs at 560 => cnx_time=20 < MCT_DD=30
             from_rec = _test_leg_record(departure_station="JFK", arrival_station="ORD",
                                         passenger_departure_time=Int16(300), passenger_arrival_time=Int16(540),
                                         arr_intl_dom='D')
             to_rec   = _test_leg_record(departure_station="ORD", arrival_station="LHR",
-                                        passenger_departure_time=Int16(570), passenger_arrival_time=Int16(900),
+                                        passenger_departure_time=Int16(560), passenger_arrival_time=Int16(900),
                                         dep_intl_dom='D')
             cp = _test_connection(from_rec=from_rec, to_rec=to_rec,
                                   status=StatusBits(DOW_MON))
@@ -340,7 +340,7 @@ using Dates
         end
 
         @testset "min_mct_override applied" begin
-            # MCT_DD default = 60; override = 120; cnx_time = 90 => fails
+            # MCT_DD default = 30; override = 120; cnx_time = 90 => fails
             constraints = SearchConstraints(
                 defaults=ParameterSet(min_mct_override=Minutes(120))
             )

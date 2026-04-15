@@ -139,7 +139,7 @@ mct_lookup.jl:222-228
 ```julia
 @kwdef struct MCTLookup
     stations::Dict{Tuple{StationCode,StationCode}, NTuple{4, Vector{MCTRecord}}}
-    global_defaults::NTuple{4, Minutes} = (60, 90, 90, 120)  # DD, DI, ID, II
+    global_defaults::NTuple{4, Minutes} = (30, 60, 90, 90)   # DD, DI, ID, II
     inter_station_default::Minutes = 240                       # 4 hours
 end
 ```
@@ -382,7 +382,7 @@ mct_lookup.jl:516-532
 key = (arr_station, dep_station)
 if !haskey(lookup.stations, key)
     default_time = arr_station == dep_station ?
-        lookup.global_defaults[status_idx] :    # DD=60, DI=90, ID=90, II=120
+        lookup.global_defaults[status_idx] :    # DD=30, DI=60, ID=90, II=90
         lookup.inter_station_default            # 240 min (4 hours)
     return MCTResult(source = SOURCE_GLOBAL_DEFAULT, ...)
 end
@@ -460,7 +460,7 @@ mct_lookup.jl:616-630
 
 ```julia
 default_time = arr_station == dep_station ?
-    lookup.global_defaults[status_idx] :    # DD=60, DI=90, ID=90, II=120
+    lookup.global_defaults[status_idx] :    # DD=30, DI=60, ID=90, II=90
     lookup.inter_station_default            # 240 min
 MCTResult(source = SOURCE_GLOBAL_DEFAULT, time = default_time, ...)
 ```
@@ -614,7 +614,7 @@ If no exceptions or suppressions matched:
 
 If ORD had no station standard:
 
-**Pass 3 (Global Default):** Return 60 min (DD global default), SOURCE_GLOBAL_DEFAULT.
+**Pass 3 (Global Default):** Return 30 min (DD global default), SOURCE_GLOBAL_DEFAULT.
 
 ---
 
