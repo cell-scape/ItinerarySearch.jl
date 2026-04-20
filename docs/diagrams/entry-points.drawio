@@ -1,0 +1,115 @@
+<mxfile host="app.diagrams.net" modified="2026-04-16T00:00:00.000Z" agent="Claude" version="24.0.0">
+  <diagram name="Entry Points" id="entry-points">
+    <mxGraphModel dx="1200" dy="800" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0"/>
+        <mxCell id="1" parent="0"/>
+
+        <!-- Title -->
+        <mxCell id="title" value="Entry Points — CLI and REST API over a shared core" style="text;html=1;fontSize=18;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="400" y="15" width="800" height="30" as="geometry"/>
+        </mxCell>
+        <mxCell id="subtitle" value="Both consumers drive the same load_schedule → build_graph → search pipeline" style="text;html=1;fontSize=12;fontStyle=2;align=center;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="400" y="45" width="800" height="20" as="geometry"/>
+        </mxCell>
+
+        <!-- ── LEFT: CLI ─────────────────────────────────────── -->
+        <mxCell id="cli_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="100" width="360" height="340" as="geometry"/>
+        </mxCell>
+        <mxCell id="cli_title" value="CLI  —  bin/itinsearch.jl  ·  src/cli.jl" style="text;html=1;fontSize=13;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="110" width="360" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="cli_cmd_hdr" value="Commands" style="text;html=1;fontSize=11;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="80" y="145" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="cli_cmds" value="search  ·  trip&#xa;build  ·  ingest&#xa;info  ·  serve" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="80" y="170" width="320" height="80" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="cli_flags_hdr" value="Key global flags" style="text;html=1;fontSize=11;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="80" y="260" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="cli_flags" value="--config  &#xa;--newssim · --delimiter  &#xa;--output · --compact  &#xa;--scope · --interline  &#xa;--max-stops · --max-elapsed · --circuity-factor" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="285" width="320" height="140" as="geometry"/>
+        </mxCell>
+
+        <!-- ── LEFT: REST API ───────────────────────────────── -->
+        <mxCell id="rest_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=6;" vertex="1" parent="1">
+          <mxGeometry x="60" y="480" width="360" height="320" as="geometry"/>
+        </mxCell>
+        <mxCell id="rest_title" value="REST API  —  src/server.jl  ·  HTTP.serve / serve!" style="text;html=1;fontSize=13;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="60" y="490" width="360" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="rest_ep_hdr" value="Endpoints" style="text;html=1;fontSize=11;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="80" y="525" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="rest_eps" value="POST /search&#xa;POST /trip&#xa;GET  /station/&lt;code&gt;&#xa;GET  /health&#xa;POST /rebuild" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontFamily=Courier New;" vertex="1" parent="1">
+          <mxGeometry x="80" y="550" width="320" height="110" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="rest_state_hdr" value="Server state" style="text;html=1;fontSize=11;fontStyle=1;align=left;" vertex="1" parent="1">
+          <mxGeometry x="80" y="675" width="200" height="20" as="geometry"/>
+        </mxCell>
+        <mxCell id="rest_state" value="ServerState  —  long-lived&#xa;pre-built FlightGraph, rebuildable via /rebuild" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=10;" vertex="1" parent="1">
+          <mxGeometry x="80" y="700" width="320" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- ── CENTER: shared config ────────────────────────── -->
+        <mxCell id="cfg" value="SearchConfig&#xa;(JSON)" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;size=12;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="520" y="420" width="160" height="80" as="geometry"/>
+        </mxCell>
+
+        <!-- ── RIGHT: shared core pipeline ──────────────────── -->
+        <mxCell id="core_bg" value="" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;arcSize=6;opacity=40;" vertex="1" parent="1">
+          <mxGeometry x="820" y="100" width="720" height="700" as="geometry"/>
+        </mxCell>
+        <mxCell id="core_title" value="Shared core  —  the public API in src/ItinerarySearch.jl" style="text;html=1;fontSize=13;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="820" y="110" width="720" height="25" as="geometry"/>
+        </mxCell>
+
+        <mxCell id="core_store" value="DuckDBStore()&#xa;+ load_schedule!(store, config)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="880" y="150" width="600" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="core_build" value="build_graph!(store, config, date;&#xa;source=:ssim | :newssim)" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="880" y="260" width="600" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="core_search" value="search_itineraries  ·  search_trip  ·  search_markets" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" vertex="1" parent="1">
+          <mxGeometry x="880" y="370" width="600" height="70" as="geometry"/>
+        </mxCell>
+        <mxCell id="core_fmt" value="Output formatters&#xa;write_itineraries · write_legs · write_trips&#xa;itinerary_legs · itinerary_legs_json · viz_*" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" vertex="1" parent="1">
+          <mxGeometry x="880" y="480" width="600" height="90" as="geometry"/>
+        </mxCell>
+        <mxCell id="core_art" value="Serialized output:  JSON  ·  CSV  ·  HTML" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;align=center;" vertex="1" parent="1">
+          <mxGeometry x="880" y="610" width="600" height="60" as="geometry"/>
+        </mxCell>
+
+        <!-- Note -->
+        <mxCell id="note" value="CLI: builds graph per invocation (fast for one-off queries)&#xa;REST: builds once at startup, reuses across requests, rebuildable via POST /rebuild" style="text;html=1;fontSize=10;fontStyle=2;align=center;fontColor=#555555;" vertex="1" parent="1">
+          <mxGeometry x="820" y="695" width="720" height="50" as="geometry"/>
+        </mxCell>
+
+        <!-- ── Arrows ───────────────────────────────────────── -->
+        <!-- CLI → config -->
+        <mxCell id="e_cli_cfg" style="endArrow=classic;html=1;exitX=1;exitY=0.8;exitDx=0;exitDy=0;entryX=0;entryY=0.4;entryDx=0;entryDy=0;" edge="1" parent="1" source="cli_bg" target="cfg"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <!-- REST → config -->
+        <mxCell id="e_rest_cfg" style="endArrow=classic;html=1;exitX=1;exitY=0.2;exitDx=0;exitDy=0;entryX=0;entryY=0.6;entryDx=0;entryDy=0;" edge="1" parent="1" source="rest_bg" target="cfg"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <!-- CLI → core (direct) -->
+        <mxCell id="e_cli_core" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.2;entryDx=0;entryDy=0;" edge="1" parent="1" source="cli_bg" target="core_bg"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <!-- REST → core (direct) -->
+        <mxCell id="e_rest_core" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.7;entryDx=0;entryDy=0;" edge="1" parent="1" source="rest_bg" target="core_bg"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <!-- Config → core -->
+        <mxCell id="e_cfg_core" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" edge="1" parent="1" source="cfg" target="core_bg"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+        <!-- Internal core flow -->
+        <mxCell id="e_c1" style="endArrow=classic;html=1;" edge="1" parent="1" source="core_store" target="core_build"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_c2" style="endArrow=classic;html=1;" edge="1" parent="1" source="core_build" target="core_search"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_c3" style="endArrow=classic;html=1;" edge="1" parent="1" source="core_search" target="core_fmt"><mxGeometry relative="1" as="geometry"/></mxCell>
+        <mxCell id="e_c4" style="endArrow=classic;html=1;" edge="1" parent="1" source="core_fmt" target="core_art"><mxGeometry relative="1" as="geometry"/></mxCell>
+
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

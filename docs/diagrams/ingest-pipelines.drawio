@@ -1,0 +1,154 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.6.6 Chrome/144.0.7559.236 Electron/40.8.4 Safari/537.36" version="29.6.6">
+  <diagram name="Ingest Pipelines" id="ingest">
+    <mxGraphModel dx="1261" dy="976" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="tWk3GwYfFRMMULFhYORZ-1" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d0cee2;strokeColor=#56517e;glass=0;opacity=40;" value="" vertex="1">
+          <mxGeometry height="430" width="400" x="1120" y="300" as="geometry" />
+        </mxCell>
+        <mxCell id="title" parent="1" style="text;html=1;fontSize=18;fontStyle=1;align=center;" value="Ingest Pipelines — SSIM and NewSSIM" vertex="1">
+          <mxGeometry height="30" width="800" x="400" y="15" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" parent="1" style="text;html=1;fontSize=12;fontStyle=2;align=center;fontColor=#555555;" value="Two ingest paths that converge into the same in-memory FlightGraph" vertex="1">
+          <mxGeometry height="20" width="800" x="400" y="45" as="geometry" />
+        </mxCell>
+        <mxCell id="ssim_lane" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;arcSize=6;opacity=40;" value="" vertex="1">
+          <mxGeometry height="305" width="1030" x="40" y="85" as="geometry" />
+        </mxCell>
+        <mxCell id="ssim_lane_title" parent="1" style="text;html=1;fontSize=13;fontStyle=1;align=left;" value="SSIM Fixed-Width Path  —  load_schedule!(store, config)" vertex="1">
+          <mxGeometry height="25" width="800" x="60" y="95" as="geometry" />
+        </mxCell>
+        <mxCell id="in_ssim" parent="1" style="shape=document;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" value="SSIM file&#xa;(fixed-width)" vertex="1">
+          <mxGeometry height="50" width="140" x="70" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="in_mct_top" parent="1" style="shape=document;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" value="MCT file" vertex="1">
+          <mxGeometry height="50" width="140" x="70" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="in_ref" parent="1" style="shape=document;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" value="Reference files&#xa;airports · regions&#xa;aircraft · oa_control" vertex="1">
+          <mxGeometry height="80" width="140" x="70" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="p_ssim" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" value="ingest_ssim!" vertex="1">
+          <mxGeometry height="50" width="150" x="250" y="140" as="geometry" />
+        </mxCell>
+        <mxCell id="p_mct_top" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" value="ingest_mct!" vertex="1">
+          <mxGeometry height="50" width="150" x="250" y="210" as="geometry" />
+        </mxCell>
+        <mxCell id="p_ref" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" value="load_airports!&#xa;load_regions!&#xa;load_aircrafts!&#xa;load_oa_control!" vertex="1">
+          <mxGeometry height="80" width="150" x="250" y="280" as="geometry" />
+        </mxCell>
+        <mxCell id="t_legs" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;size=10;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="legs" vertex="1">
+          <mxGeometry height="40" width="100" x="440" y="145" as="geometry" />
+        </mxCell>
+        <mxCell id="t_mct_top" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;size=10;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="mct" vertex="1">
+          <mxGeometry height="40" width="100" x="440" y="215" as="geometry" />
+        </mxCell>
+        <mxCell id="t_ref" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;size=10;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="airports · regions&#xa;aircrafts · oa_control" vertex="1">
+          <mxGeometry height="70" width="100" x="440" y="290" as="geometry" />
+        </mxCell>
+        <mxCell id="sql_post" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;align=center;" value="SQL post-ingest pipeline&#xa;&#xa;· join DEI 50 codeshare&#xa;· build segments table&#xa;· inject market distances" vertex="1">
+          <mxGeometry height="140" width="220" x="590" y="180" as="geometry" />
+        </mxCell>
+        <mxCell id="t_enriched" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;size=10;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="legs_with_operating&#xa;segments&#xa;markets" vertex="1">
+          <mxGeometry height="120" width="150" x="870" y="190" as="geometry" />
+        </mxCell>
+        <mxCell id="new_lane" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;arcSize=6;opacity=40;" value="" vertex="1">
+          <mxGeometry height="230" width="860" x="40" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="new_lane_title" parent="1" style="text;html=1;fontSize=13;fontStyle=1;align=left;" value="NewSSIM CSV Path  —  ingest_newssim!(store, path; delimiter=nothing)" vertex="1">
+          <mxGeometry height="25" width="800" x="60" y="480" as="geometry" />
+        </mxCell>
+        <mxCell id="in_new" parent="1" style="shape=document;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" value="NewSSIM CSV&#xa;(comma / pipe / tab; .gz OK)" vertex="1">
+          <mxGeometry height="60" width="140" x="70" y="525" as="geometry" />
+        </mxCell>
+        <mxCell id="in_mct_bot" parent="1" style="shape=document;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=11;" value="MCT file" vertex="1">
+          <mxGeometry height="50" width="140" x="70" y="610" as="geometry" />
+        </mxCell>
+        <mxCell id="p_new" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" value="ingest_newssim!&#xa;(detect_delimiter)" vertex="1">
+          <mxGeometry height="60" width="150" x="250" y="525" as="geometry" />
+        </mxCell>
+        <mxCell id="p_mct_bot" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;" value="ingest_mct!" vertex="1">
+          <mxGeometry height="50" width="150" x="250" y="610" as="geometry" />
+        </mxCell>
+        <mxCell id="t_new" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;size=10;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="newssim" vertex="1">
+          <mxGeometry height="50" width="100" x="440" y="530" as="geometry" />
+        </mxCell>
+        <mxCell id="t_mct_bot" parent="1" style="shape=cylinder3;whiteSpace=wrap;html=1;boundedLbl=1;size=10;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=10;" value="mct" vertex="1">
+          <mxGeometry height="50" width="100" x="440" y="610" as="geometry" />
+        </mxCell>
+        <mxCell id="materialize" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=11;fontStyle=1;align=center;" value="newssim_materialize&#xa;&#xa;Build leg records&#xa;from denormalized rows" vertex="1">
+          <mxGeometry height="90" width="220" x="590" y="545" as="geometry" />
+        </mxCell>
+        <mxCell id="build_graph" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;align=center;" value="build_graph!&#xa;(store, config, date;&#xa;source=:ssim | :newssim)" vertex="1">
+          <mxGeometry height="90" width="320" x="1160" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="build_cnx" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;align=center;" value="build_connections!&#xa;&#xa;Apply connection rule chain&#xa;(MCT lookup + all cnx rules)" vertex="1">
+          <mxGeometry height="100" width="320" x="1160" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="graph_out" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=12;fontStyle=1;align=center;" value="In-memory FlightGraph&#xa;(GraphStations · GraphLegs · GraphConnections)" vertex="1">
+          <mxGeometry height="80" width="320" x="1160" y="610" as="geometry" />
+        </mxCell>
+        <mxCell id="e_i1" edge="1" parent="1" source="in_ssim" style="endArrow=classic;html=1;" target="p_ssim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_i2" edge="1" parent="1" source="in_mct_top" style="endArrow=classic;html=1;" target="p_mct_top">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_i3" edge="1" parent="1" source="in_ref" style="endArrow=classic;html=1;" target="p_ref">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_p1" edge="1" parent="1" source="p_ssim" style="endArrow=classic;html=1;" target="t_legs">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_p2" edge="1" parent="1" source="p_mct_top" style="endArrow=classic;html=1;" target="t_mct_top">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_p3" edge="1" parent="1" source="p_ref" style="endArrow=classic;html=1;" target="t_ref">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_t1" edge="1" parent="1" source="t_legs" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;" target="sql_post">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_t2" edge="1" parent="1" source="t_mct_top" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.5;entryDx=0;entryDy=0;" target="sql_post">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_t3" edge="1" parent="1" source="t_ref" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.8;entryDx=0;entryDy=0;" target="sql_post">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_sql_enriched" edge="1" parent="1" source="sql_post" style="endArrow=classic;html=1;" target="t_enriched">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_enriched_bg" edge="1" parent="1" source="t_enriched" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.25;entryDx=0;entryDy=0;fontSize=10;fontStyle=1;" target="build_graph" value="source=:ssim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_n1" edge="1" parent="1" source="in_new" style="endArrow=classic;html=1;" target="p_new">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_n2" edge="1" parent="1" source="in_mct_bot" style="endArrow=classic;html=1;" target="p_mct_bot">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_n3" edge="1" parent="1" source="p_new" style="endArrow=classic;html=1;" target="t_new">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_n4" edge="1" parent="1" source="p_mct_bot" style="endArrow=classic;html=1;" target="t_mct_bot">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_n5" edge="1" parent="1" source="t_new" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.3;entryDx=0;entryDy=0;" target="materialize">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_n6" edge="1" parent="1" source="t_mct_bot" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.7;entryDx=0;entryDy=0;" target="materialize">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_mat_bg" edge="1" parent="1" source="materialize" style="endArrow=classic;html=1;exitX=1;exitY=0.5;exitDx=0;exitDy=0;entryX=0;entryY=0.75;entryDx=0;entryDy=0;fontSize=10;fontStyle=1;" target="build_graph" value="source=:newssim">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bg_bc" edge="1" parent="1" source="build_graph" style="endArrow=classic;html=1;" target="build_cnx">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_bc_out" edge="1" parent="1" source="build_cnx" style="endArrow=classic;html=1;" target="graph_out">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>

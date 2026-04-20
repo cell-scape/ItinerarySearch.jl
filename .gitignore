@@ -12,3 +12,4 @@ data/viz/*
 build/*.so
 build/*.dylib
 build/app/
+*.bkp

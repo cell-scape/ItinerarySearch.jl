@@ -1,0 +1,87 @@
+<mxfile host="Electron" agent="Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) draw.io/29.6.6 Chrome/144.0.7559.236 Electron/40.8.4 Safari/537.36" version="29.6.6">
+  <diagram name="Module Architecture" id="modules">
+    <mxGraphModel dx="1455" dy="1126" grid="1" gridSize="10" guides="1" tooltips="1" connect="1" arrows="1" fold="1" page="1" pageScale="1" pageWidth="1600" pageHeight="900" math="0" shadow="0">
+      <root>
+        <mxCell id="0" />
+        <mxCell id="1" parent="0" />
+        <mxCell id="title" parent="1" style="text;html=1;fontSize=18;fontStyle=1;align=center;verticalAlign=middle;" value="ItinerarySearch.jl — Module Architecture" vertex="1">
+          <mxGeometry height="40" width="800" x="400" y="20" as="geometry" />
+        </mxCell>
+        <mxCell id="subtitle" parent="1" style="text;html=1;fontSize=12;fontStyle=2;align=center;verticalAlign=middle;fontColor=#555555;" value="src/ subsystem layout. Arrows point from dependent to dependency." vertex="1">
+          <mxGeometry height="20" width="800" x="400" y="60" as="geometry" />
+        </mxCell>
+        <mxCell id="cli" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" value="CLI&#xa;(bin/itinsearch.jl · src/cli.jl)" vertex="1">
+          <mxGeometry height="70" width="260" x="400" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="rest" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#dae8fc;strokeColor=#6c8ebf;fontSize=12;fontStyle=1;" value="REST API&#xa;(src/server.jl)" vertex="1">
+          <mxGeometry height="70" width="260" x="700" y="90" as="geometry" />
+        </mxCell>
+        <mxCell id="audit" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="audit/&#xa;mct_replay · mct_inspect · mct_audit_log" vertex="1">
+          <mxGeometry height="80" width="300" x="180" y="220" as="geometry" />
+        </mxCell>
+        <mxCell id="output" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="output/&#xa;formats · viz" vertex="1">
+          <mxGeometry height="80" width="260" x="530" y="220" as="geometry" />
+        </mxCell>
+        <mxCell id="observe" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="observe/&#xa;events · metrics · sinks · logging · event_log" vertex="1">
+          <mxGeometry height="80" width="330" x="840" y="220" as="geometry" />
+        </mxCell>
+        <mxCell id="ext" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#fff2cc;strokeColor=#d6b656;fontSize=11;fontStyle=2;dashed=1;" value="ext/TermExt&#xa;(loaded with Term.jl)" vertex="1">
+          <mxGeometry height="80" width="220" x="90" y="100" as="geometry" />
+        </mxCell>
+        <mxCell id="graph" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="graph/&#xa;builder · connect · search · rules_cnx · rules_itn&#xa;mct_lookup · mct_decode · mct_trace" vertex="1">
+          <mxGeometry height="90" width="720" x="100" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="ingest" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="ingest/&#xa;ssim · mct · reference · newssim&#xa;newssim_materialize · schemas" vertex="1">
+          <mxGeometry height="90" width="620" x="860" y="340" as="geometry" />
+        </mxCell>
+        <mxCell id="store" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#d5e8d4;strokeColor=#82b366;fontSize=12;fontStyle=1;" value="store/&#xa;duckdb_store · julia_store · interface · schedule_queries" vertex="1">
+          <mxGeometry height="80" width="1120" x="240" y="470" as="geometry" />
+        </mxCell>
+        <mxCell id="types" parent="1" style="rounded=1;whiteSpace=wrap;html=1;fillColor=#e1d5e7;strokeColor=#9673a6;fontSize=12;fontStyle=1;" value="types/&#xa;aliases · enums · records · graph · constraints · status · stats · display · mct_audit_config · mct_trace" vertex="1">
+          <mxGeometry height="80" width="1400" x="100" y="600" as="geometry" />
+        </mxCell>
+        <mxCell id="foundation_note" parent="1" style="text;html=1;fontSize=10;fontStyle=2;align=center;fontColor=#555555;" value="All modules depend on types/ (leaf aliases, enums, records, graph types). Arrows from upper layers to types/ are omitted for readability." vertex="1">
+          <mxGeometry height="30" width="1200" x="200" y="710" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cli_graph" edge="1" parent="1" source="cli" style="endArrow=classic;html=1;rounded=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.552;entryY=0.002;entryDx=0;entryDy=0;entryPerimeter=0;" target="graph">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_rest_graph" edge="1" parent="1" source="rest" style="endArrow=classic;html=1;rounded=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.968;entryY=0.002;entryDx=0;entryDy=0;entryPerimeter=0;" target="graph">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cli_audit" edge="1" parent="1" source="cli" style="endArrow=classic;html=1;rounded=0;exitX=0.1;exitY=1;exitDx=0;exitDy=0;entryX=0.75;entryY=0;entryDx=0;entryDy=0;" target="audit">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_cli_output" edge="1" parent="1" source="cli" style="endArrow=classic;html=1;rounded=0;exitX=0.75;exitY=1;exitDx=0;exitDy=0;entryX=0.3;entryY=0;entryDx=0;entryDy=0;" target="output">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_rest_output" edge="1" parent="1" source="rest" style="endArrow=classic;html=1;rounded=0;exitX=0.2;exitY=1;exitDx=0;exitDy=0;entryX=0.7;entryY=0;entryDx=0;entryDy=0;" target="output">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_rest_observe" edge="1" parent="1" source="rest" style="endArrow=classic;html=1;rounded=0;exitX=0.8;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="observe">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_audit_graph" edge="1" parent="1" source="audit" style="endArrow=classic;html=1;rounded=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.319;entryY=0.111;entryDx=0;entryDy=0;entryPerimeter=0;" target="graph">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_output_graph" edge="1" parent="1" source="output" style="endArrow=classic;html=1;rounded=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.774;entryY=-0.015;entryDx=0;entryDy=0;entryPerimeter=0;" target="graph">
+          <mxGeometry relative="1" as="geometry">
+            <mxPoint x="657" y="330" as="targetPoint" />
+          </mxGeometry>
+        </mxCell>
+        <mxCell id="e_graph_store" edge="1" parent="1" source="graph" style="endArrow=classic;html=1;rounded=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.195;entryY=0.05;entryDx=0;entryDy=0;entryPerimeter=0;" target="store">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ingest_store" edge="1" parent="1" source="ingest" style="endArrow=classic;html=1;rounded=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.833;entryY=0.012;entryDx=0;entryDy=0;entryPerimeter=0;" target="store">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_store_types" edge="1" parent="1" source="store" style="endArrow=classic;html=1;rounded=0;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.5;entryY=0;entryDx=0;entryDy=0;" target="types">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+        <mxCell id="e_ext_audit" edge="1" parent="1" source="ext" style="endArrow=classic;html=1;rounded=0;dashed=1;exitX=0.5;exitY=1;exitDx=0;exitDy=0;entryX=0.25;entryY=0;entryDx=0;entryDy=0;fontSize=10;" target="audit" value="decorates">
+          <mxGeometry relative="1" as="geometry" />
+        </mxCell>
+      </root>
+    </mxGraphModel>
+  </diagram>
+</mxfile>
