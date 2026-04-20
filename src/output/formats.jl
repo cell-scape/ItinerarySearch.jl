@@ -568,7 +568,7 @@ function write_legs(
                 push!(ids, rn)
             end
         end
-        pt_dict = _fetch_passthrough(store, pt_source, pt_key_col, pt_names, ids)
+        pt_dict = _fetch_passthrough(store::DuckDBStore, pt_source, pt_key_col, pt_names, ids)
         pt_default = _passthrough_default(length(pt_names))
     end
 
