@@ -603,7 +603,7 @@ function write_legs(
 end
 
 """
-    `function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::FlightGraph, date::Date)::Int`
+    `function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::FlightGraph, date::Date; header::Bool=true, store::Union{DuckDBStore,Nothing}=nothing, passthrough_columns::Vector{String}=String[])::Int`
 ---
 
 # Description
@@ -611,18 +611,45 @@ end
 - `is_operating` = true for operating legs; codeshare legs reference the
   operating flight via `operating_carrier`/`operating_flight_number` (DEI 50)
 - `cnx_type`: L = single-leg nonstop, S = through-segment, C = connection
+- Optional `passthrough_columns` appends extra columns fetched from the source
+  table (requires `store`); validated before any output is written
 
 # Arguments
 1. `io::IO`: output stream
 2. `itineraries::Vector{Itinerary}`: search results
 3. `graph::FlightGraph`: built flight graph
+4. `date::Date`: target operating date
+
+# Keyword Arguments
+- `header::Bool=true`: write a header row
+- `store::Union{DuckDBStore,Nothing}=nothing`: required when `passthrough_columns` is non-empty
+- `passthrough_columns::Vector{String}=String[]`: extra columns to append from source table
 
 # Returns
 - `::Int`: number of rows written
 """
-function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::FlightGraph, date::Date; header::Bool=true)::Int
+function write_itineraries(
+    io::IO,
+    itineraries::Vector{Itinerary},
+    graph::FlightGraph,
+    date::Date;
+    header::Bool = true,
+    store::Union{DuckDBStore,Nothing} = nothing,
+    passthrough_columns::Vector{String} = String[],
+)::Int
+    pt_active = !isempty(passthrough_columns)
+    pt_names = String[]
+    pt_source = ""
+    pt_key_col = ""
+    if pt_active
+        prep = _prepare_passthrough(graph, store, passthrough_columns)
+        pt_names = prep.names
+        pt_source = prep.source
+        pt_key_col = prep.key_col
+    end
+
     if header
-        _write_row(io, [
+        hdr = [
             "itinerary_id", "leg_seq",
             "record_serial", "row_number",
             "carrier", "flight_number", "operational_suffix", "itinerary_var_id", "leg_sequence_number_ssim", "service_type",
@@ -636,13 +663,45 @@ function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::Flight
             "num_stops", "elapsed_time",
             "total_distance_miles", "market_distance_miles", "circuity",
             "is_international", "has_interline", "has_codeshare",
-        ])
+        ]
+        pt_active && append!(hdr, pt_names)
+        _write_row(io, hdr)
+    end
+
+    # Collect row_numbers that will appear in output (deduped, in first-appearance order).
+    # Mirror the exact flatten logic below so the two passes agree on which legs emit.
+    pt_dict = Dict{UInt64,Vector{String}}()
+    pt_default = String[]
+    if pt_active
+        seen = Set{UInt64}()
+        ids = UInt64[]
+        for itn in itineraries
+            n_cnx = length(itn.connections)
+            last_leg = nothing
+            for (i, cp) in enumerate(itn.connections)
+                from_l = cp.from_leg::GraphLeg
+                to_l = cp.to_leg::GraphLeg
+                if from_l !== last_leg
+                    rn = from_l.record.row_number
+                    if !(rn in seen); push!(seen, rn); push!(ids, rn); end
+                    last_leg = from_l
+                end
+                if i == n_cnx && !(from_l === to_l)
+                    if to_l !== last_leg
+                        rn = to_l.record.row_number
+                        if !(rn in seen); push!(seen, rn); push!(ids, rn); end
+                        last_leg = to_l
+                    end
+                end
+            end
+        end
+        pt_dict = _fetch_passthrough(store::DuckDBStore, pt_source, pt_key_col, pt_names, ids)
+        pt_default = _passthrough_default(length(pt_names))
     end
 
     n = 0
     for (itn_idx, itn) in enumerate(itineraries)
-        # Flatten connections into a leg list with inbound connection metadata
-        legs_out = Tuple{GraphLeg, String, Int, Int, Int32}[]  # (leg, cnx_type, cnx_time, mct, mct_id)
+        legs_out = Tuple{GraphLeg, String, Int, Int, Int32}[]
         n_cnx = length(itn.connections)
         for (i, cp) in enumerate(itn.connections)
             from_l = cp.from_leg::GraphLeg
@@ -650,21 +709,20 @@ function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::Flight
             is_nonstop = cp.from_leg === cp.to_leg
             mid = cp.mct_result.mct_id
             if i == 1
-                # First leg: L if nonstop itinerary, C/S if connecting
                 ct = is_nonstop && n_cnx == 1 ? "L" : (cp.is_through ? "S" : "C")
                 push!(legs_out, (from_l, ct, 0, 0, Int32(0)))
             else
                 ct = cp.is_through ? "S" : "C"
                 push!(legs_out, (from_l, ct, Int(cp.cnx_time), Int(cp.mct), mid))
             end
-            # Final arriving leg of a connecting itinerary
             if i == n_cnx && !is_nonstop
                 push!(legs_out, (to_l, "C", Int(cp.cnx_time), Int(cp.mct), mid))
             end
         end
 
         for (seq, (leg, cnx_type, cnx_time, mct_val, mct_id)) in enumerate(legs_out)
-            n += _write_itn_leg_row(io, itn_idx, seq, leg, cnx_type, cnx_time, mct_val, mct_id, itn, date)
+            pt_cells = pt_active ? get(pt_dict, leg.record.row_number, pt_default) : pt_default
+            n += _write_itn_leg_row(io, itn_idx, seq, leg, cnx_type, cnx_time, mct_val, mct_id, itn, date, pt_cells)
         end
     end
     return n
@@ -672,13 +730,14 @@ end
 
 function _write_itn_leg_row(io::IO, itn_idx, leg_seq, leg::GraphLeg,
                             cnx_type::String, cnx_time::Int, mct_val::Int, mct_id::Int32,
-                            itn, date::Date)::Int
+                            itn, date::Date,
+                            pt_cells::Vector{String} = String[])::Int
     r = leg.record
     flags = _resolve_flags(r)
     org = strip(String(r.departure_station))
     dst = strip(String(r.arrival_station))
 
-    _write_row(io, [
+    row = Any[
         itn_idx, leg_seq,
         Int(r.record_serial), Int(r.row_number),
         strip(String(r.carrier)), Int(r.flight_number), r.operational_suffix,
@@ -696,7 +755,9 @@ function _write_itn_leg_row(io::IO, itn_idx, leg_seq, leg::GraphLeg,
         is_international(itn.status),
         is_interline(itn.status),
         is_codeshare(itn.status),
-    ])
+    ]
+    isempty(pt_cells) || append!(row, pt_cells)
+    _write_row(io, row)
     return 1
 end
 

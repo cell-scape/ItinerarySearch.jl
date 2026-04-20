@@ -613,4 +613,85 @@ using Dates
         end
     end
 
+    # ── write_itineraries passthrough ─────────────────────────────────────────
+
+    @testset "write_itineraries passthrough" begin
+        using ItinerarySearch: write_itineraries, search_itineraries,
+            build_graph!, ingest_newssim!, SearchConfig, SearchConstraints,
+            RuntimeContext, build_itn_rules
+        using DuckDB
+
+        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+        target = Date(2026, 2, 26)
+
+        store = DuckDBStore()
+        try
+            ingest_newssim!(store, demo_csv)
+            config = SearchConfig()
+            graph = build_graph!(store, config, target; source = :newssim)
+            ctx = RuntimeContext(
+                config = config,
+                constraints = SearchConstraints(),
+                itn_rules = build_itn_rules(config),
+            )
+            itns = copy(search_itineraries(graph.stations, StationCode("ORD"), StationCode("LHR"), target, ctx))
+            @test !isempty(itns)
+
+            # ── Baseline unchanged ──
+            io1 = IOBuffer()
+            n1 = write_itineraries(io1, itns, graph, target)
+            out1 = String(take!(io1))
+            io2 = IOBuffer()
+            n2 = write_itineraries(io2, itns, graph, target; passthrough_columns = String[])
+            @test String(take!(io2)) == out1
+            @test n2 == n1
+
+            # ── Single column ──
+            io = IOBuffer()
+            write_itineraries(io, itns, graph, target; store = store,
+                              passthrough_columns = ["prbd"])
+            out = String(take!(io))
+            lines = split(out, '\n'; keepempty = false)
+            @test endswith(lines[1], ",prbd")
+            # Data row has the appropriate trailing cell count (header cols + 1)
+            n_header_cols = count(==(','), lines[1]) + 1
+            for line in lines[2:end]
+                @test count(==(','), line) + 1 == n_header_cols
+            end
+
+            # ── Fan-out: same row_number across multiple itinerary rows has same passthrough ──
+            # Group data rows by their row_number (col index 3 in the output, 1-indexed)
+            # and verify the last column (the passthrough) is constant per row_number.
+            data = split.(lines[2:end], ',')
+            by_rn = Dict{String,Set{String}}()
+            for row in data
+                rn = row[3]               # record_serial
+                pt_val = row[end]
+                push!(get!(by_rn, rn, Set{String}()), pt_val)
+            end
+            for (_, vals) in by_rn
+                @test length(vals) == 1
+            end
+
+            # ── Missing column errors, nothing written ──
+            io = IOBuffer()
+            @test_throws Exception write_itineraries(io, itns, graph, target; store = store,
+                                                     passthrough_columns = ["nonexistent"])
+            @test isempty(take!(io))
+
+            # ── Empty itineraries with passthrough: header includes passthrough names, no data rows ──
+            io = IOBuffer()
+            empty_itns = typeof(itns)()
+            n = write_itineraries(io, empty_itns, graph, target; store = store,
+                                  passthrough_columns = ["prbd"])
+            @test n == 0
+            out = String(take!(io))
+            lines = split(out, '\n'; keepempty = false)
+            @test length(lines) == 1  # header only
+            @test endswith(lines[1], ",prbd")
+        finally
+            close(store)
+        end
+    end
+
 end
