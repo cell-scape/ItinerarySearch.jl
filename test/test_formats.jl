@@ -437,4 +437,40 @@ using Dates
         @test rows[3].itinerary_id == 3
     end
 
+    # ── Passthrough helpers ────────────────────────────────────────────────────
+
+    @testset "passthrough helpers: _quote_ident" begin
+        using ItinerarySearch: _quote_ident
+        @test _quote_ident("prbd") == "\"prbd\""
+        @test _quote_ident("DEI_127") == "\"DEI_127\""
+        @test _quote_ident("weird\"name") == "\"weird\"\"name\""
+        @test _quote_ident("has space") == "\"has space\""
+    end
+
+    @testset "passthrough helpers: _render_cell" begin
+        using ItinerarySearch: _render_cell
+        @test _render_cell(missing) == ""
+        @test _render_cell(nothing) == ""
+        @test _render_cell("plain") == "plain"
+        @test _render_cell(42) == "42"
+        @test _render_cell(3.14) == "3.14"
+        # CSV-quote when cell contains delimiter, newline, CR, or double-quote
+        @test _render_cell("a,b") == "\"a,b\""
+        @test _render_cell("a\nb") == "\"a\nb\""
+        @test _render_cell("a\"b") == "\"a\"\"b\""
+        @test _render_cell("a\rb") == "\"a\rb\""
+        # Non-string types that happen to stringify with a delimiter get quoted too
+        @test _render_cell(1.5) == "1.5"  # no delimiter, stays bare
+    end
+
+    @testset "passthrough helpers: _passthrough_source" begin
+        using ItinerarySearch: _passthrough_source
+        g_ssim = FlightGraph(source = :ssim)
+        g_new = FlightGraph(source = :newssim)
+        @test _passthrough_source(g_ssim) == (table = "legs_with_operating", key_col = "row_id")
+        @test _passthrough_source(g_new) == (table = "newssim",              key_col = "row_number")
+        g_bad = FlightGraph(source = :oops)
+        @test_throws ArgumentError _passthrough_source(g_bad)
+    end
+
 end

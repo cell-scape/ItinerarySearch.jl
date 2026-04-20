@@ -341,6 +341,37 @@ end
 
 # ── Delimited file export ────────────────────────────────────────────────────
 
+# ── Passthrough-column helpers ──────────────────────────────────────────────
+
+# Identifier-quote a column name for DuckDB: wrap in double quotes and escape
+# embedded double quotes by doubling them. Protects against injection via
+# user-supplied column names.
+_quote_ident(name::AbstractString) = "\"" * replace(String(name), "\"" => "\"\"") * "\""
+
+# Render a single cell value for passthrough output. Returns a String.
+# missing/nothing → empty string. Strings containing `,`, `"`, `\n`, or `\r`
+# are CSV-quoted with embedded `"` doubled. All other types stringify via
+# `string(v)` and are CSV-quoted if the resulting string needs it.
+function _render_cell(v)::String
+    (v === missing || v === nothing) && return ""
+    s = v isa AbstractString ? String(v) : string(v)
+    needs_quote = any(c -> c == ',' || c == '"' || c == '\n' || c == '\r', s)
+    needs_quote ? "\"" * replace(s, "\"" => "\"\"") * "\"" : s
+end
+
+# Resolve the DuckDB source table + key column for passthrough based on how
+# the graph was built. This is the single place that knows the mapping
+# between ingest path and source table.
+function _passthrough_source(graph::FlightGraph)::@NamedTuple{table::String, key_col::String}
+    if graph.source === :newssim
+        return (table = "newssim", key_col = "row_number")
+    elseif graph.source === :ssim
+        return (table = "legs_with_operating", key_col = "row_id")
+    else
+        throw(ArgumentError("Unknown graph.source: $(graph.source) (expected :ssim or :newssim)"))
+    end
+end
+
 const _DELIM = ','
 
 function _write_row(io::IO, vals)
