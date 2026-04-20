@@ -518,8 +518,28 @@ end
 # Returns
 - `::Int`: number of rows written
 """
-function write_legs(io::IO, graph::FlightGraph, date::Date)::Int
-    _write_row(io, [
+function write_legs(
+    io::IO,
+    graph::FlightGraph,
+    date::Date;
+    store::Union{DuckDBStore,Nothing} = nothing,
+    passthrough_columns::Vector{String} = String[],
+)::Int
+    # Prepare passthrough (validates, probes, returns trimmed names + source info).
+    # When empty, short-circuit to the fast path with no store access.
+    pt_active = !isempty(passthrough_columns)
+    pt_names = String[]
+    pt_source = ""
+    pt_key_col = ""
+    if pt_active
+        prep = _prepare_passthrough(graph, store, passthrough_columns)
+        pt_names = prep.names
+        pt_source = prep.source
+        pt_key_col = prep.key_col
+    end
+
+    # Header
+    header = [
         "record_serial", "row_number",
         "carrier", "flight_number", "operational_suffix", "itinerary_var_id", "leg_sequence_number", "service_type",
         "operating_carrier", "operating_flight_number", "is_operating",
@@ -529,7 +549,28 @@ function write_legs(io::IO, graph::FlightGraph, date::Date)::Int
         "distance_miles",
         "dep_intl_dom", "arr_intl_dom",
         "dei_10", "dei_127", "wet_lease", "aircraft_owner",
-    ])
+    ]
+    pt_active && append!(header, pt_names)
+    _write_row(io, header)
+
+    # Collect row_numbers we'll emit (deduped, in first-appearance order),
+    # and pre-fetch passthrough values in one batched query.
+    pt_dict = Dict{UInt64,Vector{String}}()
+    pt_default = String[]
+    if pt_active
+        seen = Set{UInt64}()
+        ids = UInt64[]
+        for leg in graph.legs
+            _operates_on(leg.record, date) || continue
+            rn = leg.record.row_number
+            if !(rn in seen)
+                push!(seen, rn)
+                push!(ids, rn)
+            end
+        end
+        pt_dict = _fetch_passthrough(store::DuckDBStore, pt_source, pt_key_col, pt_names, ids)
+        pt_default = _passthrough_default(length(pt_names))
+    end
 
     n = 0
     for leg in graph.legs
@@ -539,7 +580,7 @@ function write_legs(io::IO, graph::FlightGraph, date::Date)::Int
         org = strip(String(r.departure_station))
         dst = strip(String(r.arrival_station))
 
-        _write_row(io, [
+        row = Any[
             Int(r.record_serial), Int(r.row_number),
             strip(String(r.carrier)), Int(r.flight_number), r.operational_suffix,
             Int(r.itinerary_var_id), Int(r.leg_sequence_number), r.service_type,
@@ -550,7 +591,12 @@ function write_legs(io::IO, graph::FlightGraph, date::Date)::Int
             _miles(leg.distance),
             r.dep_intl_dom, r.arr_intl_dom,
             strip(r.dei_10), strip(r.dei_127), r.wet_lease, flags.owner,
-        ])
+        ]
+        if pt_active
+            cells = get(pt_dict, r.row_number, pt_default)
+            append!(row, cells)
+        end
+        _write_row(io, row)
         n += 1
     end
     return n

@@ -536,4 +536,81 @@ using Dates
         end
     end
 
+    # ── write_legs passthrough ─────────────────────────────────────────────────
+
+    @testset "write_legs passthrough" begin
+        using ItinerarySearch: write_legs, build_graph!, ingest_newssim!, SearchConfig
+        using DuckDB
+
+        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+        target = Date(2026, 2, 26)  # inside the demo fixture's window
+
+        # Baseline unchanged: kwargs default, no store access.
+        store = DuckDBStore()
+        try
+            ingest_newssim!(store, demo_csv)
+            graph = build_graph!(store, SearchConfig(), target; source = :newssim)
+
+            io1 = IOBuffer()
+            n1 = write_legs(io1, graph, target)
+            out1 = String(take!(io1))
+
+            # With explicit empty passthrough_columns + nil store, identical output
+            io2 = IOBuffer()
+            n2 = write_legs(io2, graph, target; passthrough_columns = String[])
+            @test String(take!(io2)) == out1
+            @test n2 == n1
+
+            # Header of baseline ends with the expected canonical column (no passthrough)
+            header1 = first(split(out1, '\n'))
+            @test endswith(header1, "aircraft_owner")
+        finally
+            close(store)
+        end
+
+        # Single-column round-trip, multi-column ordering, fan-out correctness, errors
+        store = DuckDBStore()
+        try
+            ingest_newssim!(store, demo_csv)
+            graph = build_graph!(store, SearchConfig(), target; source = :newssim)
+
+            # ── Single column ──
+            io = IOBuffer()
+            n = write_legs(io, graph, target; store = store,
+                           passthrough_columns = ["prbd"])
+            out = String(take!(io))
+            header = first(split(out, '\n'))
+            @test endswith(header, ",prbd")
+            @test n > 0
+
+            # ── Multi-column ordering (case preserved verbatim in header) ──
+            io = IOBuffer()
+            write_legs(io, graph, target; store = store,
+                       passthrough_columns = ["prbd", "aircraft_owner", "DEI_127"])
+            header = first(split(String(take!(io)), '\n'))
+            @test endswith(header, ",prbd,aircraft_owner,DEI_127")
+
+            # ── Missing column: error fires before header ──
+            io = IOBuffer()
+            @test_throws Exception write_legs(io, graph, target; store = store,
+                                              passthrough_columns = ["nonexistent_col"])
+            @test isempty(take!(io))
+
+            # ── store === nothing with non-empty cols → ArgumentError ──
+            io = IOBuffer()
+            @test_throws ArgumentError write_legs(io, graph, target;
+                                                  passthrough_columns = ["prbd"])
+            @test isempty(take!(io))
+
+            # ── Duplicates / blanks ──
+            io = IOBuffer()
+            @test_throws ArgumentError write_legs(io, graph, target; store = store,
+                                                  passthrough_columns = ["prbd", "prbd"])
+            @test_throws ArgumentError write_legs(io, graph, target; store = store,
+                                                  passthrough_columns = ["prbd", "", "carrier"])
+        finally
+            close(store)
+        end
+    end
+
 end
