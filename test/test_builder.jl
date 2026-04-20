@@ -323,4 +323,27 @@ end
         close(store2)
     end
 
+    @testset "FlightGraph.source field" begin
+        # Default constructor uses :ssim
+        g = FlightGraph()
+        @test g.source == :ssim
+
+        # Keyword constructor accepts :newssim
+        g2 = FlightGraph(source = :newssim)
+        @test g2.source == :newssim
+    end
+
+    @testset "build_graph! propagates source kwarg" begin
+        store = DuckDBStore()
+        try
+            demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+            ingest_newssim!(store, demo_csv)
+            # Pick any date inside the demo fixture's window
+            graph = build_graph!(store, SearchConfig(), Date(2026, 2, 26); source = :newssim)
+            @test graph.source == :newssim
+        finally
+            close(store)
+        end
+    end
+
 end

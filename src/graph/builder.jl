@@ -110,6 +110,8 @@ end
 - `build_id::UUID` — unique identifier for this build instance
 - `build_stats::BuildStats` — per-build instrumentation accumulator
 - `config::SearchConfig` — snapshot of the config used to build this graph
+- `source::Symbol` — ingest source (`:ssim` or `:newssim`); determines which
+  DuckDB table `row_number` keys into for passthrough-column resolution
 - `geo_stats::GeoStats` — station stats aggregated by metro, state, country, and IATA region
 """
 @kwdef mutable struct FlightGraph
@@ -130,6 +132,10 @@ end
 
     # Configuration snapshot
     config::SearchConfig = SearchConfig()
+
+    # Ingest source — which DuckDB table the `row_number` fields key into.
+    # :ssim means legs_with_operating; :newssim means the newssim table.
+    source::Symbol = :ssim
 
     # Geographic stats aggregation
     geo_stats::GeoStats = (
@@ -504,6 +510,7 @@ function build_graph!(
         build_stats = ctx.build_stats,
         config = config,
         geo_stats = geo,
+        source = source,
     )
 
     @info "Graph built" build_time_ms = round(build_time / 1.0e6; digits = 1)
