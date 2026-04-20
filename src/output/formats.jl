@@ -372,6 +372,79 @@ function _passthrough_source(graph::FlightGraph)::@NamedTuple{table::String, key
     end
 end
 
+# Validate kwargs and probe column existence. Returns the trimmed column
+# names together with the source table and key column. Throws ArgumentError
+# for validation failures; lets DuckDB errors propagate for column-existence
+# failures (the DuckDB error already names the missing column).
+function _prepare_passthrough(
+    graph::FlightGraph,
+    store::Union{DuckDBStore,Nothing},
+    cols::Vector{String},
+)::@NamedTuple{names::Vector{String}, source::String, key_col::String}
+    store === nothing && throw(ArgumentError("passthrough_columns requires a store"))
+
+    # Trim + collect, tracking positions of blanks and duplicates
+    trimmed = [String(strip(c)) for c in cols]
+    blank_positions = [i for (i, c) in enumerate(trimmed) if isempty(c)]
+    isempty(blank_positions) || throw(ArgumentError(
+        "passthrough_columns contains blank entries at positions: $(blank_positions)"))
+
+    seen = Set{String}()
+    dupes = String[]
+    for c in trimmed
+        if c in seen
+            c in dupes || push!(dupes, c)
+        else
+            push!(seen, c)
+        end
+    end
+    isempty(dupes) || throw(ArgumentError(
+        "passthrough_columns has duplicate entries: $(dupes)"))
+
+    src = _passthrough_source(graph)
+
+    # Probe: LIMIT 0 to validate column existence without materialising rows.
+    # DuckDB's error identifies which column is missing.
+    col_sql = join((_quote_ident(c) for c in trimmed), ", ")
+    probe_sql = "SELECT $(_quote_ident(src.key_col)), $col_sql FROM $(src.table) LIMIT 0"
+    DBInterface.execute(store.db, probe_sql)  # throws on missing columns
+
+    return (names = trimmed, source = src.table, key_col = src.key_col)
+end
+
+# Fetch passthrough cells for the given row_numbers in one batched query.
+# Returns Dict{UInt64, Vector{String}} where each Vector is length(cols).
+# Integer IDs are string-interpolated into the IN clause (matches the
+# existing `resolve_legs` pattern; UInt64 values cannot carry injection
+# payload). Column names are always identifier-quoted via `_quote_ident`.
+function _fetch_passthrough(
+    store::DuckDBStore,
+    source_table::String,
+    key_col::String,
+    cols::Vector{String},
+    row_ids::Vector{UInt64},
+)::Dict{UInt64,Vector{String}}
+    out = Dict{UInt64,Vector{String}}()
+    isempty(row_ids) && return out
+
+    id_list = join(row_ids, ",")
+    col_sql = join((_quote_ident(c) for c in cols), ", ")
+    sql = "SELECT $(_quote_ident(key_col)), $col_sql FROM $(source_table) " *
+          "WHERE $(_quote_ident(key_col)) IN ($(id_list))"
+    result = DBInterface.execute(store.db, sql)
+
+    key_sym = Symbol(key_col)
+    col_syms = [Symbol(c) for c in cols]
+    for r in result
+        k = UInt64(getproperty(r, key_sym))
+        out[k] = [_render_cell(getproperty(r, s)) for s in col_syms]
+    end
+    return out
+end
+
+# Default value for row_numbers not present in the fetched dict: N empty cells.
+_passthrough_default(n::Int) = fill("", n)
+
 const _DELIM = ','
 
 function _write_row(io::IO, vals)

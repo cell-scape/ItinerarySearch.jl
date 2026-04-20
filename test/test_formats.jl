@@ -473,4 +473,67 @@ using Dates
         @test_throws ArgumentError _passthrough_source(g_bad)
     end
 
+    @testset "passthrough helpers: _prepare_passthrough validation" begin
+        using ItinerarySearch: _prepare_passthrough
+        using DuckDB
+
+        # Setup a tiny DuckDB store with a synthetic newssim-like table so the
+        # LIMIT 0 probe can succeed.
+        store = DuckDBStore()
+        try
+            DBInterface.execute(store.db, "CREATE TABLE newssim (row_number BIGINT, prbd VARCHAR)")
+            g = FlightGraph(source = :newssim)
+
+            # Happy path: returns trimmed names and source info
+            result = _prepare_passthrough(g, store, ["  prbd  "])
+            @test result.names == ["prbd"]
+            @test result.source == "newssim"
+            @test result.key_col == "row_number"
+
+            # store === nothing with non-empty cols → ArgumentError
+            @test_throws ArgumentError _prepare_passthrough(g, nothing, ["prbd"])
+
+            # Duplicate names after trim → ArgumentError
+            @test_throws ArgumentError _prepare_passthrough(g, store, ["prbd", "  prbd"])
+
+            # Blank / empty entry → ArgumentError
+            @test_throws ArgumentError _prepare_passthrough(g, store, ["prbd", ""])
+            @test_throws ArgumentError _prepare_passthrough(g, store, ["prbd", "   "])
+
+            # Column not in source table — DuckDB error propagates
+            @test_throws Exception _prepare_passthrough(g, store, ["nonexistent"])
+        finally
+            close(store)
+        end
+    end
+
+    @testset "passthrough helpers: _fetch_passthrough" begin
+        using ItinerarySearch: _fetch_passthrough
+        using DuckDB
+
+        store = DuckDBStore()
+        try
+            DBInterface.execute(store.db,
+                "CREATE TABLE newssim (row_number BIGINT, prbd VARCHAR, owner VARCHAR)")
+            DBInterface.execute(store.db,
+                "INSERT INTO newssim VALUES (1, 'X', 'UA'), (2, 'Y,Z', 'DL'), (3, NULL, 'AA')")
+
+            dict = _fetch_passthrough(store, "newssim", "row_number", ["prbd", "owner"],
+                                      UInt64[1, 2, 3])
+            @test dict[UInt64(1)] == ["X", "UA"]
+            @test dict[UInt64(2)] == ["\"Y,Z\"", "DL"]   # CSV-quoted because it contains ','
+            @test dict[UInt64(3)] == ["", "AA"]           # NULL → empty string
+
+            # Empty input returns empty dict, no query executed
+            dict2 = _fetch_passthrough(store, "newssim", "row_number", ["prbd"], UInt64[])
+            @test isempty(dict2)
+
+            # Missing row_number absent from dict (not an error; caller handles fallback)
+            dict3 = _fetch_passthrough(store, "newssim", "row_number", ["prbd"], UInt64[99])
+            @test !haskey(dict3, UInt64(99))
+        finally
+            close(store)
+        end
+    end
+
 end
