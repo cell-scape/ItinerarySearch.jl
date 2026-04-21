@@ -2,6 +2,7 @@ using Test
 using ItinerarySearch
 using InlineStrings
 using Dates
+using JSON3
 
 @testset "Output Formats" begin
 
@@ -803,6 +804,147 @@ using Dates
                 rows = collect(q)
                 @test !isempty(rows)
                 @test String(rows[1].test_csv_quote) == "a,b"
+            end
+        finally
+            close(store)
+        end
+    end
+
+    # ── itinerary_legs / itinerary_legs_multi / itinerary_legs_json ───────────
+
+    @testset "itinerary_legs + multi + json" begin
+        using ItinerarySearch: itinerary_legs, itinerary_legs_multi,
+            itinerary_legs_json, ingest_newssim!, build_graph!,
+            SearchConfig, SearchConstraints, RuntimeContext, build_itn_rules
+
+        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+        target = Date(2026, 2, 26)
+
+        store = DuckDBStore()
+        try
+            ingest_newssim!(store, demo_csv)
+            config = SearchConfig()
+            graph = build_graph!(store, config, target; source = :newssim)
+            ctx = RuntimeContext(
+                config = config,
+                constraints = SearchConstraints(),
+                itn_rules = build_itn_rules(config),
+            )
+
+            ord = StationCode("ORD")
+            lhr = StationCode("LHR")
+
+            # ── itinerary_legs single O-D ─────────────────────────────────────
+            @testset "itinerary_legs single O-D" begin
+                refs = itinerary_legs(graph.stations, ord, lhr, target, ctx)
+                @test refs isa Vector{ItineraryRef}
+                @test !isempty(refs)
+
+                for ref in refs
+                    @test !isempty(ref.legs)
+                    @test length(ref.legs) == ref.num_stops + 1
+                    @test ref.elapsed_minutes > 0
+                    @test ref.distance_miles > 0
+                    @test ref.circuity >= 1.0f0
+                    # Path endpoints match the requested O-D
+                    @test String(ref.legs[1].departure_station) == "ORD"
+                    @test String(ref.legs[end].arrival_station) == "LHR"
+                    # Non-terminal legs have a connection record
+                    @test length(ref.connections) == ref.num_stops
+                end
+
+                # Sorted by stops ascending (nonstops first)
+                stops_seq = [r.num_stops for r in refs]
+                @test stops_seq == sort(stops_seq)
+
+                # No-results O-D does not throw; returns empty vector
+                xxx = StationCode("XXX")
+                @test isempty(itinerary_legs(graph.stations, ord, xxx, target, ctx))
+            end
+
+            # ── itinerary_legs_multi shapes ───────────────────────────────────
+            @testset "itinerary_legs_multi shapes" begin
+                # Single pair
+                r1 = itinerary_legs_multi(graph.stations, ctx;
+                    origins = "ORD", destinations = "LHR", dates = target)
+                @test haskey(r1, target)
+                @test haskey(r1[target], "ORD")
+                @test haskey(r1[target]["ORD"], "LHR")
+
+                # Paired O-Ds (default): origins[i]→destinations[i]
+                r2 = itinerary_legs_multi(graph.stations, ctx;
+                    origins = ["ORD", "DEN"],
+                    destinations = ["LHR", "SFO"],
+                    dates = target)
+                if haskey(r2, target)
+                    orgs_seen = keys(r2[target])
+                    # Paired means we never see the "off-diagonal" pair
+                    if "ORD" in orgs_seen
+                        @test !haskey(r2[target]["ORD"], "SFO")
+                    end
+                    if "DEN" in orgs_seen
+                        @test !haskey(r2[target]["DEN"], "LHR")
+                    end
+                end
+
+                # Cross-product
+                r3 = itinerary_legs_multi(graph.stations, ctx;
+                    origins = ["ORD", "DEN"],
+                    destinations = ["LHR", "SFO"],
+                    dates = target, cross = true)
+                # Each origin may be present; the API allows empty inner dicts to
+                # be omitted, so we just assert no extra keys appear.
+                if haskey(r3, target)
+                    for (org, dsts) in r3[target]
+                        @test org in ("ORD", "DEN")
+                        for dst in keys(dsts)
+                            @test dst in ("LHR", "SFO")
+                        end
+                    end
+                end
+
+                # Same origin/destination is filtered out
+                r4 = itinerary_legs_multi(graph.stations, ctx;
+                    origins = "ORD", destinations = "ORD", dates = target)
+                @test isempty(r4) || !haskey(get(r4, target, Dict()), "ORD")
+            end
+
+            # ── itinerary_legs_json ──────────────────────────────────────────
+            @testset "itinerary_legs_json valid JSON, compact vs full" begin
+                full_str = itinerary_legs_json(graph.stations, ctx;
+                    origins = "ORD", destinations = "LHR", dates = target)
+                compact_str = itinerary_legs_json(graph.stations, ctx;
+                    origins = "ORD", destinations = "LHR", dates = target,
+                    compact = true)
+
+                # Both parse as valid JSON
+                full = JSON3.read(full_str)
+                compact = JSON3.read(compact_str)
+
+                # Structure: date → origin → destination → [itineraries]
+                date_key = string(target)
+                @test haskey(full, date_key)
+                @test haskey(full[date_key], "ORD")
+                @test haskey(full[date_key]["ORD"], "LHR")
+                itns_full = full[date_key]["ORD"]["LHR"]
+                itns_compact = compact[date_key]["ORD"]["LHR"]
+                @test !isempty(itns_full)
+                @test length(itns_full) == length(itns_compact)
+
+                # Full form includes "legs" array on each itinerary; compact omits it
+                for itn in itns_full
+                    @test haskey(itn, :legs)
+                    @test !isempty(itn.legs)
+                    @test haskey(itn, :flights)
+                    @test haskey(itn, :num_stops)
+                end
+                for itn in itns_compact
+                    @test !haskey(itn, :legs)
+                    @test haskey(itn, :flights)
+                end
+
+                # Compact output is strictly smaller (no legs payload)
+                @test length(compact_str) < length(full_str)
             end
         finally
             close(store)
