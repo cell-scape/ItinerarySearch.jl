@@ -233,7 +233,7 @@ helper accessors, not stored — keeps allocations minimal.
 # Fields
 - `legs::Vector{LegKey}` — ordered leg references
 - `connections::Vector{ConnectionRef}` — MCT info for each intermediate connection (length = num_stops)
-- `num_stops::Int` — number of intermediate stops (0 = nonstop)
+- `num_stops::Int32` — number of intermediate stops (0 = nonstop)
 - `elapsed_minutes::Int32` — total elapsed time (minutes, UTC)
 - `flight_minutes::Int32` — total in-flight block time (minutes, UTC)
 - `layover_minutes::Int32` — total ground/connection time (minutes)
@@ -243,7 +243,7 @@ helper accessors, not stored — keeps allocations minimal.
 @kwdef struct ItineraryRef
     legs::Vector{LegKey} = LegKey[]
     connections::Vector{ConnectionRef} = ConnectionRef[]
-    num_stops::Int = 0
+    num_stops::Int32 = Int32(0)
     elapsed_minutes::Int32 = Int32(0)
     flight_minutes::Int32 = Int32(0)
     layover_minutes::Int32 = Int32(0)
