@@ -1,7 +1,16 @@
-.PHONY: test demo demo-newssim bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve mct-inspect mct-inspect-styled mct-replay sysimage app juliac
+.PHONY: test test-static test-all demo demo-newssim bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve mct-inspect mct-inspect-styled mct-replay sysimage app juliac
 
-# Run full test suite
+# Fast dev test loop — skips JET + Aqua (~25s saved). Use `make test-all` for
+# full coverage locally; CI should run `make test-all` to get static checks.
 test:
+	ITINSEARCH_SKIP_STATIC=1 julia --project=. -e 'using Pkg; Pkg.test()'
+
+# Static analysis only (JET + Aqua). Runs in ~25s against a warm precompile cache.
+test-static:
+	ITINSEARCH_ONLY_STATIC=1 julia --project=. -e 'using Pkg; Pkg.test()'
+
+# Full suite — everything, including JET + Aqua. Preserves the original behaviour.
+test-all:
 	julia --project=. -e 'using Pkg; Pkg.test()'
 
 # Full demo: load, search, CSV, JSON, visualizations (3 days)

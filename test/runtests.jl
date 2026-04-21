@@ -105,7 +105,21 @@ import ItinerarySearch:
 
 include("test_helpers.jl")
 
+# Test subset selection via environment variables:
+#   ITINSEARCH_SKIP_STATIC=1 → skip test_jet_aqua.jl (used by `make test` for fast iteration)
+#   ITINSEARCH_ONLY_STATIC=1 → run only test_jet_aqua.jl (used by `make test-static`)
+# Default (neither set) runs everything — used by `make test-all`.
+const ITINSEARCH_ONLY_STATIC = get(ENV, "ITINSEARCH_ONLY_STATIC", "0") == "1"
+const ITINSEARCH_SKIP_STATIC = get(ENV, "ITINSEARCH_SKIP_STATIC", "0") == "1"
+if ITINSEARCH_ONLY_STATIC && ITINSEARCH_SKIP_STATIC
+    error("ITINSEARCH_ONLY_STATIC and ITINSEARCH_SKIP_STATIC are mutually exclusive")
+end
+
 @testset "ItinerarySearch" begin
+    # Static analysis (JET + Aqua) runs first so `make test-static` can stop here.
+    ITINSEARCH_SKIP_STATIC || include("test_jet_aqua.jl")
+
+    if !ITINSEARCH_ONLY_STATIC
     @testset "Module loads" begin
         @test true  # Module loaded successfully
     end
@@ -151,7 +165,6 @@ include("test_helpers.jl")
         @test_throws ErrorException parse_mct_status("XX")
     end
 
-    include("test_jet_aqua.jl")
     include("test_status.jl")
     include("test_stats.jl")
     include("test_graph_types.jl")
@@ -704,4 +717,5 @@ A1V22C,7,UA,972,N,UA,972,ORD,BRU,2026-06-16T18:00:00.0,2026-06-17T09:00:00.0,202
 
         rm(tmpfile)
     end
+    end  # if !ITINSEARCH_ONLY_STATIC
 end
