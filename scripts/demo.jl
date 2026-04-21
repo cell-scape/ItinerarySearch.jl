@@ -179,6 +179,7 @@ for day_offset in 0:(n_days-1)
     itns_file = joinpath(outdir, "itineraries_$(target).csv")
     total_itns = 0
     total_rows = 0
+    all_itns = Itinerary[]
     open(itns_file, "w") do io
         write_itineraries(io, Itinerary[], graph, target; header=true)
 
@@ -191,11 +192,25 @@ for day_offset in 0:(n_days-1)
                 n = write_itineraries(io, copy(itineraries), graph, target; header=false)
                 total_itns += length(itineraries)
                 total_rows += n
+                append!(all_itns, copy(itineraries))
                 println("[$(target)]   $(origin)→$(dest): $(length(itineraries)) itineraries ($(n) rows) in $(dt)s")
             else
                 println("[$(target)]   $(origin)→$(dest): no results ($(dt)s)")
             end
         end
+    end
+
+    # Passthrough-columns example (NewSSIM only — picks two columns that live
+    # on the raw `newssim` table: `prbd` and `DEI_127`). The extra columns are
+    # fetched in one batched query and appended to each output row.
+    if use_newssim && !isempty(all_itns)
+        pt_file = joinpath(outdir, "itineraries_passthrough_$(target).csv")
+        open(pt_file, "w") do io
+            write_itineraries(io, all_itns, graph, target;
+                              store = store,
+                              passthrough_columns = ["prbd", "DEI_127"])
+        end
+        println("[$(target)] $(total_rows) rows with passthrough [prbd, DEI_127] → $(pt_file)")
     end
 
     # Write compact leg index — use flexible multi-search interface

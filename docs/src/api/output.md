@@ -39,6 +39,44 @@ write_itineraries
 write_trips
 ```
 
+### Passthrough Columns
+
+All three writers accept `store::DuckDBStore` and `passthrough_columns::Vector{String}` keyword arguments that append arbitrary columns from the original ingested schedule table to each output row. This is the mechanism for preserving input-CSV fields — business identifiers, operational metadata, anything in the source that isn't among the canonical columns — without plumbing them through the graph structs.
+
+The writer issues one batched SQL query keyed by `row_number` against the source table the graph was built from:
+
+| Graph source | Source table | Key column |
+|---|---|---|
+| `:newssim` (from `build_graph!(...; source=:newssim)`) | `newssim` | `row_number` |
+| `:ssim` (default) | `legs_with_operating` | `row_id` |
+
+Column names are user-supplied strings passed verbatim (case preserved, whitespace trimmed) and appended to the header in the order given. Validation and column-existence are checked before the header is written — an invalid kwarg or missing column raises before any output is produced.
+
+```julia
+using ItinerarySearch
+using Dates
+
+store = DuckDBStore()
+ingest_newssim!(store, "data/demo/sample_newssim.csv.gz")
+graph = build_graph!(store, SearchConfig(), Date(2026, 2, 26); source=:newssim)
+
+# Write itineraries with two extra columns preserved from the NewSSIM input
+open("itineraries.csv", "w") do io
+    write_itineraries(io, itineraries, graph, Date(2026, 2, 26);
+                      store = store,
+                      passthrough_columns = ["prbd", "DEI_127"])
+end
+```
+
+Empty `passthrough_columns` (the default) takes a fast path with no store access and produces byte-identical output to earlier versions of the writers.
+
+Error semantics:
+
+- `passthrough_columns` non-empty with `store === nothing` → `ArgumentError`.
+- Duplicate or blank column names → `ArgumentError`.
+- Column doesn't exist on the source table → DuckDB error propagates; no output is written.
+- Row from the graph not found in the source table → cells render as empty strings (lenient fallback).
+
 ## Visualizations
 
 All three functions write self-contained HTML files that open directly in a browser with no server required.
