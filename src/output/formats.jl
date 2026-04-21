@@ -500,7 +500,7 @@ function _operates_on(r, date::Date)::Bool
 end
 
 """
-    `function write_legs(io::IO, graph::FlightGraph, date::Date)::Int`
+    `function write_legs(io::IO, graph::FlightGraph, date::Date; store::Union{DuckDBStore,Nothing}=nothing, passthrough_columns::Vector{String}=String[])::Int`
 ---
 
 # Description
@@ -509,11 +509,17 @@ end
 - `is_operating` = true when this is the physical flight; false for codeshare
 - Codeshare legs have `operating_carrier`/`operating_flight_number` pointing to the
   operating carrier (from DEI 50); on operating legs these fields are empty
+- Optional `passthrough_columns` appends extra columns fetched from the source
+  table (requires `store`); validated before any output is written
 
 # Arguments
 1. `io::IO`: output stream
 2. `graph::FlightGraph`: built flight graph
 3. `date::Date`: target operating date (legs not operating on this date are skipped)
+
+# Keyword Arguments
+- `store::Union{DuckDBStore,Nothing}=nothing`: required when `passthrough_columns` is non-empty
+- `passthrough_columns::Vector{String}=String[]`: extra columns to append from source table
 
 # Returns
 - `::Int`: number of rows written
