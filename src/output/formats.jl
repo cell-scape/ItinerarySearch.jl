@@ -608,6 +608,45 @@ function write_legs(
     return n
 end
 
+# Flatten an itinerary into the sequence of (leg, cnx_type, cnx_time, mct_val, mct_id)
+# tuples that downstream writers emit, one row per leg. First leg of a single-leg
+# nonstop gets "L"; middle legs (and first leg of a multi-leg itinerary) get "S"
+# for through-segments and "C" for real connections; the final to_leg of a
+# non-nonstop final connection gets "C". cnx_time/mct/mct_id are zero for the
+# first leg and carry the connection values for subsequent legs. This is the
+# single source of truth for the flatten order used by both the row-emit loop
+# and the passthrough row_number collection pass.
+function _flatten_itinerary(itn::Itinerary)::Vector{Tuple{GraphLeg, String, Int, Int, Int32}}
+    legs_out = Tuple{GraphLeg, String, Int, Int, Int32}[]
+    n_cnx = length(itn.connections)
+    for (i, cp) in enumerate(itn.connections)
+        from_l = cp.from_leg::GraphLeg
+        to_l = cp.to_leg::GraphLeg
+        is_nonstop = cp.from_leg === cp.to_leg
+        mid = cp.mct_result.mct_id
+        if i == 1
+            ct = is_nonstop && n_cnx == 1 ? "L" : (cp.is_through ? "S" : "C")
+            push!(legs_out, (from_l, ct, 0, 0, Int32(0)))
+        else
+            ct = cp.is_through ? "S" : "C"
+            push!(legs_out, (from_l, ct, Int(cp.cnx_time), Int(cp.mct), mid))
+        end
+        if i == n_cnx && !is_nonstop
+            push!(legs_out, (to_l, "C", Int(cp.cnx_time), Int(cp.mct), mid))
+        end
+    end
+    return legs_out
+end
+
+# Append a row_number to `ids` if unseen; used by passthrough collection passes.
+@inline function _add_unique_rn!(ids::Vector{UInt64}, seen::Set{UInt64}, rn::UInt64)
+    if !(rn in seen)
+        push!(seen, rn)
+        push!(ids, rn)
+    end
+    return nothing
+end
+
 """
     `function write_itineraries(io::IO, itineraries::Vector{Itinerary}, graph::FlightGraph, date::Date; header::Bool=true, store::Union{DuckDBStore,Nothing}=nothing, passthrough_columns::Vector{String}=String[])::Int`
 ---
@@ -675,30 +714,16 @@ function write_itineraries(
     end
 
     # Collect row_numbers that will appear in output (deduped, in first-appearance order).
-    # Mirror the exact flatten logic below so the two passes agree on which legs emit.
+    # Uses the same _flatten_itinerary helper as the emit loop so both passes
+    # agree on which legs produce output rows.
     pt_dict = Dict{UInt64,Vector{String}}()
     pt_default = String[]
     if pt_active
         seen = Set{UInt64}()
         ids = UInt64[]
         for itn in itineraries
-            n_cnx = length(itn.connections)
-            last_leg = nothing
-            for (i, cp) in enumerate(itn.connections)
-                from_l = cp.from_leg::GraphLeg
-                to_l = cp.to_leg::GraphLeg
-                if from_l !== last_leg
-                    rn = from_l.record.row_number
-                    if !(rn in seen); push!(seen, rn); push!(ids, rn); end
-                    last_leg = from_l
-                end
-                if i == n_cnx && !(from_l === to_l)
-                    if to_l !== last_leg
-                        rn = to_l.record.row_number
-                        if !(rn in seen); push!(seen, rn); push!(ids, rn); end
-                        last_leg = to_l
-                    end
-                end
+            for (leg, _, _, _, _) in _flatten_itinerary(itn)
+                _add_unique_rn!(ids, seen, leg.record.row_number)
             end
         end
         pt_dict = _fetch_passthrough(store::DuckDBStore, pt_source, pt_key_col, pt_names, ids)
@@ -707,26 +732,7 @@ function write_itineraries(
 
     n = 0
     for (itn_idx, itn) in enumerate(itineraries)
-        legs_out = Tuple{GraphLeg, String, Int, Int, Int32}[]
-        n_cnx = length(itn.connections)
-        for (i, cp) in enumerate(itn.connections)
-            from_l = cp.from_leg::GraphLeg
-            to_l = cp.to_leg::GraphLeg
-            is_nonstop = cp.from_leg === cp.to_leg
-            mid = cp.mct_result.mct_id
-            if i == 1
-                ct = is_nonstop && n_cnx == 1 ? "L" : (cp.is_through ? "S" : "C")
-                push!(legs_out, (from_l, ct, 0, 0, Int32(0)))
-            else
-                ct = cp.is_through ? "S" : "C"
-                push!(legs_out, (from_l, ct, Int(cp.cnx_time), Int(cp.mct), mid))
-            end
-            if i == n_cnx && !is_nonstop
-                push!(legs_out, (to_l, "C", Int(cp.cnx_time), Int(cp.mct), mid))
-            end
-        end
-
-        for (seq, (leg, cnx_type, cnx_time, mct_val, mct_id)) in enumerate(legs_out)
+        for (seq, (leg, cnx_type, cnx_time, mct_val, mct_id)) in enumerate(_flatten_itinerary(itn))
             pt_cells = pt_active ? get(pt_dict, leg.record.row_number, pt_default) : pt_default
             n += _write_itn_leg_row(io, itn_idx, seq, leg, cnx_type, cnx_time, mct_val, mct_id, itn, date, pt_cells)
         end
@@ -833,7 +839,8 @@ function write_trips(
         _write_row(io, hdr)
     end
 
-    # Collect row_numbers (deduped, first-appearance order) — same flatten logic as emit loop
+    # Collect row_numbers (deduped, first-appearance order) — uses same
+    # _flatten_itinerary helper as the emit loop so both passes agree.
     pt_dict = Dict{UInt64,Vector{String}}()
     pt_default = String[]
     if pt_active
@@ -841,29 +848,8 @@ function write_trips(
         ids = UInt64[]
         for trip in trips
             for itn in trip.itineraries
-                n_cnx = length(itn.connections)
-                last_leg = nothing
-                for (i, cp) in enumerate(itn.connections)
-                    from_l = cp.from_leg::GraphLeg
-                    to_l = cp.to_leg::GraphLeg
-                    if from_l !== last_leg
-                        rn = from_l.record.row_number
-                        if !(rn in seen)
-                            push!(seen, rn)
-                            push!(ids, rn)
-                        end
-                        last_leg = from_l
-                    end
-                    if i == n_cnx && !(from_l === to_l)
-                        if to_l !== last_leg
-                            rn = to_l.record.row_number
-                            if !(rn in seen)
-                                push!(seen, rn)
-                                push!(ids, rn)
-                            end
-                            last_leg = to_l
-                        end
-                    end
+                for (leg, _, _, _, _) in _flatten_itinerary(itn)
+                    _add_unique_rn!(ids, seen, leg.record.row_number)
                 end
             end
         end
@@ -874,26 +860,7 @@ function write_trips(
     n = 0
     for trip in trips
         for (itn_seq, itn) in enumerate(trip.itineraries)
-            legs_out = Tuple{GraphLeg, String, Int, Int, Int32}[]
-            n_cnx = length(itn.connections)
-            for (i, cp) in enumerate(itn.connections)
-                from_l = cp.from_leg::GraphLeg
-                to_l = cp.to_leg::GraphLeg
-                is_nonstop = cp.from_leg === cp.to_leg
-                mid = cp.mct_result.mct_id
-                if i == 1
-                    ct = is_nonstop && n_cnx == 1 ? "L" : (cp.is_through ? "S" : "C")
-                    push!(legs_out, (from_l, ct, 0, 0, Int32(0)))
-                else
-                    ct = cp.is_through ? "S" : "C"
-                    push!(legs_out, (from_l, ct, Int(cp.cnx_time), Int(cp.mct), mid))
-                end
-                if i == n_cnx && !is_nonstop
-                    push!(legs_out, (to_l, "C", Int(cp.cnx_time), Int(cp.mct), mid))
-                end
-            end
-
-            for (seq, (leg, cnx_type, cnx_time, mct_val, mct_id)) in enumerate(legs_out)
+            for (seq, (leg, cnx_type, cnx_time, mct_val, mct_id)) in enumerate(_flatten_itinerary(itn))
                 r = leg.record
                 flags = _resolve_flags(r)
                 org = strip(String(r.departure_station))
