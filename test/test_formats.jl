@@ -537,89 +537,19 @@ using JSON3
         end
     end
 
-    # ── write_legs passthrough ─────────────────────────────────────────────────
+    # ── Passthrough tests with shared fixture ─────────────────────────────────
+    #
+    # write_legs / write_itineraries / write_trips / itinerary_legs* all rebuild
+    # the same demo graph with identical config. Sharing a single store + graph
+    # across them reduces this file's runtime noticeably. The round-trip testset
+    # further below keeps its own fixture because it mutates the schema via
+    # ALTER TABLE.
 
-    @testset "write_legs passthrough" begin
-        using ItinerarySearch: write_legs, build_graph!, ingest_newssim!, SearchConfig
-        using DuckDB
-
-        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
-        target = Date(2026, 2, 26)  # inside the demo fixture's window
-
-        # Baseline unchanged: kwargs default, no store access.
-        store = DuckDBStore()
-        try
-            ingest_newssim!(store, demo_csv)
-            graph = build_graph!(store, SearchConfig(), target; source = :newssim)
-
-            io1 = IOBuffer()
-            n1 = write_legs(io1, graph, target)
-            out1 = String(take!(io1))
-
-            # With explicit empty passthrough_columns + nil store, identical output
-            io2 = IOBuffer()
-            n2 = write_legs(io2, graph, target; passthrough_columns = String[])
-            @test String(take!(io2)) == out1
-            @test n2 == n1
-
-            # Header of baseline ends with the expected canonical column (no passthrough)
-            header1 = first(split(out1, '\n'))
-            @test endswith(header1, "aircraft_owner")
-        finally
-            close(store)
-        end
-
-        # Single-column round-trip, multi-column ordering, fan-out correctness, errors
-        store = DuckDBStore()
-        try
-            ingest_newssim!(store, demo_csv)
-            graph = build_graph!(store, SearchConfig(), target; source = :newssim)
-
-            # ── Single column ──
-            io = IOBuffer()
-            n = write_legs(io, graph, target; store = store,
-                           passthrough_columns = ["prbd"])
-            out = String(take!(io))
-            header = first(split(out, '\n'))
-            @test endswith(header, ",prbd")
-            @test n > 0
-
-            # ── Multi-column ordering (case preserved verbatim in header) ──
-            io = IOBuffer()
-            write_legs(io, graph, target; store = store,
-                       passthrough_columns = ["prbd", "aircraft_owner", "DEI_127"])
-            header = first(split(String(take!(io)), '\n'))
-            @test endswith(header, ",prbd,aircraft_owner,DEI_127")
-
-            # ── Missing column: error fires before header ──
-            io = IOBuffer()
-            @test_throws Exception write_legs(io, graph, target; store = store,
-                                              passthrough_columns = ["nonexistent_col"])
-            @test isempty(take!(io))
-
-            # ── store === nothing with non-empty cols → ArgumentError ──
-            io = IOBuffer()
-            @test_throws ArgumentError write_legs(io, graph, target;
-                                                  passthrough_columns = ["prbd"])
-            @test isempty(take!(io))
-
-            # ── Duplicates / blanks ──
-            io = IOBuffer()
-            @test_throws ArgumentError write_legs(io, graph, target; store = store,
-                                                  passthrough_columns = ["prbd", "prbd"])
-            @test_throws ArgumentError write_legs(io, graph, target; store = store,
-                                                  passthrough_columns = ["prbd", "", "carrier"])
-        finally
-            close(store)
-        end
-    end
-
-    # ── write_itineraries passthrough ─────────────────────────────────────────
-
-    @testset "write_itineraries passthrough" begin
-        using ItinerarySearch: write_itineraries, search_itineraries,
-            build_graph!, ingest_newssim!, SearchConfig, SearchConstraints,
-            RuntimeContext, build_itn_rules
+    @testset "passthrough output (shared fixture)" begin
+        using ItinerarySearch: write_legs, write_itineraries, write_trips,
+            itinerary_legs, itinerary_legs_multi, itinerary_legs_json,
+            Trip, search_itineraries, build_graph!, ingest_newssim!,
+            SearchConfig, SearchConstraints, RuntimeContext, build_itn_rules
         using DuckDB
 
         demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
@@ -635,118 +565,261 @@ using JSON3
                 constraints = SearchConstraints(),
                 itn_rules = build_itn_rules(config),
             )
-            itns = copy(search_itineraries(graph.stations, StationCode("ORD"), StationCode("LHR"), target, ctx))
-            @test !isempty(itns)
+            itns = copy(search_itineraries(graph.stations,
+                StationCode("ORD"), StationCode("LHR"), target, ctx))
+            @test !isempty(itns)  # sanity — later testsets rely on non-empty results
 
-            # ── Baseline unchanged ──
-            io1 = IOBuffer()
-            n1 = write_itineraries(io1, itns, graph, target)
-            out1 = String(take!(io1))
-            io2 = IOBuffer()
-            n2 = write_itineraries(io2, itns, graph, target; passthrough_columns = String[])
-            @test String(take!(io2)) == out1
-            @test n2 == n1
+            @testset "write_legs passthrough" begin
+                # ── Baseline unchanged: kwargs default, no store access ──
+                io1 = IOBuffer()
+                n1 = write_legs(io1, graph, target)
+                out1 = String(take!(io1))
 
-            # ── Single column ──
-            io = IOBuffer()
-            write_itineraries(io, itns, graph, target; store = store,
-                              passthrough_columns = ["prbd"])
-            out = String(take!(io))
-            lines = split(out, '\n'; keepempty = false)
-            @test endswith(lines[1], ",prbd")
-            # Data row has the appropriate trailing cell count (header cols + 1)
-            n_header_cols = count(==(','), lines[1]) + 1
-            for line in lines[2:end]
-                @test count(==(','), line) + 1 == n_header_cols
+                io2 = IOBuffer()
+                n2 = write_legs(io2, graph, target; passthrough_columns = String[])
+                @test String(take!(io2)) == out1
+                @test n2 == n1
+
+                header1 = first(split(out1, '\n'))
+                @test endswith(header1, "aircraft_owner")
+
+                # ── Single column ──
+                io = IOBuffer()
+                n = write_legs(io, graph, target; store = store,
+                               passthrough_columns = ["prbd"])
+                out = String(take!(io))
+                header = first(split(out, '\n'))
+                @test endswith(header, ",prbd")
+                @test n > 0
+
+                # ── Multi-column ordering (case preserved verbatim in header) ──
+                io = IOBuffer()
+                write_legs(io, graph, target; store = store,
+                           passthrough_columns = ["prbd", "aircraft_owner", "DEI_127"])
+                header = first(split(String(take!(io)), '\n'))
+                @test endswith(header, ",prbd,aircraft_owner,DEI_127")
+
+                # ── Missing column: error fires before header ──
+                io = IOBuffer()
+                @test_throws Exception write_legs(io, graph, target; store = store,
+                                                  passthrough_columns = ["nonexistent_col"])
+                @test isempty(take!(io))
+
+                # ── store === nothing with non-empty cols → ArgumentError ──
+                io = IOBuffer()
+                @test_throws ArgumentError write_legs(io, graph, target;
+                                                      passthrough_columns = ["prbd"])
+                @test isempty(take!(io))
+
+                # ── Duplicates / blanks ──
+                io = IOBuffer()
+                @test_throws ArgumentError write_legs(io, graph, target; store = store,
+                                                      passthrough_columns = ["prbd", "prbd"])
+                @test_throws ArgumentError write_legs(io, graph, target; store = store,
+                                                      passthrough_columns = ["prbd", "", "carrier"])
             end
 
-            # ── Fan-out: same row_number across multiple itinerary rows has same passthrough ──
-            # Group data rows by row_number (col index 4 in the itinerary output;
-            # col 3 is record_serial which is always 0 for NewSSIM legs) and verify
-            # the last column (the passthrough) is constant per row_number.
-            data = split.(lines[2:end], ',')
-            by_rn = Dict{String,Set{String}}()
-            for row in data
-                rn = row[4]               # row_number
-                pt_val = row[end]
-                push!(get!(by_rn, rn, Set{String}()), pt_val)
-            end
-            for (_, vals) in by_rn
-                @test length(vals) == 1
-            end
+            @testset "write_itineraries passthrough" begin
+                # ── Baseline unchanged ──
+                io1 = IOBuffer()
+                n1 = write_itineraries(io1, itns, graph, target)
+                out1 = String(take!(io1))
+                io2 = IOBuffer()
+                n2 = write_itineraries(io2, itns, graph, target; passthrough_columns = String[])
+                @test String(take!(io2)) == out1
+                @test n2 == n1
 
-            # ── Missing column errors, nothing written ──
-            io = IOBuffer()
-            @test_throws Exception write_itineraries(io, itns, graph, target; store = store,
-                                                     passthrough_columns = ["nonexistent"])
-            @test isempty(take!(io))
-
-            # ── Empty itineraries with passthrough: header includes passthrough names, no data rows ──
-            io = IOBuffer()
-            empty_itns = typeof(itns)()
-            n = write_itineraries(io, empty_itns, graph, target; store = store,
+                # ── Single column ──
+                io = IOBuffer()
+                write_itineraries(io, itns, graph, target; store = store,
                                   passthrough_columns = ["prbd"])
-            @test n == 0
-            out = String(take!(io))
-            lines = split(out, '\n'; keepempty = false)
-            @test length(lines) == 1  # header only
-            @test endswith(lines[1], ",prbd")
-        finally
-            close(store)
-        end
-    end
+                out = String(take!(io))
+                lines = split(out, '\n'; keepempty = false)
+                @test endswith(lines[1], ",prbd")
+                # Data row has the appropriate trailing cell count (header cols + 1)
+                n_header_cols = count(==(','), lines[1]) + 1
+                for line in lines[2:end]
+                    @test count(==(','), line) + 1 == n_header_cols
+                end
 
-    @testset "write_trips passthrough" begin
-        using ItinerarySearch: write_trips, Trip, search_itineraries,
-            build_graph!, ingest_newssim!, SearchConfig, SearchConstraints,
-            RuntimeContext, build_itn_rules
-        using DuckDB
+                # ── Fan-out: same row_number across multiple itinerary rows has same passthrough ──
+                # Group data rows by row_number (col index 4 in the itinerary output;
+                # col 3 is record_serial which is always 0 for NewSSIM legs) and verify
+                # the last column (the passthrough) is constant per row_number.
+                data = split.(lines[2:end], ',')
+                by_rn = Dict{String,Set{String}}()
+                for row in data
+                    rn = row[4]               # row_number
+                    pt_val = row[end]
+                    push!(get!(by_rn, rn, Set{String}()), pt_val)
+                end
+                for (_, vals) in by_rn
+                    @test length(vals) == 1
+                end
 
-        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
-        target = Date(2026, 2, 26)
+                # ── Missing column errors, nothing written ──
+                io = IOBuffer()
+                @test_throws Exception write_itineraries(io, itns, graph, target; store = store,
+                                                         passthrough_columns = ["nonexistent"])
+                @test isempty(take!(io))
 
-        store = DuckDBStore()
-        try
-            ingest_newssim!(store, demo_csv)
-            config = SearchConfig()
-            graph = build_graph!(store, config, target; source = :newssim)
-            ctx = RuntimeContext(
-                config = config,
-                constraints = SearchConstraints(),
-                itn_rules = build_itn_rules(config),
-            )
-            itns = copy(search_itineraries(graph.stations, StationCode("ORD"), StationCode("LHR"), target, ctx))
-            trips = [Trip(Itinerary[itn]; trip_id = Int32(i)) for (i, itn) in enumerate(itns[1:min(3, end)])]
-            @test !isempty(trips)
-
-            # Baseline unchanged
-            io1 = IOBuffer(); io2 = IOBuffer()
-            n1 = write_trips(io1, trips, graph, target)
-            n2 = write_trips(io2, trips, graph, target; passthrough_columns = String[])
-            @test String(take!(io1)) == String(take!(io2))
-            @test n1 == n2
-
-            # Passthrough active
-            io = IOBuffer()
-            write_trips(io, trips, graph, target; store = store,
-                        passthrough_columns = ["prbd", "aircraft_owner"])
-            out = String(take!(io))
-            lines = split(out, '\n'; keepempty = false)
-            @test endswith(lines[1], ",prbd,aircraft_owner")
-            # All data rows have the right column count
-            n_header_cols = count(==(','), lines[1]) + 1
-            for line in lines[2:end]
-                @test count(==(','), line) + 1 == n_header_cols
+                # ── Empty itineraries with passthrough: header includes passthrough names, no data rows ──
+                io = IOBuffer()
+                empty_itns = typeof(itns)()
+                n = write_itineraries(io, empty_itns, graph, target; store = store,
+                                      passthrough_columns = ["prbd"])
+                @test n == 0
+                out = String(take!(io))
+                lines = split(out, '\n'; keepempty = false)
+                @test length(lines) == 1  # header only
+                @test endswith(lines[1], ",prbd")
             end
 
-            # Errors
-            io = IOBuffer()
-            @test_throws Exception write_trips(io, trips, graph, target; store = store,
-                                               passthrough_columns = ["nonexistent"])
-            @test isempty(take!(io))
-            io = IOBuffer()
-            @test_throws ArgumentError write_trips(io, trips, graph, target;
-                                                   passthrough_columns = ["prbd"])
+            @testset "write_trips passthrough" begin
+                trips = [Trip(Itinerary[itn]; trip_id = Int32(i))
+                         for (i, itn) in enumerate(itns[1:min(3, end)])]
+                @test !isempty(trips)
+
+                # Baseline unchanged
+                io1 = IOBuffer(); io2 = IOBuffer()
+                n1 = write_trips(io1, trips, graph, target)
+                n2 = write_trips(io2, trips, graph, target; passthrough_columns = String[])
+                @test String(take!(io1)) == String(take!(io2))
+                @test n1 == n2
+
+                # Passthrough active
+                io = IOBuffer()
+                write_trips(io, trips, graph, target; store = store,
+                            passthrough_columns = ["prbd", "aircraft_owner"])
+                out = String(take!(io))
+                lines = split(out, '\n'; keepempty = false)
+                @test endswith(lines[1], ",prbd,aircraft_owner")
+                # All data rows have the right column count
+                n_header_cols = count(==(','), lines[1]) + 1
+                for line in lines[2:end]
+                    @test count(==(','), line) + 1 == n_header_cols
+                end
+
+                # Errors
+                io = IOBuffer()
+                @test_throws Exception write_trips(io, trips, graph, target; store = store,
+                                                   passthrough_columns = ["nonexistent"])
+                @test isempty(take!(io))
+                io = IOBuffer()
+                @test_throws ArgumentError write_trips(io, trips, graph, target;
+                                                       passthrough_columns = ["prbd"])
+            end
+
+            @testset "itinerary_legs + multi + json" begin
+                ord = StationCode("ORD")
+                lhr = StationCode("LHR")
+
+                # ── itinerary_legs single O-D ─────────────────────────────────
+                @testset "itinerary_legs single O-D" begin
+                    refs = itinerary_legs(graph.stations, ord, lhr, target, ctx)
+                    @test refs isa Vector{ItineraryRef}
+                    @test !isempty(refs)
+
+                    for ref in refs
+                        @test !isempty(ref.legs)
+                        @test length(ref.legs) == ref.num_stops + 1
+                        @test ref.elapsed_minutes > 0
+                        @test ref.distance_miles > 0
+                        @test ref.circuity >= 1.0f0
+                        @test String(ref.legs[1].departure_station) == "ORD"
+                        @test String(ref.legs[end].arrival_station) == "LHR"
+                        @test length(ref.connections) == ref.num_stops
+                    end
+
+                    # Sorted by stops ascending (nonstops first)
+                    stops_seq = [r.num_stops for r in refs]
+                    @test stops_seq == sort(stops_seq)
+
+                    # No-results O-D does not throw; returns empty vector
+                    xxx = StationCode("XXX")
+                    @test isempty(itinerary_legs(graph.stations, ord, xxx, target, ctx))
+                end
+
+                # ── itinerary_legs_multi shapes ───────────────────────────────
+                @testset "itinerary_legs_multi shapes" begin
+                    # Single pair
+                    r1 = itinerary_legs_multi(graph.stations, ctx;
+                        origins = "ORD", destinations = "LHR", dates = target)
+                    @test haskey(r1, target)
+                    @test haskey(r1[target], "ORD")
+                    @test haskey(r1[target]["ORD"], "LHR")
+
+                    # Paired O-Ds (default): origins[i]→destinations[i]
+                    r2 = itinerary_legs_multi(graph.stations, ctx;
+                        origins = ["ORD", "DEN"],
+                        destinations = ["LHR", "SFO"],
+                        dates = target)
+                    if haskey(r2, target)
+                        orgs_seen = keys(r2[target])
+                        if "ORD" in orgs_seen
+                            @test !haskey(r2[target]["ORD"], "SFO")
+                        end
+                        if "DEN" in orgs_seen
+                            @test !haskey(r2[target]["DEN"], "LHR")
+                        end
+                    end
+
+                    # Cross-product
+                    r3 = itinerary_legs_multi(graph.stations, ctx;
+                        origins = ["ORD", "DEN"],
+                        destinations = ["LHR", "SFO"],
+                        dates = target, cross = true)
+                    if haskey(r3, target)
+                        for (org, dsts) in r3[target]
+                            @test org in ("ORD", "DEN")
+                            for dst in keys(dsts)
+                                @test dst in ("LHR", "SFO")
+                            end
+                        end
+                    end
+
+                    # Same origin/destination is filtered out
+                    r4 = itinerary_legs_multi(graph.stations, ctx;
+                        origins = "ORD", destinations = "ORD", dates = target)
+                    @test isempty(r4) || !haskey(get(r4, target, Dict()), "ORD")
+                end
+
+                # ── itinerary_legs_json ──────────────────────────────────────
+                @testset "itinerary_legs_json valid JSON, compact vs full" begin
+                    full_str = itinerary_legs_json(graph.stations, ctx;
+                        origins = "ORD", destinations = "LHR", dates = target)
+                    compact_str = itinerary_legs_json(graph.stations, ctx;
+                        origins = "ORD", destinations = "LHR", dates = target,
+                        compact = true)
+
+                    full = JSON3.read(full_str)
+                    compact = JSON3.read(compact_str)
+
+                    date_key = string(target)
+                    @test haskey(full, date_key)
+                    @test haskey(full[date_key], "ORD")
+                    @test haskey(full[date_key]["ORD"], "LHR")
+                    itns_full = full[date_key]["ORD"]["LHR"]
+                    itns_compact = compact[date_key]["ORD"]["LHR"]
+                    @test !isempty(itns_full)
+                    @test length(itns_full) == length(itns_compact)
+
+                    # Full form includes "legs" array; compact omits it
+                    for itn in itns_full
+                        @test haskey(itn, :legs)
+                        @test !isempty(itn.legs)
+                        @test haskey(itn, :flights)
+                        @test haskey(itn, :num_stops)
+                    end
+                    for itn in itns_compact
+                        @test !haskey(itn, :legs)
+                        @test haskey(itn, :flights)
+                    end
+
+                    # Compact output is strictly smaller (no legs payload)
+                    @test length(compact_str) < length(full_str)
+                end
+            end
         finally
             close(store)
         end
@@ -804,147 +877,6 @@ using JSON3
                 rows = collect(q)
                 @test !isempty(rows)
                 @test String(rows[1].test_csv_quote) == "a,b"
-            end
-        finally
-            close(store)
-        end
-    end
-
-    # ── itinerary_legs / itinerary_legs_multi / itinerary_legs_json ───────────
-
-    @testset "itinerary_legs + multi + json" begin
-        using ItinerarySearch: itinerary_legs, itinerary_legs_multi,
-            itinerary_legs_json, ingest_newssim!, build_graph!,
-            SearchConfig, SearchConstraints, RuntimeContext, build_itn_rules
-
-        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
-        target = Date(2026, 2, 26)
-
-        store = DuckDBStore()
-        try
-            ingest_newssim!(store, demo_csv)
-            config = SearchConfig()
-            graph = build_graph!(store, config, target; source = :newssim)
-            ctx = RuntimeContext(
-                config = config,
-                constraints = SearchConstraints(),
-                itn_rules = build_itn_rules(config),
-            )
-
-            ord = StationCode("ORD")
-            lhr = StationCode("LHR")
-
-            # ── itinerary_legs single O-D ─────────────────────────────────────
-            @testset "itinerary_legs single O-D" begin
-                refs = itinerary_legs(graph.stations, ord, lhr, target, ctx)
-                @test refs isa Vector{ItineraryRef}
-                @test !isempty(refs)
-
-                for ref in refs
-                    @test !isempty(ref.legs)
-                    @test length(ref.legs) == ref.num_stops + 1
-                    @test ref.elapsed_minutes > 0
-                    @test ref.distance_miles > 0
-                    @test ref.circuity >= 1.0f0
-                    # Path endpoints match the requested O-D
-                    @test String(ref.legs[1].departure_station) == "ORD"
-                    @test String(ref.legs[end].arrival_station) == "LHR"
-                    # Non-terminal legs have a connection record
-                    @test length(ref.connections) == ref.num_stops
-                end
-
-                # Sorted by stops ascending (nonstops first)
-                stops_seq = [r.num_stops for r in refs]
-                @test stops_seq == sort(stops_seq)
-
-                # No-results O-D does not throw; returns empty vector
-                xxx = StationCode("XXX")
-                @test isempty(itinerary_legs(graph.stations, ord, xxx, target, ctx))
-            end
-
-            # ── itinerary_legs_multi shapes ───────────────────────────────────
-            @testset "itinerary_legs_multi shapes" begin
-                # Single pair
-                r1 = itinerary_legs_multi(graph.stations, ctx;
-                    origins = "ORD", destinations = "LHR", dates = target)
-                @test haskey(r1, target)
-                @test haskey(r1[target], "ORD")
-                @test haskey(r1[target]["ORD"], "LHR")
-
-                # Paired O-Ds (default): origins[i]→destinations[i]
-                r2 = itinerary_legs_multi(graph.stations, ctx;
-                    origins = ["ORD", "DEN"],
-                    destinations = ["LHR", "SFO"],
-                    dates = target)
-                if haskey(r2, target)
-                    orgs_seen = keys(r2[target])
-                    # Paired means we never see the "off-diagonal" pair
-                    if "ORD" in orgs_seen
-                        @test !haskey(r2[target]["ORD"], "SFO")
-                    end
-                    if "DEN" in orgs_seen
-                        @test !haskey(r2[target]["DEN"], "LHR")
-                    end
-                end
-
-                # Cross-product
-                r3 = itinerary_legs_multi(graph.stations, ctx;
-                    origins = ["ORD", "DEN"],
-                    destinations = ["LHR", "SFO"],
-                    dates = target, cross = true)
-                # Each origin may be present; the API allows empty inner dicts to
-                # be omitted, so we just assert no extra keys appear.
-                if haskey(r3, target)
-                    for (org, dsts) in r3[target]
-                        @test org in ("ORD", "DEN")
-                        for dst in keys(dsts)
-                            @test dst in ("LHR", "SFO")
-                        end
-                    end
-                end
-
-                # Same origin/destination is filtered out
-                r4 = itinerary_legs_multi(graph.stations, ctx;
-                    origins = "ORD", destinations = "ORD", dates = target)
-                @test isempty(r4) || !haskey(get(r4, target, Dict()), "ORD")
-            end
-
-            # ── itinerary_legs_json ──────────────────────────────────────────
-            @testset "itinerary_legs_json valid JSON, compact vs full" begin
-                full_str = itinerary_legs_json(graph.stations, ctx;
-                    origins = "ORD", destinations = "LHR", dates = target)
-                compact_str = itinerary_legs_json(graph.stations, ctx;
-                    origins = "ORD", destinations = "LHR", dates = target,
-                    compact = true)
-
-                # Both parse as valid JSON
-                full = JSON3.read(full_str)
-                compact = JSON3.read(compact_str)
-
-                # Structure: date → origin → destination → [itineraries]
-                date_key = string(target)
-                @test haskey(full, date_key)
-                @test haskey(full[date_key], "ORD")
-                @test haskey(full[date_key]["ORD"], "LHR")
-                itns_full = full[date_key]["ORD"]["LHR"]
-                itns_compact = compact[date_key]["ORD"]["LHR"]
-                @test !isempty(itns_full)
-                @test length(itns_full) == length(itns_compact)
-
-                # Full form includes "legs" array on each itinerary; compact omits it
-                for itn in itns_full
-                    @test haskey(itn, :legs)
-                    @test !isempty(itn.legs)
-                    @test haskey(itn, :flights)
-                    @test haskey(itn, :num_stops)
-                end
-                for itn in itns_compact
-                    @test !haskey(itn, :legs)
-                    @test haskey(itn, :flights)
-                end
-
-                # Compact output is strictly smaller (no legs payload)
-                @test length(compact_str) < length(full_str)
             end
         finally
             close(store)
