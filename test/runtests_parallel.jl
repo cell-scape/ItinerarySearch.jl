@@ -39,6 +39,7 @@ const TEST_FILES_FULL = [
     "test_newssim_ingest.jl",   # ~11s — ingest + pipeline tests
     "test_rules_cnx.jl",        # ~10s — rule-chain unit tests (compile-heavy)
     "test_server.jl",           # ~ 7s — REST API against shared fixture
+    "test_audit_misconnect.jl", # ~ 5s — record types + MCT audit + misconnect replay
     "test_logging.jl",          # ~ 4s — logging side-effects during builds
     "test_ingest.jl",           # ~ 3s — SSIM streaming parser
     "test_cli.jl",              # ~ 3s — CLI entry-point smoke tests
@@ -55,7 +56,9 @@ const TEST_FILES_FULL = [
     "test_config.jl",           # ~0.5s
     "test_instrumentation.jl",  # ~0.4s
     "test_constraints.jl",      # ~0.3s
+    "test_ssim_parsing.jl",     # ~0.2s — parse_ddmonyy / parse_hhmm / etc.
     "test_graph_types.jl",      # ~0.1s
+    "test_module_surface.jl",   # ~0.05s — Module loads + type aliases + enum values
     "test_status.jl",           # ~0.05s
 ]
 
