@@ -764,12 +764,13 @@ end
 # ── Trip output ──────────────────────────────────────────────────────────────
 
 """
-    `function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date; header::Bool=true)::Int`
+    `function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date; header::Bool=true, store::Union{DuckDBStore,Nothing}=nothing, passthrough_columns::Vector{String}=String[])::Int`
 ---
 
 # Description
 - Write trips to a comma-delimited file (one row per leg per itinerary per trip)
 - Prepends `trip_id`, `trip_type`, `itinerary_seq` to the standard itinerary leg columns
+- When `passthrough_columns` is non-empty, appends extra columns fetched from the source table
 
 # Arguments
 1. `io::IO`: output stream
@@ -777,12 +778,36 @@ end
 3. `graph::FlightGraph`: built flight graph
 4. `date::Date`: target operating date
 
+# Keyword Arguments
+- `header::Bool=true`: write header row
+- `store::Union{DuckDBStore,Nothing}=nothing`: store required when `passthrough_columns` is non-empty
+- `passthrough_columns::Vector{String}=String[]`: extra column names to fetch from the source table
+
 # Returns
 - `::Int`: number of rows written
 """
-function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date; header::Bool=true)::Int
+function write_trips(
+    io::IO,
+    trips::Vector{Trip},
+    graph::FlightGraph,
+    date::Date;
+    header::Bool = true,
+    store::Union{DuckDBStore,Nothing} = nothing,
+    passthrough_columns::Vector{String} = String[],
+)::Int
+    pt_active = !isempty(passthrough_columns)
+    pt_names = String[]
+    pt_source = ""
+    pt_key_col = ""
+    if pt_active
+        prep = _prepare_passthrough(graph, store, passthrough_columns)
+        pt_names = prep.names
+        pt_source = prep.source
+        pt_key_col = prep.key_col
+    end
+
     if header
-        _write_row(io, [
+        hdr = [
             "trip_id", "trip_type", "itinerary_seq",
             "itinerary_id", "leg_seq",
             "record_serial", "row_number",
@@ -797,13 +822,52 @@ function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date
             "num_stops", "elapsed_time",
             "total_distance_miles", "market_distance_miles", "circuity",
             "is_international", "has_interline", "has_codeshare",
-        ])
+        ]
+        pt_active && append!(hdr, pt_names)
+        _write_row(io, hdr)
+    end
+
+    # Collect row_numbers (deduped, first-appearance order) — same flatten logic as emit loop
+    pt_dict = Dict{UInt64,Vector{String}}()
+    pt_default = String[]
+    if pt_active
+        seen = Set{UInt64}()
+        ids = UInt64[]
+        for trip in trips
+            for itn in trip.itineraries
+                n_cnx = length(itn.connections)
+                last_leg = nothing
+                for (i, cp) in enumerate(itn.connections)
+                    from_l = cp.from_leg::GraphLeg
+                    to_l = cp.to_leg::GraphLeg
+                    if from_l !== last_leg
+                        rn = from_l.record.row_number
+                        if !(rn in seen)
+                            push!(seen, rn)
+                            push!(ids, rn)
+                        end
+                        last_leg = from_l
+                    end
+                    if i == n_cnx && !(from_l === to_l)
+                        if to_l !== last_leg
+                            rn = to_l.record.row_number
+                            if !(rn in seen)
+                                push!(seen, rn)
+                                push!(ids, rn)
+                            end
+                            last_leg = to_l
+                        end
+                    end
+                end
+            end
+        end
+        pt_dict = _fetch_passthrough(store::DuckDBStore, pt_source, pt_key_col, pt_names, ids)
+        pt_default = _passthrough_default(length(pt_names))
     end
 
     n = 0
     for trip in trips
         for (itn_seq, itn) in enumerate(trip.itineraries)
-            # Flatten connections into legs (same logic as write_itineraries)
             legs_out = Tuple{GraphLeg, String, Int, Int, Int32}[]
             n_cnx = length(itn.connections)
             for (i, cp) in enumerate(itn.connections)
@@ -829,7 +893,7 @@ function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date
                 org = strip(String(r.departure_station))
                 dst = strip(String(r.arrival_station))
 
-                _write_row(io, [
+                row = Any[
                     Int(trip.trip_id), trip.trip_type, itn_seq,
                     itn_seq, seq,
                     Int(r.record_serial), Int(r.row_number),
@@ -848,7 +912,12 @@ function write_trips(io::IO, trips::Vector{Trip}, graph::FlightGraph, date::Date
                     is_international(itn.status),
                     is_interline(itn.status),
                     is_codeshare(itn.status),
-                ])
+                ]
+                if pt_active
+                    pt_cells = get(pt_dict, r.row_number, pt_default)
+                    append!(row, pt_cells)
+                end
+                _write_row(io, row)
                 n += 1
             end
         end

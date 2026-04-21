@@ -695,4 +695,60 @@ using Dates
         end
     end
 
+    @testset "write_trips passthrough" begin
+        using ItinerarySearch: write_trips, Trip, search_itineraries,
+            build_graph!, ingest_newssim!, SearchConfig, SearchConstraints,
+            RuntimeContext, build_itn_rules
+        using DuckDB
+
+        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+        target = Date(2026, 2, 26)
+
+        store = DuckDBStore()
+        try
+            ingest_newssim!(store, demo_csv)
+            config = SearchConfig()
+            graph = build_graph!(store, config, target; source = :newssim)
+            ctx = RuntimeContext(
+                config = config,
+                constraints = SearchConstraints(),
+                itn_rules = build_itn_rules(config),
+            )
+            itns = copy(search_itineraries(graph.stations, StationCode("ORD"), StationCode("LHR"), target, ctx))
+            trips = [Trip(Itinerary[itn]; trip_id = Int32(i)) for (i, itn) in enumerate(itns[1:min(3, end)])]
+            @test !isempty(trips)
+
+            # Baseline unchanged
+            io1 = IOBuffer(); io2 = IOBuffer()
+            n1 = write_trips(io1, trips, graph, target)
+            n2 = write_trips(io2, trips, graph, target; passthrough_columns = String[])
+            @test String(take!(io1)) == String(take!(io2))
+            @test n1 == n2
+
+            # Passthrough active
+            io = IOBuffer()
+            write_trips(io, trips, graph, target; store = store,
+                        passthrough_columns = ["prbd", "aircraft_owner"])
+            out = String(take!(io))
+            lines = split(out, '\n'; keepempty = false)
+            @test endswith(lines[1], ",prbd,aircraft_owner")
+            # All data rows have the right column count
+            n_header_cols = count(==(','), lines[1]) + 1
+            for line in lines[2:end]
+                @test count(==(','), line) + 1 == n_header_cols
+            end
+
+            # Errors
+            io = IOBuffer()
+            @test_throws Exception write_trips(io, trips, graph, target; store = store,
+                                               passthrough_columns = ["nonexistent"])
+            @test isempty(take!(io))
+            io = IOBuffer()
+            @test_throws ArgumentError write_trips(io, trips, graph, target;
+                                                   passthrough_columns = ["prbd"])
+        finally
+            close(store)
+        end
+    end
+
 end
