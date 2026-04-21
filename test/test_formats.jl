@@ -660,12 +660,13 @@ using Dates
             end
 
             # ── Fan-out: same row_number across multiple itinerary rows has same passthrough ──
-            # Group data rows by their row_number (col index 3 in the output, 1-indexed)
-            # and verify the last column (the passthrough) is constant per row_number.
+            # Group data rows by row_number (col index 4 in the itinerary output;
+            # col 3 is record_serial which is always 0 for NewSSIM legs) and verify
+            # the last column (the passthrough) is constant per row_number.
             data = split.(lines[2:end], ',')
             by_rn = Dict{String,Set{String}}()
             for row in data
-                rn = row[3]               # record_serial
+                rn = row[4]               # row_number
                 pt_val = row[end]
                 push!(get!(by_rn, rn, Set{String}()), pt_val)
             end
