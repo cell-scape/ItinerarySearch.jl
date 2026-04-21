@@ -13,3 +13,4 @@ build/*.so
 build/*.dylib
 build/app/
 *.bkp
+PREV_SESSION.md

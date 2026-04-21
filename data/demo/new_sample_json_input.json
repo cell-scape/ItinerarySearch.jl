@@ -1,0 +1,86 @@
+{
+  "cols": [
+    "carrier",
+    "flight_number",
+    "departure_station",
+    "arrival_station",
+    "departure_datetime",
+    "arrival_datetime",
+    "aircraft_type",
+    "as_j_cabin",
+    "as_o_cabin",
+    "as_y_cabin"
+  ],
+  "market": {
+    "origin": "ATL",
+    "destination": "FRA",
+    "date": "2026-06-13",
+    "threshold": {
+      "filter": {
+        "country": [
+          "US"
+        ],
+        "state": [],
+        "fleet": [],
+        "region": [],
+        "num_connections": 2,
+        "wheelchair_dimension_length": 40,
+        "wheelchair_dimension_width": 20,
+        "wheelchair_dimension_height": 36
+      },
+      "previous_anchor": {},
+      "next_anchor": {
+        "departure_codeshare_indicator": "Y",
+        "departure_carrier": "UA",
+        "departure_flight_number": "9361",
+        "departure_codeshare_carrier": "LH",
+        "departure_codeshare_flight_number": "1142",
+        "departure_terminal": "",
+        "next_station": "BIO",
+        "next_state": "",
+        "next_country": "ES",
+        "next_region": "SCH,EUR",
+        "departure_aircraft_type": "321",
+        "departure_aircraft_bodytype": "N",
+        "departure_station": "FRA",
+        "international_domestic_status": "I",
+        "departure_datetime": "2026-06-14T11:10:00"
+      }
+    }
+  },
+  {
+    "origin": "AMS",
+    "destination": "DFW",
+    "date": "2026-07-19",
+    "threshold": {
+      "filter": {
+        "country": [
+          "US"
+        ],
+        "state": [],
+        "region": [],
+        "fleet": [],
+        "num_connections": 1
+      },
+      "previous_anchor": {
+        "arrival_codeshare_indicator": "N",
+        "arrival_carrier": "LH",
+        "arrival_flight_number": "9863",
+        "arrival_codeshare_carrier": "",
+        "arrival_codeshare_flight_number": "",
+        "arrival_terminal": "",
+        "previous_station": "FRA",
+        "previous_state": "",
+        "next_country": "",
+        "previous_country": "DE",
+        "previous_region": "SCH,EUR",
+        "arrival_aircraft_type": "32N",
+        "arrival_aircraft_bodytype": "N",
+        "arrival_station": "AMS",
+        "international_domestic_status": "I",
+        "arrival_datetime": "2026-07-19T09:38:00"
+      },
+      "next_anchor": {}
+    }
+  }
+}
