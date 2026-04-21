@@ -40,66 +40,60 @@ using DBInterface
         @test ItinerarySearch.parse_dms("") == 0.0
     end
 
-    @testset "query_newssim_legs" begin
-        store = DuckDBStore()
-        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
-        ingest_newssim!(store, demo_csv)
-
-        # Query legs in a date window that covers the demo data
-        legs = ItinerarySearch.query_newssim_legs(store, Date(2026, 2, 25), Date(2026, 2, 27))
-        @test length(legs) > 0
-
-        # Verify a leg has correct structure
-        leg = legs[1]
-        @test leg.carrier != AirlineCode("")
-        @test leg.departure_station != StationCode("")
-        @test leg.arrival_station != StationCode("")
-        @test leg.operating_date != UInt32(0)
-        @test leg.effective_date == leg.operating_date  # date-expanded
-        @test leg.discontinue_date == leg.operating_date
-        @test leg.frequency == UInt8(0x7f)
-
-        close(store)
-    end
-
-    @testset "query_newssim_station" begin
-        store = DuckDBStore()
-        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
-        ingest_newssim!(store, demo_csv)
-
-        stn = ItinerarySearch.query_newssim_station(store, StationCode("SFO"))
-        @test stn !== nothing
-        @test stn.code == StationCode("SFO")
-        @test stn.country == InlineString3("US")
-        @test stn.state == InlineString3("CA")
-        @test stn.latitude != 0.0
-        @test stn.longitude != 0.0
-
-        close(store)
-    end
-
-    @testset "full pipeline: ingest → build → search" begin
-        store = DuckDBStore()
+    # Shared fixture: a single ingested store reused across the three read-only
+    # testsets below. The two ingest_newssim! testsets above intentionally keep
+    # their own fresh stores because they test the ingest operation itself.
+    @testset "query + pipeline (shared fixture)" begin
         demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
         mct_path = joinpath(@__DIR__, "..", "data", "demo", "mct_demo.dat")
 
-        ingest_newssim!(store, demo_csv)
-        ingest_mct!(store, mct_path)
+        store = DuckDBStore()
+        try
+            ingest_newssim!(store, demo_csv)
+            ingest_mct!(store, mct_path)
 
-        config = SearchConfig()
-        # Use a date from the demo data range
-        graph = build_graph!(store, config, Date(2026, 2, 26); source=:newssim)
+            @testset "query_newssim_legs" begin
+                legs = ItinerarySearch.query_newssim_legs(store, Date(2026, 2, 25), Date(2026, 2, 27))
+                @test length(legs) > 0
 
-        @test length(graph.stations) > 0
-        @test length(graph.legs) > 0
+                # Verify a leg has correct structure
+                leg = legs[1]
+                @test leg.carrier != AirlineCode("")
+                @test leg.departure_station != StationCode("")
+                @test leg.arrival_station != StationCode("")
+                @test leg.operating_date != UInt32(0)
+                @test leg.effective_date == leg.operating_date  # date-expanded
+                @test leg.discontinue_date == leg.operating_date
+                @test leg.frequency == UInt8(0x7f)
+            end
 
-        # Verify SFO exists with geo data
-        sfo = get(graph.stations, StationCode("SFO"), nothing)
-        @test sfo !== nothing
-        @test sfo.record.latitude != 0.0
-        @test sfo.record.longitude != 0.0
-        @test sfo.record.country == InlineString3("US")
+            @testset "query_newssim_station" begin
+                stn = ItinerarySearch.query_newssim_station(store, StationCode("SFO"))
+                @test stn !== nothing
+                @test stn.code == StationCode("SFO")
+                @test stn.country == InlineString3("US")
+                @test stn.state == InlineString3("CA")
+                @test stn.latitude != 0.0
+                @test stn.longitude != 0.0
+            end
 
-        close(store)
+            @testset "full pipeline: build → search (store pre-ingested)" begin
+                config = SearchConfig()
+                # Use a date from the demo data range
+                graph = build_graph!(store, config, Date(2026, 2, 26); source=:newssim)
+
+                @test length(graph.stations) > 0
+                @test length(graph.legs) > 0
+
+                # Verify SFO exists with geo data
+                sfo = get(graph.stations, StationCode("SFO"), nothing)
+                @test sfo !== nothing
+                @test sfo.record.latitude != 0.0
+                @test sfo.record.longitude != 0.0
+                @test sfo.record.country == InlineString3("US")
+            end
+        finally
+            close(store)
+        end
     end
 end

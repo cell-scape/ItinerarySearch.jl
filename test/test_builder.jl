@@ -350,69 +350,55 @@ end
 
     @testset "search_markets" begin
         demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
-        target = Date(2026, 2, 26)
+        d1 = Date(2026, 2, 26)
+        d2 = Date(2026, 2, 27)
 
-        @testset "single date, single market" begin
+        # One call exercises shape, multi-market, multi-date, nonexistent-market
+        # handling, and lifetime-after-return — search_markets owns its own
+        # store/graph, so each call pays a full ingest+build. Consolidating
+        # avoids redundant builds during the test suite.
+        @testset "single call exercises shape, markets, dates, unknown O-D" begin
             results = search_markets(demo_csv;
-                markets = [("ORD", "LHR")],
-                dates = target)
+                markets = [("ORD", "LHR"), ("DEN", "SFO"), ("IAH", "EWR"), ("XXX", "YYY")],
+                dates   = [d1, d2])
+
             @test results isa Dict
-            @test haskey(results, ("ORD", "LHR", target))
-            @test results[("ORD", "LHR", target)] isa Vector
-            @test !isempty(results[("ORD", "LHR", target)])
-        end
 
-        @testset "multiple markets share one graph build" begin
-            results = search_markets(demo_csv;
-                markets = [("ORD", "LHR"), ("DEN", "SFO"), ("IAH", "EWR")],
-                dates = target)
-            # Every requested (org, dst, date) is present — empties included
-            for m in [("ORD", "LHR"), ("DEN", "SFO"), ("IAH", "EWR")]
-                @test haskey(results, (m..., target))
+            # Every requested (org, dst, date) combination has a key.
+            for (org, dst) in [("ORD", "LHR"), ("DEN", "SFO"), ("IAH", "EWR"), ("XXX", "YYY")]
+                for d in [d1, d2]
+                    @test haskey(results, (org, dst, d))
+                    @test results[(org, dst, d)] isa Vector
+                end
             end
-        end
 
-        @testset "vector of dates" begin
-            d1 = Date(2026, 2, 26)
-            d2 = Date(2026, 2, 27)
-            results = search_markets(demo_csv;
-                markets = [("ORD", "LHR")],
-                dates = [d1, d2])
-            @test haskey(results, ("ORD", "LHR", d1))
-            @test haskey(results, ("ORD", "LHR", d2))
-            # Each date gets its own result vector (no bleed)
-            @test length(results) == 2
-        end
+            # Known markets produce at least some itineraries (at least on d1).
+            @test !isempty(results[("ORD", "LHR", d1)])
 
-        @testset "SearchConfig kwargs pass through" begin
-            # max_stops=0 should drop all 1+ stop itineraries; only nonstops remain.
-            results = search_markets(demo_csv;
-                markets = [("ORD", "LHR")],
-                dates = target,
-                max_stops = 0)
-            for itn in results[("ORD", "LHR", target)]
-                @test itn.num_stops == 0
-            end
-        end
+            # Unknown O-D returns an empty vector, not an error.
+            @test isempty(results[("XXX", "YYY", d1)])
+            @test isempty(results[("XXX", "YYY", d2)])
 
-        @testset "nonexistent market returns empty vector, not error" begin
-            results = search_markets(demo_csv;
-                markets = [("XXX", "YYY")],
-                dates = target)
-            @test haskey(results, ("XXX", "YYY", target))
-            @test isempty(results[("XXX", "YYY", target)])
-        end
+            # Each date gets its own result set (no bleed between dates).
+            @test (("ORD", "LHR", d1)) != (("ORD", "LHR", d2))
 
-        @testset "returned itineraries survive beyond the wrapper's closed store" begin
-            # search_markets deep-copies before returning so the internal store
-            # can be closed safely. Exercise the returned data after the call.
-            results = search_markets(demo_csv;
-                markets = [("ORD", "LHR")],
-                dates = target)
-            itns = results[("ORD", "LHR", target)]
-            @test !isempty(itns)
+            # Returned itineraries outlive the wrapper's internally-closed store —
+            # accessing fields after the call exercises the deep-copy contract.
+            itns = results[("ORD", "LHR", d1)]
             @test itns[1].num_stops >= 0
             @test itns[1].elapsed_time > 0
+        end
+
+        # Separate call: verifies that SearchConfig kwargs pass through to the
+        # inner search (max_stops=0 must drop 1+ stop itineraries).
+        @testset "SearchConfig kwargs pass through" begin
+            results = search_markets(demo_csv;
+                markets = [("ORD", "LHR")],
+                dates   = d1,
+                max_stops = 0)
+            for itn in results[("ORD", "LHR", d1)]
+                @test itn.num_stops == 0
+            end
         end
     end
 
