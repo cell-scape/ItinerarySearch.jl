@@ -535,7 +535,13 @@ end
 
 # Description
 - Rejects international connecting itineraries where any connection time
-  exceeds MCT by more than a CRS-derived threshold based on total route distance
+  exceeds MCT by more than a distance-based threshold
+- "CRS" here refers to the Computer Reservation System origin of the
+  threshold tables: published distance-tier caps on max connection time that
+  a CRS will display in an airline's itinerary search results. Not the same
+  as *CRS Elapsed Time* (gate-to-gate duration); this rule limits how long
+  a passenger may sit on the ground at a connect point, not how long the
+  full itinerary takes.
 - Only applied to international itineraries with at least 1 stop
 - Threshold: `300` minutes for routes under 1000 total miles, `480` otherwise
 - Through-connections (`cp.is_through`) and self-connections (`from_leg === to_leg`)
