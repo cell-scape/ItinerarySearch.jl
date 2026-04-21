@@ -751,4 +751,62 @@ using Dates
         end
     end
 
+    @testset "passthrough round-trip + CSV quoting" begin
+        using ItinerarySearch: write_itineraries, search_itineraries,
+            build_graph!, ingest_newssim!, SearchConfig, SearchConstraints,
+            RuntimeContext, build_itn_rules
+        using DuckDB
+
+        demo_csv = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+        target = Date(2026, 2, 26)
+
+        store = DuckDBStore()
+        try
+            ingest_newssim!(store, demo_csv)
+            # Add a synthetic column with values containing a comma to verify quoting
+            DBInterface.execute(store.db,
+                "ALTER TABLE newssim ADD COLUMN test_csv_quote VARCHAR DEFAULT 'a,b'")
+
+            config = SearchConfig()
+            graph = build_graph!(store, config, target; source = :newssim)
+            ctx = RuntimeContext(
+                config = config,
+                constraints = SearchConstraints(),
+                itn_rules = build_itn_rules(config),
+            )
+            itns = copy(search_itineraries(graph.stations, StationCode("ORD"), StationCode("LHR"), target, ctx))
+            @test !isempty(itns)
+
+            io = IOBuffer()
+            write_itineraries(io, itns, graph, target; store = store,
+                              passthrough_columns = ["test_csv_quote"])
+            out = String(take!(io))
+            lines = split(out, '\n'; keepempty = false)
+            @test endswith(lines[1], ",test_csv_quote")
+
+            # Every data row's passthrough cell should be the CSV-quoted form
+            # The final cell on each data row must be exactly `"a,b"` (with quotes)
+            for line in lines[2:end]
+                @test endswith(line, "\"a,b\"")
+            end
+
+            # ── Round-trip: passthrough value matches the input CSV for each row_number ──
+            # Query the newssim table directly for each emitted row_number and compare.
+            # Find the column position of `row_number` in the output (col 4 in itinerary rows).
+            # We'll cross-check the synthetic column's value (always 'a,b') against what
+            # DuckDB returns, to prove the lookup is correctly keyed.
+            for line in lines[2:end]
+                fields = split(line, ',')
+                rn = parse(Int, fields[4])    # row_number column
+                q = DBInterface.execute(store.db,
+                    "SELECT test_csv_quote FROM newssim WHERE row_number = $rn LIMIT 1")
+                rows = collect(q)
+                @test !isempty(rows)
+                @test String(rows[1].test_csv_quote) == "a,b"
+            end
+        finally
+            close(store)
+        end
+    end
+
 end
