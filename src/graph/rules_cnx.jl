@@ -7,16 +7,24 @@
 # ctx is typed Any here because RuntimeContext is defined in a later task.
 # The fields accessed by each rule are documented in the per-rule docstrings.
 #
-# Rule chain:
-#   1. check_cnx_roundtrip  — tag round-trips (always passes)
-#   2. check_cnx_scope      — DOM/INTL/ALL scope filter
-#   3. check_cnx_interline  — online/codeshare/all carrier filter
-#   4. MCTRule              — minimum and maximum connection time
-#   5. check_cnx_opdays     — operating-day intersection non-empty
-#   6. check_cnx_suppcodes  — TRC suppression code check
-#   7. MAFTRule             — maximum feasible travel time
-#   8. CircuityRule         — route circuity filter
-#   9. check_cnx_trfrest    — traffic restriction code filter
+# Rule chain (in the order `build_cnx_rules` assembles them):
+#   1.  check_cnx_roundtrip  — tag round-trips (always passes)
+#   2.  check_cnx_backtrack  — reject connections that revisit a previous station
+#   3.  check_cnx_scope      — DOM/INTL/ALL scope filter
+#   4.  check_cnx_interline  — online/codeshare/all carrier filter
+#   5.  MCTRule              — minimum connection time from SSIM8 MCT lookup
+#   6.  ConnectionTimeRule   — [optional] connection-time bounds from overrides
+#   7.  check_cnx_opdays     — operating-day intersection non-empty
+#   8.  check_cnx_suppcodes  — TRC suppression code check
+#   9.  MAFTRule             — [optional, maft_enabled=true] max feasible travel time
+#   10. CircuityRule         — route circuity filter
+#   11. ConnectionGeoRule    — [optional] station/country/region/state allow-deny filter
+#   12. check_cnx_trfrest    — traffic restriction code filter
+#
+# Section headers below match this definition order (including optional rules
+# defined later in the file). The runtime default chain is rules 1, 2, 3, 4,
+# 5, 7, 8, 9, 10, 12 — optional rules are inserted only when their configuration
+# conditions trigger.
 
 # ── Return-code constants ──────────────────────────────────────────────────────
 
@@ -129,6 +137,7 @@ function check_cnx_backtrack(cp::GraphConnection, ctx)::Int
 end
 
 # ── Rule 3: Scope filter ───────────────────────────────────────────────────────
+# (Rule 2 "Backtrack rejection" is defined just above)
 
 """
     `function check_cnx_scope(cp::GraphConnection, ctx)::Int`
@@ -158,7 +167,7 @@ function check_cnx_scope(cp::GraphConnection, ctx)::Int
     end
 end
 
-# ── Rule 3: Interline filter ───────────────────────────────────────────────────
+# ── Rule 4: Interline filter ───────────────────────────────────────────────────
 
 """
     `function check_cnx_interline(cp::GraphConnection, ctx)::Int`
@@ -191,7 +200,7 @@ function check_cnx_interline(cp::GraphConnection, ctx)::Int
     end
 end
 
-# ── Rule 4: MCTRule (callable struct) ─────────────────────────────────────────
+# ── Rule 5: MCTRule (callable struct) ─────────────────────────────────────────
 
 const _SCH = InlineString3("SCH")
 const _EUR = InlineString3("EUR")
@@ -678,7 +687,7 @@ function _chars_to_mct_status(arr::Char, dep::Char)::MCTStatus
     end
 end
 
-# ── Rule 5: Operating-days filter ─────────────────────────────────────────────
+# ── Rule 7: Operating-days filter ─────────────────────────────────────────────
 
 """
     `function check_cnx_opdays(cp::GraphConnection, ctx)::Int`
@@ -702,7 +711,7 @@ function check_cnx_opdays(cp::GraphConnection, ctx)::Int
     return op_days == StatusBits(0) ? FAIL_OPDAYS : PASS
 end
 
-# ── Rule 6: TRC suppression code check ────────────────────────────────────────
+# ── Rule 8: TRC suppression code check ────────────────────────────────────────
 
 """
     `function check_cnx_suppcodes(cp::GraphConnection, ctx)::Int`
@@ -758,7 +767,7 @@ end
     return false
 end
 
-# ── Rule 7: MAFTRule (callable struct) ────────────────────────────────────────
+# ── Rule 9: MAFTRule (callable struct) ────────────────────────────────────────
 
 """
     `struct MAFTRule`
@@ -832,7 +841,7 @@ function (r::MAFTRule)(cp::GraphConnection, ctx)::Int
     return actual_block <= maft ? PASS : FAIL_MAFT
 end
 
-# ── Rule 8: CircuityRule (callable struct) ─────────────────────────────────────
+# ── Rule 10: CircuityRule (callable struct) ──────────────────────────────────
 
 """
     `struct CircuityRule`
@@ -1025,7 +1034,7 @@ function _geodesic_distance(
     end
 end
 
-# ── Rule 9: Traffic restriction code check ────────────────────────────────────
+# ── Rule 12: Traffic restriction code check ──────────────────────────────────
 
 """
     `function check_cnx_trfrest(cp::GraphConnection, ctx)::Int`
@@ -1060,7 +1069,10 @@ function check_cnx_trfrest(cp::GraphConnection, ctx)::Int
     return PASS
 end
 
-# ── Rule 10: ConnectionTimeRule (callable struct) ─────────────────────────────
+# ── Rule 6: ConnectionTimeRule (callable struct, optional) ───────────────────
+# Defined here because it lives near the other callable structs; in the runtime
+# chain it is inserted between MCTRule (5) and check_cnx_opdays (7) when a
+# min/max_connection_time override is configured.
 
 """
     `struct ConnectionTimeRule`
@@ -1107,7 +1119,9 @@ function (r::ConnectionTimeRule)(cp::GraphConnection, ctx)::Int
     return PASS
 end
 
-# ── Rule 11: ConnectionGeoRule (callable struct) ───────────────────────────────
+# ── Rule 11: ConnectionGeoRule (callable struct, optional) ──────────────────
+# Inserted between CircuityRule (10) and check_cnx_trfrest (12) when any of the
+# station/country/region/state allow/deny sets is non-empty.
 
 """
     `struct ConnectionGeoRule`
