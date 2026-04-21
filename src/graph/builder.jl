@@ -529,10 +529,19 @@ end
 ---
 
 # Description
-- One-shot convenience wrapper: build graph then search
+- One-shot convenience wrapper: build graph then search, returning raw
+  `Itinerary` graph objects
 - Calls `build_graph!` with `target_date`, then `search_itineraries`
 - For repeated searches over the same network, build the graph once and call
   `search_itineraries` directly — avoids redundant materialisation
+
+# When to use
+- Prefer `search_markets` if you also want ingest handled (NewSSIM CSV input)
+- Prefer `itinerary_legs` / `itinerary_legs_multi` / `itinerary_legs_json`
+  for a compact serialisable output (`LegKey` + `ItineraryRef`) instead of
+  full `Itinerary` objects tied to the live graph
+- Use this function when you have a populated store, want a single O-D, and
+  need the full `Itinerary` graph objects (e.g. for trip scoring)
 
 # Arguments
 1. `store::DuckDBStore`: populated DuckDB store
@@ -583,13 +592,21 @@ end
 ---
 
 # Description
-- All-in-one convenience wrapper: ingest → build → search for every market × date
+- **Simplest library entry point**: ingest → build → search for every market × date
 - Creates an in-memory `DuckDBStore`, ingests the NewSSIM CSV and optional MCT
   file, then iterates over every `(origin, dest, date)` combination
 - The graph is rebuilt once per date (schedule window shifts with the target day)
 - Returns deep-copied itineraries keyed by `(origin, dest, date)` strings, safe
   to retain indefinitely
 - The store is closed automatically on return (or on error)
+
+# When to use
+- Start here for one-off library calls: you supply files + markets + dates and
+  get results, with no store/graph lifecycle to manage
+- For SSIM fixed-width files (not NewSSIM CSV), use `load_schedule!` + `search`
+  or `search_itineraries` instead
+- For the compact serialisable output (`LegKey` + `ItineraryRef`), construct
+  a `RuntimeContext` manually and use `itinerary_legs` / `itinerary_legs_json`
 
 # Arguments
 1. `newssim_path::AbstractString`: path to a NewSSIM CSV file (.csv or .csv.gz)

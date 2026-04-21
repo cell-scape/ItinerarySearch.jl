@@ -61,10 +61,38 @@ the reference — no locking, no mutation.
 - `SearchConfig(max_stops=3)` — override individual fields
 - `load_config("path/to/config.json")` — load from JSON file
 
-# Key Fields
+# Field groups
+
+The README's *Configuration* table documents each field's default and purpose;
+see also `docs/src/getting-started.md`. Fields fall into five groups:
+
+- **Search shape**: `max_stops`, `max_connection_minutes`, `max_elapsed_minutes`,
+  `scope`, `interline`, `circuity_factor`, `circuity_extra_miles`,
+  `allow_roundtrips`, `distance_formula`.
+- **Scheduling window**: `leading_days`, `trailing_days`, `max_days` — how many
+  days before/after `target_date` the schedule expansion includes.
+- **Input paths**: `ssim_path`, `mct_path`, `airports_path`, `regions_path`,
+  `aircrafts_path`, `oa_control_path`, plus the RESERVED triple
+  (`seats_path`, `classmap_path`, `serviceclass_path`).
+- **MCT behaviour**: `mct_cache_enabled`, `mct_serial_ascending` (tiebreaker
+  direction — default `false` = higher serial wins, matches production),
+  `mct_codeshare_mode`, `mct_schengen_mode`, `mct_suppressions_enabled`,
+  `mct_audit`.
+- **Rule toggles & outputs**: `maft_enabled`, `interline_dcnx_enabled`,
+  `crs_cnx_enabled`, `output_formats`, `metrics_level`, `event_log_enabled`,
+  `event_log_path`, `log_level`, `log_json_path`, `log_stdout_json`,
+  `graph_export_path`, `graph_import_path`, `constraints_path`.
+
+# Highlighted fields
+
 - `allow_roundtrips::Bool` — when `false` (default), itineraries whose final
   destination equals their origin are rejected; when `true`, they are split at
-  the farthest point from the origin and the two halves are committed separately
+  the farthest point from the origin and the two halves are committed separately.
+- `max_stops::Int = 2` — search depth; the most commonly overridden field.
+- `leading_days::Int = 2`, `trailing_days::Int = 0` — schedule window around
+  the target day. Enlarging these catches itineraries that depart the previous
+  day and arrive on the target.
+- `mct_serial_ascending::Bool = false` — see *MCT behaviour* above.
 """
 @kwdef struct SearchConfig
     backend::String = "duckdb"

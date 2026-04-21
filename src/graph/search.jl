@@ -21,8 +21,14 @@
 # Fields
 - `config::SearchConfig` — search configuration (scope, interline, stop limits)
 - `constraints::SearchConstraints` — market-level parameter overrides
-- `cnx_rules::Tuple` — connection rule chain (built by `build_cnx_rules`); Tuple for fully specialized dispatch
-- `itn_rules::Tuple` — itinerary rule chain (built by `build_itn_rules`); Tuple for fully specialized dispatch
+- `cnx_rules::Tuple` — connection rule chain; populated by `build_graph!`
+  for graph-construction use and **not read during search**, so callers
+  constructing a `RuntimeContext` for search can safely leave this as the
+  default `()`. Tuple type is chosen for fully specialized dispatch in the
+  O(n²) connection builder.
+- `itn_rules::Tuple` — itinerary rule chain (built by `build_itn_rules`);
+  consumed by `_validate_and_commit!` during search. Callers must populate this
+  when constructing `RuntimeContext` manually. Tuple for fully specialized dispatch.
 - `gc_cache::Dict{Tuple{StationCode,StationCode}, Float64}` — great-circle distance cache
   keyed by `(origin_code, dest_code)`
 - `target_date::UInt32` — packed YYYYMMDD target search date
@@ -670,6 +676,7 @@ end
 ---
 
 # Description
+- Low-level DFS search over an already-built graph; the innermost public API
 - Searches all valid itineraries from `origin` to `dest` on `target_date`
 - Iterates every departure leg at the origin that is valid on `target_date`;
   for each one finds or synthesises its nonstop self-connection, then:
@@ -680,6 +687,14 @@ end
 - Increments `ctx.search_stats.queries` on entry; clears `ctx.results` at start
 - Returns a reference to `ctx.results` (no allocation; caller should copy if
   the reference must outlive the next search call)
+
+# When to use
+- Use for repeated searches over the same graph with a shared
+  `RuntimeContext` — maximum speed, avoids re-ingest and re-build
+- For one-off calls, prefer `search_markets` (all-in-one) or `search`
+  (store-to-results convenience wrapper)
+- For the compact serialisable output, wrap this with `itinerary_legs` or
+  `itinerary_legs_multi` instead of iterating `Itinerary` graph objects yourself
 
 # Arguments
 1. `stations::Dict{StationCode, GraphStation}`: the full station graph
