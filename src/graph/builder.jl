@@ -241,13 +241,22 @@ function build_graph!(
     if source == :newssim
         tz_path = airports_path
         if tz_path === nothing
-            # Auto-discover: check standard locations (tab-delimited and fixed-width)
-            for candidate in [
-                "data/input/airports_tab.txt",
-                "data/input/mdstua.txt",
-                "data/demo/airports_tab.txt",
-                "data/demo/airports.txt",
-            ]
+            # Auto-discover: check standard locations. Candidates are resolved
+            # against the package root (via `pkgdir`) when available so tests
+            # run via `Pkg.test` — where cwd is a sandbox directory — still
+            # locate the reference airport file. Without a found airports file
+            # the newssim ingest falls back to the CSV's UTC datetime columns
+            # which have a known sign-flip bug; populating tz_offsets avoids it.
+            pkg_root = pkgdir(@__MODULE__)
+            candidates = String[]
+            for rel in ("data/input/airports_tab.txt",
+                        "data/input/mdstua.txt",
+                        "data/demo/airports_tab.txt",
+                        "data/demo/airports.txt")
+                pkg_root !== nothing && push!(candidates, joinpath(pkg_root, rel))
+                push!(candidates, rel)  # cwd-relative fallback for direct scripts
+            end
+            for candidate in candidates
                 if isfile(candidate)
                     tz_path = candidate
                     break
