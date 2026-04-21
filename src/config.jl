@@ -83,6 +83,9 @@ the reference — no locking, no mutation.
     airports_path::String = _default_path("mdstua.txt")
     regions_path::String = _default_path("REGIMFILUA.DAT")
     aircrafts_path::String = _default_path("aircraft.txt")
+    # RESERVED — forwarded through CLI/server and loadable from JSON for forward
+    # compatibility, but not yet consumed by any ingest path. Present so that
+    # existing JSON configs do not break when set.
     seats_path::String = _default_path("seats_ua.txt.DAT")
     classmap_path::String = _default_path("classmaptable.txt")
     serviceclass_path::String = _default_path("servclasstable.dat")

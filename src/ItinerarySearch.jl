@@ -1,3 +1,22 @@
+"""
+    ItinerarySearch
+
+High-performance itinerary building and search for airline schedules.
+
+Ingests OAG/SSIM fixed-width schedule files or NewSSIM CSV files and MCT
+(Minimum Connecting Time) data, builds an in-memory flight connection graph
+backed by a `DuckDBStore`, and serves DFS itinerary and trip searches.
+
+The "happy path" for a library user is:
+1. `store = DuckDBStore()`; `ingest_ssim!(store, path)` or `ingest_newssim!(store, path)`
+2. `ingest_mct!(store, mct_path)` and `load_airports!` / `load_regions!` / `load_aircrafts!`
+3. `graph = build_graph!(store, SearchConfig(), target_date)` (add `source=:newssim` for CSV)
+4. `itns = search_itineraries(graph.stations, StationCode("ORD"), StationCode("LHR"), target_date, ctx)`
+   or use `itinerary_legs` / `itinerary_legs_multi` / `itinerary_legs_json` for the compact output API.
+
+See the documentation at `docs/src/getting-started.md` for a full worked example,
+and `docs/diagrams/` for architecture diagrams.
+"""
 module ItinerarySearch
 
 using ArgParse

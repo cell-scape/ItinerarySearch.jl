@@ -22,6 +22,9 @@ ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Ti
 - **Compilation** — PrecompileTools workload for fast first-use; PackageCompiler sysimage (0ms load) and standalone app builds
 - **DuckDB store** — all tabular data flows through a single `DuckDBStore`; SQL post-ingest pipeline handles joins, enrichment, and filtering
 
+See [`docs/diagrams/`](docs/diagrams/) for editable drawio diagrams of the
+module layout, ingest pipelines, search workflow, entry points, and data model.
+
 ## Quick Start
 
 ### Library Usage
@@ -211,7 +214,7 @@ See [docs/src/architecture.md](docs/src/architecture.md) for the full Mermaid di
 | `interline` | `INTERLINE_CODESHARE` | `INTERLINE_ONLINE`, `INTERLINE_CODESHARE`, or `INTERLINE_ALL` |
 | `distance_formula` | `:haversine` | `:haversine` or `:vincenty` |
 | `mct_cache_enabled` | `true` | Cache MCT lookup results during connection build |
-| `mct_serial_ascending` | `true` | MCT tiebreaker: `true` = earlier record wins; `false` = later record wins |
+| `mct_serial_ascending` | `false` | MCT tiebreaker: `false` = higher serial (later record, matches production); `true` = lower serial (earlier record) |
 | `mct_codeshare_mode` | `:both` | `:both`, `:marketing`, or `:operating` carrier lookup |
 | `mct_schengen_mode` | `:sch_then_eur` | SCH/EUR region priority: `:sch_then_eur`, `:eur_then_sch`, `:sch_only`, `:eur_only` |
 | `mct_suppressions_enabled` | `true` | Include MCT suppression records (`false` = ignore) |

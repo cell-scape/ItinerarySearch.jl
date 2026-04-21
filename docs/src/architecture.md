@@ -1,5 +1,11 @@
 # Architecture
 
+> **See also:** [`docs/diagrams/`](https://github.com/cell-scape/ItinerarySearch.jl/tree/main/docs/diagrams)
+> contains a set of editable drawio diagrams covering the module layout, ingest
+> pipelines, search workflow, entry points (CLI + REST), and data-model layers.
+> Open them in VS Code (Draw.io Integration extension) or at
+> [app.diagrams.net](https://app.diagrams.net).
+
 ## Data Pipeline
 
 The system transforms raw airline schedule files into searchable itineraries through a five-stage pipeline:
