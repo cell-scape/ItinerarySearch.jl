@@ -187,29 +187,9 @@ end
 end
 
 # ── Elapsed-time computation ────────────────────────────────────────────────────
-
-"""
-    `_leg_utc_block(rec::LegRecord)::Int32`
-
-Compute a single leg's UTC block time in minutes from a `LegRecord`.
-
-If the source SSIM row left `arrival_date_variation` blank (parsed as 0) on
-an overnight flight, the raw UTC math is negative.  In that case we infer
-a +1 day rollover.  Observed in practice on non-UA carrier records in
-`uaoa_ssim.new.dat` (e.g. LH 431 ORD→FRA, column 194 is blank instead of
-`'1'`), where the provider doesn't populate the date-variation byte.
-Explicit `arrival_date_variation = 1` or `2` still takes precedence.
-"""
-function _leg_utc_block(rec)::Int32
-    utc_dep = Int32(rec.passenger_departure_time) - Int32(rec.departure_utc_offset)
-    utc_arr = Int32(rec.passenger_arrival_time) - Int32(rec.arrival_utc_offset) +
-              Int32(rec.arrival_date_variation) * Int32(1440)
-    block = utc_arr - utc_dep
-    if block < 0 && rec.arrival_date_variation == 0
-        block += Int32(1440)
-    end
-    return block
-end
+# `_leg_utc_block` is defined in src/graph/time_helpers.jl (shared with
+# rules_itn.jl block-time consumers and the formats.jl flight-minutes
+# accumulator).
 
 """
     `function _compute_elapsed(itn::Itinerary)::Int32`

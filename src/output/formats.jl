@@ -756,13 +756,12 @@ _market(org, dst) = org < dst ? org * dst : dst * org
 # Distance in integer miles (consistent unit across all outputs)
 _miles(d::Real) = round(Int, d)
 
-# Does this leg operate on `date`?  Checks eff/disc range + frequency DOW bit.
-# UTC block time for a single leg: (arr - arr_utc_offset) - (dep - dep_utc_offset) + date_var * 1440
-@inline function _utc_block_time(r)::Int32
-    utc_dep = Int32(r.passenger_departure_time) - Int32(r.departure_utc_offset)
-    utc_arr = Int32(r.passenger_arrival_time) - Int32(r.arrival_utc_offset) + Int32(r.arrival_date_variation) * Int32(1440)
-    return max(Int32(0), utc_arr - utc_dep)
-end
+# UTC block time for a single leg uses the shared `_leg_utc_block` from
+# src/graph/time_helpers.jl, which infers +1 day rollover when source
+# `arrival_date_variation` is blank on an overnight flight (LH-style data
+# gap).  Previous local `_utc_block_time` had a silent max(0, ...) clamp
+# that under-counted flight time for those records.
+const _utc_block_time = _leg_utc_block
 
 function _operates_on(r, date::Date)::Bool
     eff = unpack_date(r.effective_date)

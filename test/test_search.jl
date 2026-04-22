@@ -541,6 +541,41 @@ using Dates
             @test elapsed > Int32(0)   # critical: not silently clamped to 0
         end
 
+        @testset "_leg_utc_block: blank arr_date_var on overnight infers +1 day" begin
+            # Direct test of the shared helper; same scenario as the
+            # Itinerary-level test above but exercises the helper alone so
+            # downstream consumers (flight_time accumulator, MAFT rule,
+            # CSV/JSON output flight_minutes) all benefit.
+            using ItinerarySearch: _leg_utc_block
+            ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+            fra = GraphStation(_stn_rec("FRA", "DE", "EUR"))
+            rec = _leg_rec(
+                carrier="LH", flight_number=431,
+                departure_station="ORD", arrival_station="FRA",
+                passenger_departure_time=Int16(1200),
+                passenger_arrival_time=Int16(660),
+                departure_utc_offset=Int16(-300),
+                arrival_utc_offset=Int16(120),
+                arrival_date_variation=Int8(0),    # source missed it
+            )
+            @test _leg_utc_block(rec) == Int32(480)  # 8h, not 0
+        end
+
+        @testset "_leg_utc_block: same-day flight unchanged" begin
+            using ItinerarySearch: _leg_utc_block
+            jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+            bos = GraphStation(_stn_rec("BOS", "US", "NAM"))
+            rec = _leg_rec(
+                departure_station="JFK", arrival_station="BOS",
+                passenger_departure_time=Int16(480),
+                passenger_arrival_time=Int16(560),
+                departure_utc_offset=Int16(-300),
+                arrival_utc_offset=Int16(-300),
+                arrival_date_variation=Int8(0),
+            )
+            @test _leg_utc_block(rec) == Int32(80)  # JFK→BOS, 80 min, no rollover
+        end
+
         @testset "arrival_date_variation=1 explicitly still works" begin
             # When the source DOES flag overnight correctly, behaviour is
             # unchanged — we don't double-add 1440.
