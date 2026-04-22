@@ -850,6 +850,24 @@ using Dates
         @test rules[9] === check_cnx_trfrest
     end
 
+    # ── circuity_check_scope gating ───────────────────────────────────────────
+
+    @testset "circuity_check_scope gating" begin
+        config_both = SearchConfig()
+        config_cnx  = SearchConfig(circuity_check_scope=:connection)
+        config_itn  = SearchConfig(circuity_check_scope=:itinerary)
+
+        cnx_rules_both = build_cnx_rules(config_both, SearchConstraints(), MCTLookup())
+        cnx_rules_itn  = build_cnx_rules(config_itn,  SearchConstraints(), MCTLookup())
+        @test any(r -> r isa CircuityRule, cnx_rules_both)
+        @test !any(r -> r isa CircuityRule, cnx_rules_itn)
+
+        itn_rules_both = build_itn_rules(config_both)
+        itn_rules_cnx  = build_itn_rules(config_cnx)
+        @test check_itn_circuity_range in itn_rules_both
+        @test !(check_itn_circuity_range in itn_rules_cnx)
+    end
+
     # ── Allocation regression test ────────────────────────────────────────────
 
     @testset "MCTRule zero-allocation hot path" begin

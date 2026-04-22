@@ -1246,12 +1246,14 @@ function build_cnx_rules(
     push!(rules, check_cnx_opdays)
     push!(rules, check_cnx_suppcodes)
     config.maft_enabled && push!(rules, MAFTRule())
-    push!(rules,
-        CircuityRule(
-            p.domestic_circuity_extra_miles,
-            p.international_circuity_extra_miles,
-        ),
-    )
+    if config.circuity_check_scope === :connection || config.circuity_check_scope === :both
+        push!(rules,
+            CircuityRule(
+                p.domestic_circuity_extra_miles,
+                p.international_circuity_extra_miles,
+            ),
+        )
+    end
     # Geographic filter (only when any set is non-empty)
     if !isempty(p.allow_stations) || !isempty(p.deny_stations) ||
        !isempty(p.allow_countries) || !isempty(p.deny_countries) ||

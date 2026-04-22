@@ -234,6 +234,14 @@ end
     end
 end
 
+@testset "circuity_check_scope" begin
+    @test SearchConfig().circuity_check_scope == :both
+    @test SearchConfig(circuity_check_scope=:connection).circuity_check_scope == :connection
+    @test SearchConfig(circuity_check_scope=:itinerary).circuity_check_scope == :itinerary
+    # Invalid values go through the JSON parser (see _parse_circuity_check_scope test);
+    # direct construction is permissive, matching other Symbol-valued SearchConfig fields.
+end
+
 @testset "load_constraints" begin
     @testset "Full constraints section" begin
         json = """

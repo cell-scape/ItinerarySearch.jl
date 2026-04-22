@@ -649,9 +649,11 @@ function build_itn_rules(config::SearchConfig; constraints::SearchConstraints = 
     rules = Any[
         check_itn_scope,
         check_itn_opdays,
-        check_itn_circuity_range,
-        check_itn_suppcodes,
     ]
+    if config.circuity_check_scope === :itinerary || config.circuity_check_scope === :both
+        push!(rules, check_itn_circuity_range)
+    end
+    push!(rules, check_itn_suppcodes)
 
     config.maft_enabled && push!(rules, check_itn_maft)
 

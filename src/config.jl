@@ -37,6 +37,20 @@ function _parse_scope(s::AbstractString)::ScopeMode
 end
 
 """
+    `_parse_circuity_check_scope(s::AbstractString)::Symbol`
+
+Parse `"connection"`, `"itinerary"`, or `"both"` from a JSON string value.
+Throws for unknown values.
+"""
+function _parse_circuity_check_scope(s::AbstractString)::Symbol
+    s = lowercase(String(s))
+    s == "connection" && return :connection
+    s == "itinerary" && return :itinerary
+    s == "both" && return :both
+    error("Unknown circuity_check_scope: $s. Expected: connection, itinerary, both")
+end
+
+"""
     `_parse_interline(s::AbstractString)::InterlineMode`
 
 Parse an interline string from JSON config to InterlineMode enum.
@@ -139,6 +153,7 @@ see also `docs/src/getting-started.md`. Fields fall into five groups:
     maft_enabled::Bool = true              # enable MAFT rule (both connection and itinerary level)
     interline_dcnx_enabled::Bool = true    # enable interline double-connect restriction
     crs_cnx_enabled::Bool = true           # enable CRS distance-based connection time rule
+    circuity_check_scope::Symbol = :both   # :both, :connection, or :itinerary — controls which circuity rules are active
     mct_audit::MCTAuditConfig = MCTAuditConfig()    # MCT audit logging configuration
 end
 
@@ -503,6 +518,8 @@ function load_config(path::String)::SearchConfig
         s !== nothing && (kwargs[:scope] = _parse_scope(s))
         s = _json_str(search, :interline)
         s !== nothing && (kwargs[:interline] = _parse_interline(s))
+        s = _json_str(search, :circuity_check_scope)
+        s !== nothing && (kwargs[:circuity_check_scope] = _parse_circuity_check_scope(s))
         if haskey(search, :allow_roundtrips)
             val = search[:allow_roundtrips]
             val isa Bool && (kwargs[:allow_roundtrips] = val)
