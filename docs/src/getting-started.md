@@ -122,6 +122,125 @@ ctx = RuntimeContext(
 
 `RuntimeContext` holds all per-search mutable state: rule chains, great-circle distance cache, search statistics, and the results accumulator. Create one context per search thread.
 
+## Step 3b: Constraints and Circuity Tiers
+
+`SearchConstraints` holds the tunable parameters that shape which connections and itineraries survive the rule chain. Every field has a sensible default, so `SearchConstraints()` works out of the box; the sections below show how to customize it for realistic workloads. The full field list lives on `ParameterSet` (`src/types/constraints.jl`).
+
+### Why circuity is tiered
+
+Circuity is the ratio of *flown* distance to *great-circle* distance — a proxy for how "direct" an itinerary is. Short hops tolerate much higher circuity than long hauls: you'll happily accept a 2.4× detour on a 200-mile regional but not on a transatlantic. `ItinerarySearch` models this as a **distance-tiered ceiling**:
+
+```julia
+julia> DEFAULT_CIRCUITY_TIERS
+4-element Vector{CircuityTier}:
+ CircuityTier(250.0, 2.4)    # 0–250 mi   → ≤ 2.4×
+ CircuityTier(800.0, 1.9)    # 251–800 mi → ≤ 1.9×
+ CircuityTier(2000.0, 1.5)   # 801–2000   → ≤ 1.5×
+ CircuityTier(Inf, 1.3)      # 2001+      → ≤ 1.3×
+```
+
+`CircuityTier` is an isbits struct with two `Float64` fields: an inclusive upper-bound distance (miles) and the max circuity factor permitted up to that distance. The lookup is a linear scan — fast, no allocation.
+
+### Where tiers are evaluated
+
+Circuity is checked at two layers:
+
+| Layer | When | Where |
+|-------|------|-------|
+| Connection | During `build_connections!` (graph-build time) | `CircuityRule` in `src/graph/rules_cnx.jl` |
+| Itinerary  | During DFS (per candidate path) | `check_itn_circuity_range` in `src/graph/rules_itn.jl` |
+
+The `SearchConfig.circuity_check_scope` field toggles which layers enforce the rule:
+
+```julia
+SearchConfig(circuity_check_scope = :both)         # default
+SearchConfig(circuity_check_scope = :connection)   # prune early, skip itinerary
+SearchConfig(circuity_check_scope = :itinerary)    # defer to full-path check
+```
+
+The itinerary-level check automatically waives itself for nonstops and 1-stops — for those, the connection-level check already saw the full path.
+
+### Programmatic customization
+
+Swap the whole tier vector via `ParameterSet(circuity_tiers=...)`:
+
+```julia
+strict = SearchConstraints(
+    defaults = ParameterSet(
+        circuity_tiers = [
+            CircuityTier(500.0, 1.8),   # 0–500 mi
+            CircuityTier(Inf,   1.2),   # 500+ mi — tight long-haul
+        ],
+        max_circuity   = 1.4,           # global ceiling, applied after tier lookup
+    ),
+)
+```
+
+`max_circuity` is the global *ceiling* applied after the tier lookup — useful to cap tier outputs without rewriting the tiers themselves. `min_circuity` is the global *floor* (reject too-direct itineraries). `domestic_circuity_extra_miles` and `international_circuity_extra_miles` add flat-mile tolerance to the ceiling (`factor × gc + extra`).
+
+### Market-level overrides
+
+`SearchConstraints` also holds an `overrides::Vector{MarketOverride}`. When a connection or itinerary has a matching market override, its `ParameterSet` is used in place of `defaults`. Circuity-resolution is **market-only** (carrier is ignored — circuity is a geographic property):
+
+```julia
+constraints = SearchConstraints(
+    overrides = [
+        MarketOverride(
+            origin      = StationCode("ATL"),
+            destination = StationCode("YYZ"),
+            carrier     = WILDCARD_AIRLINE,
+            params      = ParameterSet(
+                circuity_tiers = [CircuityTier(Inf, 2.7)],  # loosen this market
+            ),
+            specificity = UInt32(1000),
+        ),
+    ],
+)
+```
+
+Overrides are scanned in descending `specificity`; the first match wins. Both the connection-level and itinerary-level rules resolve extra_miles, tiers, and ceiling from the matched `ParameterSet`, so a market override that tunes `domestic_circuity_extra_miles` flows through both layers identically.
+
+### CSV loaders (profit-manager file format)
+
+Production workloads typically ship tier defaults and market overrides as CSV. `ItinerarySearch` reads both formats directly:
+
+```
+data/demo/cirOvrdDflt.dat        (tier defaults)
+    HIGH,CIRCUITY
+    250,2.4
+    800,1.9
+    2000,1.5
+    99999,1.3
+
+data/demo/cirOvrd.dat            (market overrides)
+    ORG,DEST,ENTNM,CRTY
+    ATL,YYZ,*,2.7
+    ATL,IAH,*,1.75
+    ORD,PHX,*,1.44
+```
+
+Load them into a `SearchConstraints`:
+
+```julia
+constraints = SearchConstraints()
+apply_circuity_files!(constraints;
+    defaults_path  = "data/demo/cirOvrdDflt.dat",
+    overrides_path = "data/demo/cirOvrd.dat",
+)
+
+ctx = RuntimeContext(
+    config      = config,
+    constraints = constraints,
+    itn_rules   = build_itn_rules(config),
+)
+```
+
+`apply_circuity_files!` returns a new `SearchConstraints` with the tier list applied to `defaults.circuity_tiers` and one `MarketOverride` per overrides row. The individual loaders `load_circuity_tiers` and `load_circuity_overrides` are also exported if you want to compose them manually.
+
+The full profit-manager file-format reference (including related tables like
+`maxCnctTm.dat`, `cnctFlags.dat`, and entity/alliance mappings) lives in
+[`docs/reference/pm_constraint_tables.md`](../reference/pm_constraint_tables.md).
+
 ## Step 4: Search
 
 ### Single O-D Pair
@@ -612,7 +731,10 @@ The `/search` endpoint accepts optional constraint fields in the request body:
 | `max_stops` | 2 | `ParameterSet.max_stops` |
 | `max_elapsed` | 1440 | `ParameterSet.max_elapsed` |
 | `max_connection` | 480 | `ParameterSet.max_mct_override` |
-| `circuity_factor` | 2.0 | `ParameterSet.circuity_factor` |
+
+Circuity is controlled via `SearchConstraints` (see Step 3b) rather than
+per-request overrides; reload the server with different constraints if
+you need to tune tiers or add market-level overrides.
 
 ## Step 12: Compilation
 
