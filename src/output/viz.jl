@@ -1022,6 +1022,155 @@ function viz_itinerary_refs(
     _write_itinref_html(path, JSON3.write(entries), title)
 end
 
+# ── Rich overloads (Vector{Itinerary} input) ─────────────────────────────────
+# Accept full `Itinerary` structs (with `GraphConnection` chain intact) so the
+# viz can emit per-connection MCT info, per-leg TRC codes, status flags
+# (codeshare/interline/through), and absolute UTC timestamps.  ItineraryRef
+# overloads stay above for callers that only have the compact form.
+
+function viz_itinerary_refs(
+    path::AbstractString,
+    data::Vector{Itinerary};
+    title::String = "",
+    date::String = "",
+)::Nothing
+    entries = Dict{String,Any}[
+        _itinref_entry_rich(itn, i; date=date) for (i, itn) in enumerate(data)
+    ]
+    _write_itinref_html(path, JSON3.write(entries), title)
+end
+
+function viz_itinerary_refs(
+    path::AbstractString,
+    data::Dict{Date, Dict{String, Dict{String, Vector{Itinerary}}}};
+    title::String = "",
+)::Nothing
+    entries = Dict{String,Any}[]
+    for (d, org_dict) in data
+        for (_, dst_dict) in org_dict
+            for (_, itins) in dst_dict
+                for (i, itn) in enumerate(itins)
+                    push!(entries, _itinref_entry_rich(itn, i; date=string(d)))
+                end
+            end
+        end
+    end
+    _write_itinref_html(path, JSON3.write(entries), title)
+end
+
+# ── Helpers ──────────────────────────────────────────────────────────────────
+
+# Map MCTSource enum to a short human-readable string for the viz tooltip /
+# expanded row.  Uses the existing canonical names from src/types/enums.jl.
+function _mct_source_str(src::MCTSource)::String
+    src == SOURCE_EXCEPTION         && return "exception"
+    src == SOURCE_STATION_STANDARD  && return "standard"
+    src == SOURCE_GLOBAL_DEFAULT    && return "default"
+    return string(src)
+end
+
+# Extract the TRC character that applies to this leg (matches the connection
+# rule's `_get_trc` logic: indexed-by-leg-sequence string like "AB" with
+# leg_sequence_number 2 → 'B'; single-char "A" → 'A'; '.' or empty → ' ').
+function _leg_trc_char(rec)::Char
+    trc = rec.traffic_restriction_for_leg
+    (isempty(trc) || trc == InlineString15(".")) && return ' '
+    length(trc) <= 1 && return trc[1]
+    seq = Int(rec.leg_sequence_number)
+    (seq > 0 && seq <= length(trc)) ? trc[seq] : ' '
+end
+
+function _itinref_entry_rich(itn::Itinerary, idx::Int; date::String="")
+    legs, cnxs = _extract_legs_and_cnxs(itn)
+    n_legs = length(legs)
+
+    # Per-leg dicts (all the existing fields plus timestamps + TRC).
+    leg_dicts = Dict{String,Any}[]
+    for (k, leg) in enumerate(legs)
+        rec = leg.record
+        trc = _leg_trc_char(rec)
+        push!(leg_dicts, Dict{String,Any}(
+            "leg_pos"                 => k,
+            "carrier"                 => strip(String(rec.carrier)),
+            "flight_number"           => Int(rec.flight_number),
+            "departure_station"       => strip(String(rec.departure_station)),
+            "arrival_station"         => strip(String(rec.arrival_station)),
+            "operating_carrier"       => strip(String(rec.operating_carrier)),
+            "operating_flight_number" => Int(rec.operating_flight_number),
+            "row_number"              => Int(rec.row_number),
+            "record_serial"           => Int(rec.record_serial),
+            "dep_dt"                  => string(leg_departure_dt(leg)) * "Z",
+            "arr_dt"                  => string(leg_arrival_dt(leg)) * "Z",
+            "aircraft_type"           => strip(String(rec.aircraft_type)),
+            "trc"                     => trc == ' ' ? "" : string(trc),
+        ))
+    end
+
+    # Per-connection dicts (between consecutive legs).  cnxs[i] sits between
+    # legs[i] and legs[i+1]; carries MCT id/time/source for audit.
+    cnx_dicts = Dict{String,Any}[]
+    for (k, cp) in enumerate(cnxs)
+        push!(cnx_dicts, Dict{String,Any}(
+            "cnx_pos"     => k,
+            "station"     => strip(String((cp.from_leg::GraphLeg).record.arrival_station)),
+            "cnx_time"    => Int(cp.cnx_time),
+            "mct"         => Int(cp.mct),
+            "mct_id"      => Int(cp.mct_result.mct_id),
+            "mct_time"    => Int(cp.mct_result.time),
+            "mct_source"  => _mct_source_str(cp.mct_result.source),
+            "is_through"  => cp.is_through,
+        ))
+    end
+
+    # Reuse existing flight-time / layover accumulators for consistency with
+    # the ItineraryRef path (which is what other tooling reads).
+    flight_mins = Int32(0)
+    for leg in legs
+        flight_mins += _leg_utc_block(leg.record)
+    end
+    elapsed = Int(itn.elapsed_time)
+    layover = Int(max(Int32(0), elapsed - flight_mins))
+
+    # First/last station for the row's Origin / Dest columns (uses leg list,
+    # not the LegKey path, so it works on Itinerary directly).
+    origin_str = n_legs > 0 ? strip(String(legs[1].record.departure_station)) : ""
+    dest_str   = n_legs > 0 ? strip(String(legs[end].record.arrival_station)) : ""
+
+    flights_str_v = join(["$(strip(String(l.record.carrier))) $(Int(l.record.flight_number))"
+                          for l in legs], " / ")
+    route_str_v = if n_legs == 0
+        ""
+    elseif n_legs == 1
+        "$(strip(String(legs[1].record.departure_station))) → $(strip(String(legs[1].record.arrival_station)))"
+    else
+        join(vcat([strip(String(legs[1].record.departure_station))],
+                  [strip(String(l.record.arrival_station)) for l in legs]),
+             " → ")
+    end
+
+    Dict{String,Any}(
+        "date"             => date,
+        "idx"              => idx,
+        "flights"          => flights_str_v,
+        "route"            => route_str_v,
+        "origin"           => origin_str,
+        "destination"      => dest_str,
+        "num_stops"        => Int(itn.num_stops),
+        "elapsed_minutes"  => elapsed,
+        "flight_minutes"   => Int(flight_mins),
+        "layover_minutes"  => layover,
+        "distance_miles"   => round(Float64(itn.total_distance); digits=0),
+        "circuity"         => round(Float64(itn.circuity); digits=2),
+        # Status flags (display as badges)
+        "is_international" => is_international(itn.status),
+        "is_interline"     => is_interline(itn.status),
+        "is_codeshare"     => is_codeshare(itn.status),
+        "has_through"      => is_through(itn.status),
+        "legs"             => leg_dicts,
+        "cnxs"             => cnx_dicts,
+    )
+end
+
 function _itinref_entry(itn::ItineraryRef, idx::Int; date::String="")
     Dict{String,Any}(
         "date"            => date,
@@ -1086,7 +1235,20 @@ function _write_itinref_html(path::String, json_data::String, title::String)
     "    .leg-detail { background: #0d1117; }\n",
     "    .leg-detail td { padding: 4px 10px 4px 30px; color: #8b949e; font-size: 12px; border-bottom: 1px solid #161b22; }\n",
     "    .leg-detail td:first-child { border-left: 3px solid #30363d; }\n",
+    "    .cnx-detail { background: #0a0e15; }\n",
+    "    .cnx-detail td { padding: 4px 10px 4px 50px; color: #6e7681; font-size: 11px; font-style: italic; border-bottom: 1px solid #161b22; }\n",
+    "    .cnx-detail td:first-child { border-left: 3px solid #30363d; }\n",
     "    .route { color: #58a6ff; } .flights { color: #d2a8ff; } .time { color: #79c0ff; } .dist { color: #7ee787; } .circ { color: #ffa657; }\n",
+    "    .badge { display: inline-block; padding: 1px 6px; border-radius: 3px; font-size: 10px; font-weight: 600; margin-right: 3px; }\n",
+    "    .badge-intl { background: #1f3d5c; color: #79c0ff; }\n",
+    "    .badge-cs   { background: #3d2c5c; color: #d2a8ff; }\n",
+    "    .badge-il   { background: #5c3d1f; color: #ffa657; }\n",
+    "    .badge-thr  { background: #2c5c3d; color: #7ee787; }\n",
+    "    .trc-badge  { background: #5c1f2c; color: #ff7b8b; padding: 0 4px; border-radius: 2px; font-size: 10px; margin-left: 4px; }\n",
+    "    .mct-src-exception { color: #ff7b8b; }\n",
+    "    .mct-src-standard  { color: #ffa657; }\n",
+    "    .mct-src-default   { color: #6e7681; }\n",
+    "    .ts { color: #79c0ff; font-family: monospace; }\n",
     "    .clickable { cursor: pointer; }\n",
     "    .expand-icon { display: inline-block; width: 16px; text-align: center; color: #484f58; }\n",
     "  </style>\n</head>\n<body>\n",
@@ -1112,6 +1274,7 @@ function _write_itinref_html(path::String, json_data::String, title::String)
     "      <th data-col=\"layover_minutes\">Layover<span class=\"arrow\"></span></th>\n",
     "      <th data-col=\"distance_miles\">Distance<span class=\"arrow\"></span></th>\n",
     "      <th data-col=\"circuity\">Circuity<span class=\"arrow\"></span></th>\n",
+    "      <th>Flags</th>\n",
     "    </tr></thead><tbody id=\"tbody\"></tbody></table>\n",
     "  </div>\n",
     "  <script>\n",
@@ -1119,6 +1282,32 @@ function _write_itinref_html(path::String, json_data::String, title::String)
     "    let sortCol = 'num_stops', sortAsc = true;\n",
     "    let expanded = new Set();\n",
     "    function fmtTime(m) { const h = Math.floor(m/60), mm = m%60; return h+'h'+(mm<10?'0':'')+mm; }\n",
+    "    function fmtDt(s) {\n",
+    "      // Compact ISO display: \"2026-03-18T22:30:00Z\" -> \"03-18 22:30\"\n",
+    "      if (!s) return '';\n",
+    "      const m = s.match(/^(\\d{4})-(\\d{2})-(\\d{2})T(\\d{2}):(\\d{2})/);\n",
+    "      return m ? (m[2]+'-'+m[3]+' '+m[4]+':'+m[5]+'Z') : s;\n",
+    "    }\n",
+    "    function addCell(tr, text, cls) {\n",
+    "      const td = document.createElement('td');\n",
+    "      td.textContent = text;\n",
+    "      if (cls) td.className = cls;\n",
+    "      tr.appendChild(td);\n",
+    "      return td;\n",
+    "    }\n",
+    "    function appendDetailRow(cls, tbody) {\n",
+    "      const r = document.createElement('tr');\n",
+    "      r.className = cls;\n",
+    "      tbody.appendChild(r);\n",
+    "      return r;\n",
+    "    }\n",
+    "    function appendBadgeText(parent, text, color, cls) {\n",
+    "      const span = document.createElement('span');\n",
+    "      span.textContent = ' ' + text;\n",
+    "      if (cls) span.className = cls;\n",
+    "      else span.style.color = color || '#8b949e';\n",
+    "      parent.appendChild(span);\n",
+    "    }\n",
     "    function render() {\n",
     "      const fOrg = document.getElementById('f-org').value.toUpperCase().trim();\n",
     "      const fDst = document.getElementById('f-dst').value.toUpperCase().trim();\n",
@@ -1140,6 +1329,10 @@ function _write_itinref_html(path::String, json_data::String, title::String)
     "        const key = d.origin+d.destination+d.idx+(d.date||'');\n",
     "        const tr = document.createElement('tr');\n",
     "        tr.className = 'clickable stops-'+Math.min(d.num_stops,3)+(expanded.has(key)?' expanded':'');\n",
+    "        const flagsHtml = (d.is_international?'<span class=\"badge badge-intl\">INTL</span>':'')+\n",
+    "                          (d.is_codeshare?'<span class=\"badge badge-cs\">CS</span>':'')+\n",
+    "                          (d.is_interline?'<span class=\"badge badge-il\">IL</span>':'')+\n",
+    "                          (d.has_through?'<span class=\"badge badge-thr\">THR</span>':'');\n",
     "        tr.innerHTML = '<td><span class=\"expand-icon\">'+(expanded.has(key)?'&#9660;':'&#9654;')+'</span> '+(fi+1)+'</td>'+\n",
     "          '<td>'+d.origin+'</td><td>'+d.destination+'</td>'+\n",
     "          '<td class=\"flights\">'+d.flights+'</td><td class=\"route\">'+d.route+'</td>'+\n",
@@ -1148,17 +1341,46 @@ function _write_itinref_html(path::String, json_data::String, title::String)
     "          '<td class=\"time\">'+fmtTime(d.flight_minutes)+'</td>'+\n",
     "          '<td class=\"time\">'+fmtTime(d.layover_minutes)+'</td>'+\n",
     "          '<td class=\"dist\">'+d.distance_miles.toLocaleString()+' mi</td>'+\n",
-    "          '<td class=\"circ\">'+d.circuity.toFixed(2)+'</td>';\n",
+    "          '<td class=\"circ\">'+d.circuity.toFixed(2)+'</td>'+\n",
+    "          '<td>'+flagsHtml+'</td>';\n",
     "        tr.onclick = () => { expanded.has(key)?expanded.delete(key):expanded.add(key); render(); };\n",
     "        tbody.appendChild(tr);\n",
     "        if (expanded.has(key) && d.legs) {\n",
-    "          d.legs.forEach(leg => {\n",
-    "            const lr = document.createElement('tr'); lr.className='leg-detail';\n",
+    "          d.legs.forEach((leg, li) => {\n",
+    "            const lr = appendDetailRow('leg-detail', tbody);\n",
     "            const isCS = leg.carrier!==leg.operating_carrier||leg.flight_number!==leg.operating_flight_number;\n",
-    "            lr.innerHTML = '<td></td><td>'+leg.departure_station+'</td><td>'+leg.arrival_station+'</td>'+\n",
-    "              '<td>'+leg.carrier+' '+leg.flight_number+(isCS?' (opr: '+leg.operating_carrier+' '+leg.operating_flight_number+')':'')+'</td>'+\n",
-    "              '<td colspan=\"2\">row='+leg.row_number+' serial='+leg.record_serial+'</td><td colspan=\"5\"></td>';\n",
-    "            tbody.appendChild(lr);\n",
+    "            addCell(lr, 'L'+(li+1));\n",
+    "            addCell(lr, leg.departure_station);\n",
+    "            addCell(lr, leg.arrival_station);\n",
+    "            const fltCell = addCell(lr, leg.carrier+' '+leg.flight_number);\n",
+    "            if (isCS) appendBadgeText(fltCell, '(op '+leg.operating_carrier+' '+leg.operating_flight_number+')', '#8b949e');\n",
+    "            if (leg.trc) appendBadgeText(fltCell, 'TRC '+leg.trc, '#ff7b8b', 'trc-badge');\n",
+    "            if (leg.dep_dt) {\n",
+    "              const tsCell = addCell(lr, fmtDt(leg.dep_dt)+' \\u2192 '+fmtDt(leg.arr_dt), 'ts');\n",
+    "              tsCell.colSpan = 2;\n",
+    "            } else {\n",
+    "              addCell(lr, '').colSpan = 2;\n",
+    "            }\n",
+    "            const meta = addCell(lr, 'row='+leg.row_number+' serial='+leg.record_serial+(leg.aircraft_type?' \\u00b7 '+leg.aircraft_type:''));\n",
+    "            meta.colSpan = 3;\n",
+    "            meta.style.color = '#6e7681'; meta.style.fontSize = '11px';\n",
+    "            addCell(lr, '').colSpan = 2;\n",
+    "            // Connection row after this leg, if a cnx follows it (rich format only)\n",
+    "            if (d.cnxs && li < d.cnxs.length) {\n",
+    "              const c = d.cnxs[li];\n",
+    "              const cr = appendDetailRow('cnx-detail', tbody);\n",
+    "              addCell(cr, '\\u21b3 cnx');\n",
+    "              const stCell = addCell(cr, 'at '+c.station); stCell.colSpan = 3;\n",
+    "              if (c.is_through) appendBadgeText(stCell, 'THR', '#7ee787', 'badge badge-thr');\n",
+    "              const cnxCell = addCell(cr, c.cnx_time+'min cnx (MCT '+c.mct+'min)'); cnxCell.colSpan = 2;\n",
+    "              const matchCell = document.createElement('td'); matchCell.colSpan = 3;\n",
+    "              matchCell.appendChild(document.createTextNode('matched: '));\n",
+    "              const srcSpan = document.createElement('span'); srcSpan.className = 'mct-src-'+c.mct_source; srcSpan.textContent = c.mct_source;\n",
+    "              matchCell.appendChild(srcSpan);\n",
+    "              matchCell.appendChild(document.createTextNode(' mct_id='+c.mct_id+(c.mct_time!==c.mct?' time='+c.mct_time:'')));\n",
+    "              cr.appendChild(matchCell);\n",
+    "              addCell(cr, '').colSpan = 2;\n",
+    "            }\n",
     "          });\n",
     "        }\n",
     "      });\n",

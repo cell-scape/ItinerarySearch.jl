@@ -642,6 +642,56 @@ using DataFrames
         @test df.cnx1_mct_matched_fields[1] == UInt32(0xFF)
     end
 
+    # ── viz_itinerary_refs rich entry ─────────────────────────────────────────
+
+    @testset "_itinref_entry_rich populates legs + cnxs + status flags" begin
+        using ItinerarySearch: _itinref_entry_rich
+        itn = _one_stop_itinerary()
+        entry = _itinref_entry_rich(itn, 7; date="2026-06-15")
+
+        @test entry["idx"] == 7
+        @test entry["date"] == "2026-06-15"
+        @test entry["origin"] == "JFK"
+        @test entry["destination"] == "LHR"
+        @test entry["num_stops"] == 1
+        @test entry["is_international"] == true   # _one_stop_itinerary is intl
+        @test haskey(entry, "is_codeshare")
+        @test haskey(entry, "is_interline")
+        @test haskey(entry, "has_through")
+
+        # Two legs (1-stop) and one connection between them.
+        @test length(entry["legs"]) == 2
+        @test length(entry["cnxs"]) == 1
+
+        # Each leg dict carries timestamps + TRC + canonical identity fields.
+        for leg in entry["legs"]
+            @test haskey(leg, "dep_dt")
+            @test haskey(leg, "arr_dt")
+            @test haskey(leg, "trc")
+            @test haskey(leg, "carrier")
+            @test haskey(leg, "flight_number")
+            @test haskey(leg, "row_number")
+            @test haskey(leg, "record_serial")
+        end
+
+        # Connection dict carries MCT audit info.
+        cnx = entry["cnxs"][1]
+        @test cnx["station"] == "ORD"   # leg1 arrives at ORD
+        @test haskey(cnx, "mct_id")
+        @test haskey(cnx, "mct_time")
+        @test haskey(cnx, "mct_source")
+        @test cnx["mct_source"] in ("exception", "standard", "default")
+    end
+
+    @testset "_itinref_entry_rich nonstop has zero cnxs" begin
+        using ItinerarySearch: _itinref_entry_rich
+        itn = _nonstop_itinerary()
+        entry = _itinref_entry_rich(itn, 1)
+        @test entry["num_stops"] == 0
+        @test length(entry["legs"]) == 1
+        @test length(entry["cnxs"]) == 0
+    end
+
     # ── DateTime helpers ──────────────────────────────────────────────────────
 
     @testset "leg_departure_dt — UTC absolute time" begin
