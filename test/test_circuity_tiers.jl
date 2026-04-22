@@ -1,5 +1,6 @@
 using Test
 using ItinerarySearch
+using ItinerarySearch: _validate_circuity_tiers
 
 @testset "Circuity Tiers" begin
     @testset "CircuityTier struct" begin
@@ -19,14 +20,16 @@ using ItinerarySearch
     end
 
     @testset "_validate_circuity_tiers" begin
-        using ItinerarySearch: _validate_circuity_tiers
-        _validate_circuity_tiers([CircuityTier(100.0, 2.0), CircuityTier(Inf, 1.5)])
+        @test _validate_circuity_tiers([CircuityTier(100.0, 2.0), CircuityTier(Inf, 1.5)]) === nothing
         @test_throws ArgumentError _validate_circuity_tiers(CircuityTier[])
         @test_throws ArgumentError _validate_circuity_tiers(
             [CircuityTier(500.0, 2.0), CircuityTier(200.0, 1.5)]
         )
         @test_throws ArgumentError _validate_circuity_tiers(
             [CircuityTier(100.0, 0.0), CircuityTier(Inf, 1.5)]
+        )
+        @test_throws ArgumentError _validate_circuity_tiers(
+            [CircuityTier(500.0, 2.0), CircuityTier(500.0, 1.5)]
         )
     end
 end

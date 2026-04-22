@@ -48,6 +48,9 @@ const DEFAULT_CIRCUITY_TIERS = CircuityTier[
 # Throws
 - `ArgumentError` if `tiers` is empty, has non-ascending `max_distance`, or
   contains a non-positive `factor`
+
+# Notes
+- `NaN` inputs are undefined behaviour; callers must pass finite values or `Inf`.
 """
 function _validate_circuity_tiers(tiers::Vector{CircuityTier})
     isempty(tiers) && throw(ArgumentError("circuity_tiers must not be empty"))
