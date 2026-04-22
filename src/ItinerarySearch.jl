@@ -102,6 +102,7 @@ export load_airports!, load_regions!, load_aircrafts!, load_oa_control!
 export build_graph!, search, search_markets
 export search_itineraries, search_trip
 export RuntimeContext, SearchConstraints, build_itn_rules
+export CircuityTier, DEFAULT_CIRCUITY_TIERS
 
 # Output
 export write_legs, write_itineraries, write_trips

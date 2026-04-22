@@ -1,6 +1,72 @@
 # src/types/constraints.jl — Constraint and parameter types for connection building and search
 
 """
+    struct CircuityTier
+
+Distance-tiered circuity factor. A `Vector{CircuityTier}` is evaluated in order;
+the first tier whose `max_distance` is ≥ the query distance supplies the factor.
+The final tier's `factor` is the fallback when the distance exceeds every
+threshold.
+
+# Fields
+- `max_distance::Float64` — inclusive upper bound in miles (`Inf` = catchall)
+- `factor::Float64` — maximum allowed `route_distance / great_circle_distance`
+"""
+struct CircuityTier
+    max_distance::Float64
+    factor::Float64
+end
+
+"""
+    const DEFAULT_CIRCUITY_TIERS::Vector{CircuityTier}
+
+Industry-standard tier values used when no tiered defaults are supplied via
+JSON or CSV. Stable over time.
+"""
+const DEFAULT_CIRCUITY_TIERS = CircuityTier[
+    CircuityTier(250.0, 2.4),
+    CircuityTier(800.0, 1.9),
+    CircuityTier(2000.0, 1.5),
+    CircuityTier(Inf, 1.3),
+]
+
+"""
+    `function _validate_circuity_tiers(tiers::Vector{CircuityTier})`
+---
+
+# Description
+- Validates a `Vector{CircuityTier}` for use in connection/itinerary rules
+- Called once at load time (from JSON and CSV loaders); runtime lookup assumes
+  invariants already hold
+
+# Arguments
+1. `tiers::Vector{CircuityTier}`: tier list to validate
+
+# Returns
+- `nothing` on success
+
+# Throws
+- `ArgumentError` if `tiers` is empty, has non-ascending `max_distance`, or
+  contains a non-positive `factor`
+"""
+function _validate_circuity_tiers(tiers::Vector{CircuityTier})
+    isempty(tiers) && throw(ArgumentError("circuity_tiers must not be empty"))
+    for i in 2:length(tiers)
+        tiers[i].max_distance > tiers[i - 1].max_distance ||
+            throw(
+                ArgumentError(
+                    "tier thresholds must be strictly ascending; got $(tiers[i-1].max_distance) then $(tiers[i].max_distance)",
+                ),
+            )
+    end
+    for t in tiers
+        t.factor > 0 ||
+            throw(ArgumentError("tier factors must be positive; got $(t.factor)"))
+    end
+    return nothing
+end
+
+"""
     struct ParameterSet
 ---
 

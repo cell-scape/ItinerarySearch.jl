@@ -42,5 +42,6 @@ end
     include("test_newssim_ingest.jl")
     include("test_ssim_parsing.jl")
     include("test_audit_misconnect.jl")
+    include("test_circuity_tiers.jl")
     end  # if !ITINSEARCH_ONLY_STATIC
 end
