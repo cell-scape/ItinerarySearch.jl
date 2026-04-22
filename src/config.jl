@@ -142,6 +142,111 @@ see also `docs/src/getting-started.md`. Fields fall into five groups:
     mct_audit::MCTAuditConfig = MCTAuditConfig()    # MCT audit logging configuration
 end
 
+# ── Dict constructors ────────────────────────────────────────────────────────
+#
+# All @kwdef structs in the public API gain an `AbstractDict` constructor so
+# callers can build them from untyped config sources (YAML, TOML, user-built
+# Dicts, deserialized JSON).  Keys may be `Symbol` or `AbstractString`; values
+# may be the canonical Julia type or a string form that parses to it (enum
+# fields accept e.g. `"intl"` for `SCOPE_INTL`).  Unknown keys throw
+# `ArgumentError` — matching `@kwdef` kwarg semantics, loud rather than silent.
+
+"""
+    `_normalize_dict_keys(d::AbstractDict)::Dict{Symbol,Any}`
+
+Return a new dict with `Symbol` keys.  `AbstractString` keys are converted via
+`Symbol`; `Symbol` keys are copied as-is.  Used by dict-form constructors to
+accept both JSON-loaded (Symbol) and YAML/TOML-loaded (String) shapes.
+"""
+function _normalize_dict_keys(d::AbstractDict)::Dict{Symbol,Any}
+    out = Dict{Symbol,Any}()
+    for (k, v) in d
+        sym_key = k isa Symbol ? k : Symbol(String(k))
+        out[sym_key] = v
+    end
+    return out
+end
+
+"""
+    `_validate_known_fields(kw::Dict{Symbol,Any}, ::Type{T})` where T
+
+Throw `ArgumentError` if any key in `kw` is not a field of `T`.  Matches the
+error behaviour of the `@kwdef` kwarg constructor — unknown fields fail loud
+rather than silently.
+"""
+function _validate_known_fields(kw::Dict{Symbol,Any}, ::Type{T}) where {T}
+    valid = fieldnames(T)
+    for k in keys(kw)
+        k in valid || throw(ArgumentError(
+            "unknown $(nameof(T)) field: `$k`. Valid fields: $(valid)",
+        ))
+    end
+end
+
+"""
+    `SearchConfig(d::AbstractDict)::SearchConfig`
+---
+
+# Description
+- Construct a `SearchConfig` from an `AbstractDict`
+- Accepts both `String` and `Symbol` keys; normalizes internally
+- Enum-valued fields accept their string form (e.g. `"intl"` for `SCOPE_INTL`,
+  `"codeshare"` for `INTERLINE_CODESHARE`) in addition to the canonical enum
+- Symbol-valued fields (`log_level`, `metrics_level`, `distance_formula`,
+  `mct_codeshare_mode`, `mct_schengen_mode`) accept their string form too
+- `output_formats::Vector{Symbol}` accepts a `Vector{String}`
+- Nested `mct_audit::MCTAuditConfig` accepts an `AbstractDict` and is
+  constructed recursively
+- Unknown keys throw `ArgumentError`
+
+# Arguments
+1. `d::AbstractDict`: configuration values keyed by field name
+
+# Returns
+- `::SearchConfig`: constructed config with all unspecified fields at defaults
+
+# Examples
+```julia
+julia> SearchConfig(Dict(:max_stops => 3, :scope => "intl"));
+julia> SearchConfig(Dict("max_stops" => 3, "interline" => "all"));
+```
+"""
+function SearchConfig(d::AbstractDict)::SearchConfig
+    kw = _normalize_dict_keys(d)
+    _validate_known_fields(kw, SearchConfig)
+
+    # Enum-valued fields: accept canonical enum or string form
+    if haskey(kw, :scope) && kw[:scope] isa AbstractString
+        kw[:scope] = _parse_scope(kw[:scope])
+    end
+    if haskey(kw, :interline) && kw[:interline] isa AbstractString
+        kw[:interline] = _parse_interline(kw[:interline])
+    end
+
+    # Symbol-valued fields: accept string form
+    for sym_key in (:log_level, :metrics_level, :distance_formula,
+                    :mct_codeshare_mode, :mct_schengen_mode)
+        if haskey(kw, sym_key) && kw[sym_key] isa AbstractString
+            kw[sym_key] = Symbol(kw[sym_key])
+        end
+    end
+
+    # Vector{Symbol}: accept Vector{String}
+    if haskey(kw, :output_formats) && kw[:output_formats] isa AbstractVector
+        vec = kw[:output_formats]
+        if !isempty(vec) && all(x -> x isa AbstractString, vec)
+            kw[:output_formats] = Symbol[Symbol(x) for x in vec]
+        end
+    end
+
+    # Nested struct: MCTAuditConfig
+    if haskey(kw, :mct_audit) && kw[:mct_audit] isa AbstractDict
+        kw[:mct_audit] = MCTAuditConfig(kw[:mct_audit])
+    end
+
+    return SearchConfig(; kw...)
+end
+
 # ── JSON3 field extraction helpers ────────────────────────────────────────────
 # JSON3 object field access returns a wide union type. These helpers narrow
 # the return type so JET can verify correctness.

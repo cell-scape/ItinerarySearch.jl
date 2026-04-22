@@ -53,6 +53,89 @@ using ItinerarySearch: _default_path, AirlineCode
         @test endswith(cfg.ssim_path, "uaoa_ssim.new.dat")
         @test endswith(cfg.mct_path, "MCTIMFILUA.DAT")
     end
+
+    # ── Dict constructor ─────────────────────────────────────────────────────
+    @testset "SearchConfig(dict) — Symbol keys, canonical enum values" begin
+        cfg = SearchConfig(Dict(:max_stops => 3, :scope => SCOPE_INTL))
+        @test cfg.max_stops == 3
+        @test cfg.scope == SCOPE_INTL
+        @test cfg.interline == INTERLINE_CODESHARE  # default preserved
+    end
+
+    @testset "SearchConfig(dict) — String keys" begin
+        cfg = SearchConfig(Dict("max_stops" => 4, "interline" => "all"))
+        @test cfg.max_stops == 4
+        @test cfg.interline == INTERLINE_ALL
+    end
+
+    @testset "SearchConfig(dict) — enum fields accept strings" begin
+        cfg = SearchConfig(Dict(
+            :scope => "intl",
+            :interline => "online",
+        ))
+        @test cfg.scope == SCOPE_INTL
+        @test cfg.interline == INTERLINE_ONLINE
+    end
+
+    @testset "SearchConfig(dict) — Symbol-typed fields accept strings" begin
+        cfg = SearchConfig(Dict(
+            :log_level => "debug",
+            :distance_formula => "vincenty",
+            :mct_codeshare_mode => "marketing",
+        ))
+        @test cfg.log_level === :debug
+        @test cfg.distance_formula === :vincenty
+        @test cfg.mct_codeshare_mode === :marketing
+    end
+
+    @testset "SearchConfig(dict) — output_formats accepts Vector{String}" begin
+        cfg = SearchConfig(Dict(:output_formats => ["json", "csv"]))
+        @test cfg.output_formats == [:json, :csv]
+    end
+
+    @testset "SearchConfig(dict) — nested mct_audit AbstractDict" begin
+        cfg = SearchConfig(Dict(
+            :mct_audit => Dict(:enabled => true, :detail => "detailed",
+                               :max_candidates => 5),
+        ))
+        @test cfg.mct_audit.enabled == true
+        @test cfg.mct_audit.detail === :detailed
+        @test cfg.mct_audit.max_candidates == 5
+    end
+
+    @testset "SearchConfig(dict) — unknown key errors" begin
+        @test_throws ArgumentError SearchConfig(Dict(:not_a_field => 1))
+        @test_throws ArgumentError SearchConfig(Dict("nonsense" => "value"))
+    end
+
+    @testset "SearchConfig(dict) — empty dict yields defaults" begin
+        cfg = SearchConfig(Dict{Symbol,Any}())
+        default = SearchConfig()
+        @test cfg.max_stops == default.max_stops
+        @test cfg.scope == default.scope
+        @test cfg.interline == default.interline
+        @test cfg.log_level === default.log_level
+    end
+end
+
+@testset "MCTAuditConfig(dict)" begin
+    @testset "Symbol keys, canonical values" begin
+        a = MCTAuditConfig(Dict(:enabled => true, :detail => :detailed))
+        @test a.enabled == true
+        @test a.detail === :detailed
+    end
+
+    @testset "String keys, detail as string" begin
+        a = MCTAuditConfig(Dict("enabled" => true, "detail" => "summary",
+                                "max_candidates" => 20))
+        @test a.enabled == true
+        @test a.detail === :summary
+        @test a.max_candidates == 20
+    end
+
+    @testset "unknown key errors" begin
+        @test_throws ArgumentError MCTAuditConfig(Dict(:bogus => 1))
+    end
 end
 
 @testset "load_constraints" begin
