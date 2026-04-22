@@ -209,6 +209,7 @@ end
         @test file_cfg.maft_enabled == default_cfg.maft_enabled
         @test file_cfg.interline_dcnx_enabled == default_cfg.interline_dcnx_enabled
         @test file_cfg.crs_cnx_enabled == default_cfg.crs_cnx_enabled
+        @test file_cfg.parallel_markets == default_cfg.parallel_markets
         @test file_cfg.mct_cache_enabled == default_cfg.mct_cache_enabled
         @test file_cfg.mct_serial_ascending == default_cfg.mct_serial_ascending
         @test file_cfg.mct_codeshare_mode === default_cfg.mct_codeshare_mode

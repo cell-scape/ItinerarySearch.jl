@@ -32,7 +32,8 @@
     "distance_formula": "haversine",
     "maft_enabled": true,
     "interline_dcnx_enabled": true,
-    "crs_cnx_enabled": true
+    "crs_cnx_enabled": true,
+    "parallel_markets": true
   },
   "mct_behaviour": {
     "mct_cache_enabled": true,

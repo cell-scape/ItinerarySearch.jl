@@ -188,6 +188,7 @@ see also `docs/src/getting-started.md`. Fields fall into five groups:
     maft_enabled::Bool = true              # enable MAFT rule (both connection and itinerary level)
     interline_dcnx_enabled::Bool = true    # enable interline double-connect restriction
     crs_cnx_enabled::Bool = true           # enable CRS distance-based connection time rule
+    parallel_markets::Bool = true          # parallelize per-market search when nthreads() > 1
     circuity_check_scope::Symbol = :both   # :both, :connection, or :itinerary — controls which circuity rules are active
     mct_audit::MCTAuditConfig = MCTAuditConfig()    # MCT audit logging configuration
 end
