@@ -594,6 +594,85 @@ function search(
     return copy(results)
 end
 
+# ── Runtime-context / sequential helpers (shared with parallel path) ──────────
+
+"""
+    `function _build_runtime_context(config::SearchConfig)::RuntimeContext`
+---
+
+# Description
+- Internal helper that constructs a `RuntimeContext` with the fields
+  `search_markets` sets before entering its date × market loop
+- Shared by the sequential path (`_search_markets_sequential_all_dates`) and,
+  in later tasks, the parallel-market worker pool — so that both paths agree
+  on what a "fresh" per-search context looks like
+- Does **not** set `worker_slot` (default `0` is correct for the sequential
+  path; the parallel worker pool assigns non-zero slot ids per worker)
+
+# Arguments
+1. `config::SearchConfig`: the shared immutable search configuration
+
+# Returns
+- `::RuntimeContext`: populated with `config`, default `SearchConstraints`,
+  and the itinerary-rule chain built from `config`
+"""
+function _build_runtime_context(config::SearchConfig)::RuntimeContext
+    return RuntimeContext(
+        config = config,
+        constraints = SearchConstraints(),
+        itn_rules = build_itn_rules(config),
+    )
+end
+
+"""
+    `function _search_markets_sequential_all_dates(config, store, dates, markets, target_source)::Dict{Tuple{String,String,Date}, Vector{Itinerary}}`
+---
+
+# Description
+- Internal helper that executes the full sequential date × market loop on a
+  single `RuntimeContext` and returns one `copy`-ed result per cell
+- Extracted from `search_markets` as a pure refactor; behaviour is unchanged
+- The graph is rebuilt once per date (the schedule window shifts with the
+  target day); the per-date `ctx.results` buffer is reused across markets,
+  so each returned itinerary vector is `copy`-ed before being stored
+- In later tasks a sibling `_search_markets_parallel_all_dates` with the same
+  signature will be introduced so `search_markets` can dispatch between them
+
+# Arguments
+1. `config::SearchConfig`: shared search configuration
+2. `store::DuckDBStore`: already-ingested store (newssim + optional MCT)
+3. `dates::AbstractVector{Date}`: normalized vector of target travel dates
+4. `markets::AbstractVector{<:Tuple{AbstractString,AbstractString}}`:
+   `(origin, dest)` string pairs
+5. `target_source::Symbol`: schedule source for `build_graph!` (e.g. `:newssim`)
+
+# Returns
+- `::Dict{Tuple{String,String,Date}, Vector{Itinerary}}`: results keyed by
+  `(origin_string, dest_string, date)`
+"""
+function _search_markets_sequential_all_dates(
+    config::SearchConfig,
+    store::DuckDBStore,
+    dates::AbstractVector{Date},
+    markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
+    target_source::Symbol,
+)::Dict{Tuple{String,String,Date},Vector{Itinerary}}
+    results = Dict{Tuple{String,String,Date},Vector{Itinerary}}()
+    ctx = _build_runtime_context(config)
+
+    for target in dates
+        graph = build_graph!(store, config, target; source = target_source)
+        for (org, dst) in markets
+            origin = StationCode(org)
+            dest = StationCode(dst)
+            itns = search_itineraries(graph.stations, origin, dest, target, ctx)
+            results[(String(org), String(dst), target)] = copy(itns)
+        end
+    end
+
+    return results
+end
+
 # ── Multi-market convenience search ───────────────────────────────────────────
 
 """
@@ -658,26 +737,11 @@ function search_markets(
         end
 
         date_vec = dates isa Date ? [dates] : collect(dates)
+        target_source = :newssim
 
-        ctx = RuntimeContext(
-            config = config,
-            constraints = SearchConstraints(),
-            itn_rules = build_itn_rules(config),
+        return _search_markets_sequential_all_dates(
+            config, store, date_vec, markets, target_source,
         )
-
-        results = Dict{Tuple{String,String,Date},Vector{Itinerary}}()
-
-        for target in date_vec
-            graph = build_graph!(store, config, target; source = :newssim)
-            for (org, dst) in markets
-                origin = StationCode(org)
-                dest = StationCode(dst)
-                itns = search_itineraries(graph.stations, origin, dest, target, ctx)
-                results[(String(org), String(dst), target)] = copy(itns)
-            end
-        end
-
-        return results
     finally
         close(store)
     end
