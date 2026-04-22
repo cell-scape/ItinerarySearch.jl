@@ -862,20 +862,21 @@ end
   `factor × great_circle_distance(org, dst) + extra_miles`
 - Extra miles are split by international status: domestic connections use
   `domestic_extra_miles`, international connections use `international_extra_miles`
+- `factor` is resolved per-connection via `_resolve_circuity_params` +
+  `_effective_circuity_factor` (see `src/types/constraints.jl`)
 - Great-circle distances are cached in `ctx.gc_cache` (keyed by
   `(org_code, dst_code)` tuple) to avoid repeated haversine calls
 - Round-trip connections and same-origin/destination pairs always pass
 
 # Fields
-- `factor::Float64` — circuity multiplier (default 2.0)
 - `domestic_extra_miles::Float64` — flat mileage tolerance for domestic routes (default 500.0)
 - `international_extra_miles::Float64` — flat mileage tolerance for international routes (default 1000.0)
 
 # Context fields accessed
+- `ctx.constraints::SearchConstraints` — used by `_resolve_circuity_params` to pick the effective tier
 - `ctx.gc_cache::Dict{Tuple{StationCode,StationCode}, Float64}` — cache of GC distances (mutated)
 """
 struct CircuityRule
-    factor::Float64
     domestic_extra_miles::Float64
     international_extra_miles::Float64
 end
@@ -883,10 +884,11 @@ end
 """
     `CircuityRule()`
 
-Construct a `CircuityRule` with default factor (2.0), domestic extra miles (500.0),
-and international extra miles (1000.0).
+Construct a `CircuityRule` with default domestic extra miles (500.0) and international
+extra miles (1000.0). The circuity factor is resolved per-connection at evaluation time
+from `ctx.constraints` via `_resolve_circuity_params` and `_effective_circuity_factor`.
 """
-CircuityRule() = CircuityRule(2.0, 500.0, 1000.0)
+CircuityRule() = CircuityRule(500.0, 1000.0)
 
 """
     `function (r::CircuityRule)(cp::GraphConnection, ctx)::Int`
@@ -925,9 +927,11 @@ function (r::CircuityRule)(cp::GraphConnection, ctx)::Int
         ctx.gc_cache[gc_key] = gc_dist
     end
 
+    p = _resolve_circuity_params(ctx.constraints, from_org.code, to_dst.code)
+    factor = _effective_circuity_factor(p, gc_dist)
     extra = is_international(cp.status) ? r.international_extra_miles : r.domestic_extra_miles
     route_dist = Float64(from_l.distance) + Float64(to_l.distance)
-    return route_dist <= r.factor * gc_dist + extra ? PASS : FAIL_CIRCUITY
+    return route_dist <= factor * gc_dist + extra ? PASS : FAIL_CIRCUITY
 end
 
 """
@@ -1242,11 +1246,8 @@ function build_cnx_rules(
     push!(rules, check_cnx_opdays)
     push!(rules, check_cnx_suppcodes)
     config.maft_enabled && push!(rules, MAFTRule())
-    # T4 will replace this scalar bridge with the full tiered CircuityRule.
-    # For now use the short-haul (most restrictive) tier factor as a single scalar.
     push!(rules,
         CircuityRule(
-            circuity_factor_at(p.circuity_tiers, 0.0),
             p.domestic_circuity_extra_miles,
             p.international_circuity_extra_miles,
         ),
