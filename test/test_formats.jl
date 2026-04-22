@@ -775,6 +775,41 @@ using DataFrames
         @test e4["is_interline"] == true
     end
 
+    @testset "_itinref_entry_rich flights string: arrows, no repeats on through" begin
+        # Verify two related rendering rules for the rich-entry "flights" string:
+        # - Separator is " → " (matches the route style), not " / ".
+        # - Consecutive identical carrier+flight_number entries collapse to one
+        #   (the through-flight case: a single flight number serving multiple
+        #   board/off points isn't repeated in the display).
+        using ItinerarySearch: _itinref_entry_rich
+
+        # Distinct flight numbers across legs → both shown, joined with arrows.
+        e_distinct = _itinref_entry_rich(_one_stop_itinerary(), 1)
+        @test e_distinct["flights"] == "UA 200 → UA 916"
+
+        # Same flight number across two "legs" (through-flight surrogate built
+        # by reusing the same record on both legs) → not repeated.
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+        lax = GraphStation(_stn_rec("LAX", "US", "NAM"))
+        rec1 = _leg_rec(carrier="UA", flight_number=100,
+                        departure_station="JFK", arrival_station="ORD",
+                        record_serial=UInt32(1))
+        rec2 = _leg_rec(carrier="UA", flight_number=100,
+                        departure_station="ORD", arrival_station="LAX",
+                        record_serial=UInt32(2))
+        leg1 = GraphLeg(rec1, jfk, ord)
+        leg2 = GraphLeg(rec2, ord, lax)
+        cp1 = nonstop_connection(leg1, jfk)
+        cp2 = GraphConnection(from_leg=leg1, to_leg=leg2, station=ord,
+                              mct=Minutes(60), mxct=Minutes(240),
+                              cnx_time=Minutes(120))
+        through_itn = Itinerary(connections=GraphConnection[cp1, cp2],
+                                num_stops=Int16(1))
+        e_through = _itinref_entry_rich(through_itn, 1)
+        @test e_through["flights"] == "UA 100"
+    end
+
     @testset "_filter_dei10 keeps only entries present in the cross-ref set" begin
         using ItinerarySearch: _filter_dei10
         # Cross-ref set: pretend our schedule has UA 8835 and AC 9694 only.

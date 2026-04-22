@@ -1243,8 +1243,17 @@ function _itinref_entry_rich(itn::Itinerary, idx::Int;
     origin_str = n_legs > 0 ? strip(String(legs[1].record.departure_station)) : ""
     dest_str   = n_legs > 0 ? strip(String(legs[end].record.arrival_station)) : ""
 
-    flights_str_v = join(["$(strip(String(l.record.carrier))) $(Int(l.record.flight_number))"
-                          for l in legs], " / ")
+    # Build "carrier flight_number" per leg, then collapse consecutive
+    # identical entries (through-flight pattern: a single flight number
+    # serving multiple board/off points shouldn't be repeated in the
+    # display).  Result joined with " → " to match the route style.
+    flight_ids = ["$(strip(String(l.record.carrier))) $(Int(l.record.flight_number))"
+                  for l in legs]
+    distinct_flights = String[]
+    for fid in flight_ids
+        (isempty(distinct_flights) || distinct_flights[end] != fid) && push!(distinct_flights, fid)
+    end
+    flights_str_v = join(distinct_flights, " → ")
     route_str_v = if n_legs == 0
         ""
     elseif n_legs == 1
