@@ -34,5 +34,9 @@ include("_test_setup.jl")
                         parent_span_id=UInt64(0), unix_nano=Int64(0)).kind === :start
         @test SpanEvent(kind=:end,   name=:x, trace_id=UInt128(0), span_id=UInt64(0),
                         parent_span_id=UInt64(0), unix_nano=Int64(0)).kind === :end
+        # The invariant is documentation-only, not type-level — any symbol is accepted at runtime.
+        @test SpanEvent(kind=:unexpected, name=:x, trace_id=UInt128(0),
+                        span_id=UInt64(0), parent_span_id=UInt64(0),
+                        unix_nano=Int64(0)).kind === :unexpected
     end
 end

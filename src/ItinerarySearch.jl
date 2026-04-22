@@ -119,6 +119,9 @@ export lookup_mct_traced, lookup_mct_codeshare_traced, decode_matched_fields
 export replay_misconnects, mct_inspect
 export DisplayStyle, PlainStyle
 
+# Observe
+export SpanEvent
+
 # Visualization
 export viz_network_map, viz_timeline, viz_trip_comparison, viz_itinerary_refs
 
