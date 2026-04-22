@@ -7,7 +7,8 @@ using InlineStrings
         p = ParameterSet()
         @test p.min_mct_override == NO_MINUTES
         @test p.max_stops == Int16(2)
-        @test p.circuity_factor == 2.0
+        @test p.circuity_tiers == DEFAULT_CIRCUITY_TIERS
+        @test p.max_circuity == Inf
         @test isempty(p.valid_codeshare_partners)  # empty = allow all
         @test p.max_leg_distance == Distance(Inf32)
     end
@@ -38,12 +39,12 @@ using InlineStrings
         override = MarketOverride(
             origin=StationCode("ORD"),
             destination=StationCode("LHR"),
-            params=ParameterSet(circuity_factor=3.0),
+            params=ParameterSet(circuity_tiers=[CircuityTier(Inf, 3.0)]),
             specificity=UInt32(100)
         )
         sc = SearchConstraints(overrides=[override])
         p = resolve_params(sc, StationCode("ORD"), StationCode("LHR"), AirlineCode("UA"))
-        @test p.circuity_factor == 3.0
+        @test p.circuity_tiers == [CircuityTier(Inf, 3.0)]
     end
 
     @testset "resolve_params — wildcard origin" begin
@@ -64,12 +65,12 @@ using InlineStrings
         override = MarketOverride(
             origin=StationCode("ORD"),
             destination=StationCode("LHR"),
-            params=ParameterSet(circuity_factor=3.0),
+            params=ParameterSet(circuity_tiers=[CircuityTier(Inf, 3.0)]),
         )
         sc = SearchConstraints(overrides=[override])
         # Different O-D should NOT match
         p = resolve_params(sc, StationCode("JFK"), StationCode("CDG"), AirlineCode("UA"))
-        @test p.circuity_factor == 2.0  # default
+        @test p.circuity_tiers == DEFAULT_CIRCUITY_TIERS
     end
 
     @testset "resolve_params — carrier-specific override" begin

@@ -109,7 +109,8 @@ end
 - `max_mct_override::Minutes` — maximum connection time allowed (minutes)
 - `min_connection_time::Minutes` — minimum connection time; `NO_MINUTES` means no minimum enforced
 - `max_connection_time::Minutes` — maximum connection time (minutes)
-- `circuity_factor::Float64` — maximum ratio of flown distance to market distance per leg
+- `circuity_tiers::Vector{CircuityTier}` — distance-tiered circuity factors;
+  default is `DEFAULT_CIRCUITY_TIERS`. See `_effective_circuity_factor`.
 - `domestic_circuity_extra_miles::Float64` — flat mileage tolerance for domestic legs
 - `international_circuity_extra_miles::Float64` — flat mileage tolerance for international legs
 - `valid_codeshare_partners::Set{Tuple{AirlineCode,AirlineCode}}` — allowed marketing/operating pairs; empty = allow all
@@ -147,8 +148,8 @@ end
 - `max_layover_time::Int32` — maximum total layover time across all connections (minutes)
 - `min_total_distance::Distance` — minimum total flown distance (miles)
 - `max_total_distance::Distance` — maximum total flown distance (miles); `Inf32` = unlimited
-- `min_circuity::Float64` — minimum ratio of total flown distance to market distance
-- `max_circuity::Float64` — maximum ratio of total flown distance to market distance
+- `min_circuity::Float64` — global floor on actual/market distance ratio (rejects too-direct itineraries when > 0)
+- `max_circuity::Float64` — global ceiling on the effective factor; `Inf` = no ceiling
 - `max_results::Int32` — stop search after this many results per O-D; `0` = unlimited
 
 ## Itinerary-level carrier filters
@@ -163,7 +164,7 @@ end
     max_mct_override::Minutes = Minutes(480)
     min_connection_time::Minutes = NO_MINUTES        # NO_MINUTES = no minimum
     max_connection_time::Minutes = Minutes(480)
-    circuity_factor::Float64 = 2.0
+    circuity_tiers::Vector{CircuityTier} = DEFAULT_CIRCUITY_TIERS
     domestic_circuity_extra_miles::Float64 = 500.0
     international_circuity_extra_miles::Float64 = 1000.0
 
@@ -204,7 +205,7 @@ end
     min_total_distance::Distance = Distance(0.0)
     max_total_distance::Distance = Distance(Inf32)
     min_circuity::Float64 = 0.0
-    max_circuity::Float64 = 2.5
+    max_circuity::Float64 = Inf   # global ceiling on effective factor; Inf = no ceiling
     max_results::Int32 = Int32(0)           # 0 = unlimited
 
     # ── Itinerary-level carrier filters ──────────────────────────────────

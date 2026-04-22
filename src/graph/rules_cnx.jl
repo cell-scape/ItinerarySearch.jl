@@ -1242,9 +1242,11 @@ function build_cnx_rules(
     push!(rules, check_cnx_opdays)
     push!(rules, check_cnx_suppcodes)
     config.maft_enabled && push!(rules, MAFTRule())
+    # T4 will replace this scalar bridge with the full tiered CircuityRule.
+    # For now use the short-haul (most restrictive) tier factor as a single scalar.
     push!(rules,
         CircuityRule(
-            p.circuity_factor,
+            circuity_factor_at(p.circuity_tiers, 0.0),
             p.domestic_circuity_extra_miles,
             p.international_circuity_extra_miles,
         ),
