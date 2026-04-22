@@ -775,6 +775,33 @@ using DataFrames
         @test e4["is_interline"] == true
     end
 
+    @testset "_filter_dei10 keeps only entries present in the cross-ref set" begin
+        using ItinerarySearch: _filter_dei10
+        # Cross-ref set: pretend our schedule has UA 8835 and AC 9694 only.
+        valid = Set{Tuple{String,Int16}}([("UA", Int16(8835)), ("AC", Int16(9694))])
+        # DEI 10 lists three dupes; only two should survive.
+        @test _filter_dei10("UA 8835 /AC 9694 /VA 8355", valid) == "UA 8835 / AC 9694"
+        @test _filter_dei10("VA 8355", valid) == ""
+        @test _filter_dei10("UA 8835", valid) == "UA 8835"
+        # Empty input → empty output regardless of filter.
+        @test _filter_dei10("", valid) == ""
+    end
+
+    @testset "_filter_dei10 nothing-filter passes through" begin
+        using ItinerarySearch: _filter_dei10
+        # Default behaviour (no graph supplied) preserves the raw DEI 10 string.
+        @test _filter_dei10("UA 8835 /AC 9694 /VA 8355", nothing) == "UA 8835 /AC 9694 /VA 8355"
+        @test _filter_dei10("", nothing) == ""
+    end
+
+    @testset "_filter_dei10 handles malformed entries gracefully" begin
+        using ItinerarySearch: _filter_dei10
+        valid = Set{Tuple{String,Int16}}([("UA", Int16(100))])
+        # Garbage entries (no flight number, non-numeric, single token) get skipped.
+        @test _filter_dei10("UA 100 /BADENTRY /UA notanumber /UA 100", valid) ==
+              "UA 100 / UA 100"
+    end
+
     @testset "_dedup_visible collapses itineraries with same visible fields" begin
         # Build two nonstop itineraries that have IDENTICAL visible fields
         # (same carrier+flight+operating_date+stations+leg_seq) but different

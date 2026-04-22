@@ -1033,10 +1033,13 @@ function viz_itinerary_refs(
     data::Vector{Itinerary};
     title::String = "",
     date::String = "",
+    graph::Union{FlightGraph,Nothing} = nothing,
 )::Nothing
     deduped = _dedup_visible(data)
+    dei10_filter = graph === nothing ? nothing : _build_valid_flight_set(graph)
     entries = Dict{String,Any}[
-        _itinref_entry_rich(itn, i; date=date) for (i, itn) in enumerate(deduped)
+        _itinref_entry_rich(itn, i; date=date, dei10_filter=dei10_filter)
+        for (i, itn) in enumerate(deduped)
     ]
     _write_itinref_html(path, JSON3.write(entries), title)
 end
@@ -1045,19 +1048,59 @@ function viz_itinerary_refs(
     path::AbstractString,
     data::Dict{Date, Dict{String, Dict{String, Vector{Itinerary}}}};
     title::String = "",
+    graph::Union{FlightGraph,Nothing} = nothing,
 )::Nothing
+    dei10_filter = graph === nothing ? nothing : _build_valid_flight_set(graph)
     entries = Dict{String,Any}[]
     for (d, org_dict) in data
         for (_, dst_dict) in org_dict
             for (_, itins) in dst_dict
                 deduped = _dedup_visible(itins)
                 for (i, itn) in enumerate(deduped)
-                    push!(entries, _itinref_entry_rich(itn, i; date=string(d)))
+                    push!(entries, _itinref_entry_rich(
+                        itn, i; date=string(d), dei10_filter=dei10_filter,
+                    ))
                 end
             end
         end
     end
     _write_itinref_html(path, JSON3.write(entries), title)
+end
+
+# ── DEI 10 cross-reference filter ─────────────────────────────────────────────
+# DEI 10 is a slash-separated list of marketing aliases on a host flight,
+# e.g. "AC 4893 /NZ 9070 /VA 8355".  Many of those listed dupes are not
+# present in our schedule (foreign-carrier inventory, GDS-only listings,
+# etc.); showing them as "also marketed as ..." is misleading because the
+# user can't actually book them via this graph.  When a `graph` is passed
+# to viz_itinerary_refs, we build a set of valid (carrier, flight_number)
+# pairs from `graph.legs` and filter each leg's dei_10 against it.
+
+function _build_valid_flight_set(graph::FlightGraph)::Set{Tuple{String,Int16}}
+    s = Set{Tuple{String,Int16}}()
+    for leg in graph.legs
+        push!(s, (strip(String(leg.record.carrier)), leg.record.flight_number))
+    end
+    return s
+end
+
+function _filter_dei10(dei10::AbstractString,
+                      filter::Union{Set{Tuple{String,Int16}},Nothing})::String
+    isempty(dei10) && return ""
+    filter === nothing && return String(dei10)   # no filter = pass through
+    parts = split(dei10, '/')
+    kept = String[]
+    for p in parts
+        toks = split(strip(p))
+        length(toks) >= 2 || continue
+        c = String(toks[1])
+        fno = tryparse(Int, String(toks[2]))
+        fno === nothing && continue
+        if (c, Int16(fno)) in filter
+            push!(kept, "$c $fno")
+        end
+    end
+    return join(kept, " / ")
 end
 
 # ── Viz-only dedup ────────────────────────────────────────────────────────────
@@ -1127,7 +1170,9 @@ function _leg_trc_char(rec)::Char
     (seq > 0 && seq <= length(trc)) ? trc[seq] : ' '
 end
 
-function _itinref_entry_rich(itn::Itinerary, idx::Int; date::String="")
+function _itinref_entry_rich(itn::Itinerary, idx::Int;
+                              date::String="",
+                              dei10_filter::Union{Set{Tuple{String,Int16}},Nothing}=nothing)
     legs, cnxs = _extract_legs_and_cnxs(itn)
     n_legs = length(legs)
 
@@ -1158,7 +1203,7 @@ function _itinref_entry_rich(itn::Itinerary, idx::Int; date::String="")
             "operating_carrier"       => op_carrier,
             "operating_flight_number" => op_flight,
             "is_codeshare_leg"        => is_codeshare_leg,
-            "dei_10"                  => strip(String(rec.dei_10)),
+            "dei_10"                  => _filter_dei10(strip(String(rec.dei_10)), dei10_filter),
             "row_number"              => Int(rec.row_number),
             "record_serial"           => Int(rec.record_serial),
             "dep_dt"                  => string(leg_departure_dt(leg)) * "Z",

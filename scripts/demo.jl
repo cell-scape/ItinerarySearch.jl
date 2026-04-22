@@ -282,6 +282,7 @@ for day_offset in 0:(n_days-1)
     viz_itinerary_refs(ref_table_file, all_itns;
         title="Itinerary References — $(target)",
         date=string(target),
+        graph=graph,   # enables DEI 10 cross-reference filter
     )
     println("[$(target)]   Ref table → $(ref_table_file)")
 
