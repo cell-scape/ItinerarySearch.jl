@@ -67,6 +67,7 @@ const TEST_FILES_FULL = [
     "test_runtime_context_worker_slot.jl", # ~0.05s
     "test_parallel_markets_functional.jl", # ~ivaries — full search_markets x2
     "test_parallel_markets_failures.jl",   # ~varies — failure isolation via sentinel
+    "test_parallel_markets_otel.jl",       # ~varies — OTel span schema + event_sinks kwarg
 ]
 
 # Apply the static-analysis env filters.

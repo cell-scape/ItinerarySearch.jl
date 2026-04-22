@@ -660,19 +660,74 @@ function _search_markets_sequential_all_dates(
     dates::AbstractVector{Date},
     markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
     target_source::Symbol,
+    event_sinks::Vector{<:Function},
 )::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
     results = Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}()
     ctx = _build_runtime_context(config)
 
+    # ── Root SpanEvent emission (OTel-ready) ──────────────────────────────
+    trace_id = _new_trace_id()
+    root_span_id = _new_span_id()
+    root_start_ns = _unix_nano_now()
+
+    emit_to_sinks = function(ev::SpanEvent)
+        for sink in event_sinks
+            sink(ev)
+        end
+        return nothing
+    end
+
+    emit_to_sinks(SpanEvent(
+        kind=:start, name=:search_markets,
+        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+        unix_nano=root_start_ns,
+        attributes=Dict{Symbol,Any}(
+            :market_count => length(markets),
+            :date_count   => length(dates),
+        ),
+    ))
+
     for target in dates
         graph = build_graph!(store, config, target; source = target_source)
         for (org, dst) in markets
+            # Per-market span :start
+            market_span_id = _new_span_id()
+            market_start_ns = _unix_nano_now()
+            for sink in event_sinks
+                sink(SpanEvent(
+                    kind=:start, name=:market_search,
+                    trace_id=trace_id, span_id=market_span_id,
+                    parent_span_id=root_span_id,
+                    unix_nano=market_start_ns, worker_slot=ctx.worker_slot,
+                    attributes=Dict{Symbol,Any}(
+                        :origin => String(org),
+                        :destination => String(dst),
+                        :date => target,
+                    ),
+                ))
+            end
+
             t0_ns = time_ns()
             try
                 origin = StationCode(org)
                 dest = StationCode(dst)
                 itns = search_itineraries(graph.stations, origin, dest, target, ctx)
                 results[(String(org), String(dst), target)] = copy(itns)
+
+                market_end_ns = _unix_nano_now()
+                for sink in event_sinks
+                    sink(SpanEvent(
+                        kind=:end, name=:market_search,
+                        trace_id=trace_id, span_id=market_span_id,
+                        parent_span_id=root_span_id,
+                        unix_nano=market_end_ns, worker_slot=ctx.worker_slot,
+                        status=:ok,
+                        attributes=Dict{Symbol,Any}(
+                            :itinerary_count => length(itns),
+                            :elapsed_ms      => (market_end_ns - market_start_ns) / 1e6,
+                        ),
+                    ))
+                end
             catch e
                 # Same sentinel contract as the parallel path — see
                 # `_run_one_market!`. `ctx.worker_slot` is `0` here (sequential
@@ -684,9 +739,40 @@ function _search_markets_sequential_all_dates(
                     ctx.worker_slot, elapsed_ms,
                 )
                 results[(String(org), String(dst), target)] = fail
+
+                market_end_ns = _unix_nano_now()
+                for sink in event_sinks
+                    sink(SpanEvent(
+                        kind=:end, name=:market_search,
+                        trace_id=trace_id, span_id=market_span_id,
+                        parent_span_id=root_span_id,
+                        unix_nano=market_end_ns, worker_slot=ctx.worker_slot,
+                        status=:error,
+                        attributes=Dict{Symbol,Any}(
+                            :exception_type => string(typeof(e)),
+                            :elapsed_ms     => (market_end_ns - market_start_ns) / 1e6,
+                        ),
+                    ))
+                end
             end
         end
     end
+
+    # ── Root SpanEvent :end ───────────────────────────────────────────────
+    success_count = count(v -> v isa Vector{Itinerary}, values(results))
+    failure_count = count(v -> v isa MarketSearchFailure, values(results))
+    root_end_ns = _unix_nano_now()
+    emit_to_sinks(SpanEvent(
+        kind=:end, name=:search_markets,
+        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+        unix_nano=root_end_ns,
+        status = failure_count == 0 ? :ok : :error,
+        attributes=Dict{Symbol,Any}(
+            :success_count => success_count,
+            :failure_count => failure_count,
+            :elapsed_ms    => (root_end_ns - root_start_ns) / 1e6,
+        ),
+    ))
 
     return results
 end
@@ -740,10 +826,33 @@ function _search_markets_parallel_all_dates(
     dates::AbstractVector{Date},
     markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
     target_source::Symbol,
+    event_sinks::Vector{<:Function},
 )::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
     results = Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}()
     results_lock = ReentrantLock()
     n = Threads.nthreads()
+
+    # ── Root SpanEvent emission (OTel-ready) ──────────────────────────────
+    trace_id = _new_trace_id()
+    root_span_id = _new_span_id()
+    root_start_ns = _unix_nano_now()
+
+    emit_to_sinks = function(ev::SpanEvent)
+        for sink in event_sinks
+            sink(ev)
+        end
+        return nothing
+    end
+
+    emit_to_sinks(SpanEvent(
+        kind=:start, name=:search_markets,
+        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+        unix_nano=root_start_ns,
+        attributes=Dict{Symbol,Any}(
+            :market_count => length(markets),
+            :date_count   => length(dates),
+        ),
+    ))
 
     for target in dates
         # Build the graph for this date once; workers share it read-only.
@@ -762,11 +871,28 @@ function _search_markets_parallel_all_dates(
             Threads.@spawn _run_one_market!(
                 ctx_pool, graph, results, results_lock,
                 String(origin), String(dest), target,
+                trace_id, root_span_id, event_sinks,
             )
         end
         foreach(wait, tasks)
         close(ctx_pool)
     end
+
+    # ── Root SpanEvent :end ───────────────────────────────────────────────
+    success_count = count(v -> v isa Vector{Itinerary}, values(results))
+    failure_count = count(v -> v isa MarketSearchFailure, values(results))
+    root_end_ns = _unix_nano_now()
+    emit_to_sinks(SpanEvent(
+        kind=:end, name=:search_markets,
+        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+        unix_nano=root_end_ns,
+        status = failure_count == 0 ? :ok : :error,
+        attributes=Dict{Symbol,Any}(
+            :success_count => success_count,
+            :failure_count => failure_count,
+            :elapsed_ms    => (root_end_ns - root_start_ns) / 1e6,
+        ),
+    ))
 
     return results
 end
@@ -815,8 +941,28 @@ function _run_one_market!(
     results::Dict,
     results_lock::ReentrantLock,
     origin::String, dest::String, target::Date,
+    trace_id::UInt128, parent_span_id::UInt64,
+    event_sinks::Vector{<:Function},
 )
     ctx = take!(ctx_pool)
+    span_id = _new_span_id()
+    start_ns = _unix_nano_now()
+
+    # Per-market :start span — workers call sinks concurrently; sinks are
+    # responsible for their own thread safety.
+    for sink in event_sinks
+        sink(SpanEvent(
+            kind=:start, name=:market_search,
+            trace_id=trace_id, span_id=span_id, parent_span_id=parent_span_id,
+            unix_nano=start_ns, worker_slot=ctx.worker_slot,
+            attributes=Dict{Symbol,Any}(
+                :origin => origin,
+                :destination => dest,
+                :date => target,
+            ),
+        ))
+    end
+
     t0_ns = time_ns()
     try
         try
@@ -825,6 +971,20 @@ function _run_one_market!(
                                       target, ctx)
             lock(results_lock) do
                 results[(origin, dest, target)] = copy(itns)
+            end
+
+            end_ns = _unix_nano_now()
+            for sink in event_sinks
+                sink(SpanEvent(
+                    kind=:end, name=:market_search,
+                    trace_id=trace_id, span_id=span_id,
+                    parent_span_id=parent_span_id,
+                    unix_nano=end_ns, worker_slot=ctx.worker_slot, status=:ok,
+                    attributes=Dict{Symbol,Any}(
+                        :itinerary_count => length(itns),
+                        :elapsed_ms      => (end_ns - start_ns) / 1e6,
+                    ),
+                ))
             end
         catch e
             # stacktrace(catch_backtrace()) returns Vector{StackFrame}, which
@@ -838,6 +998,20 @@ function _run_one_market!(
             )
             lock(results_lock) do
                 results[(origin, dest, target)] = fail
+            end
+
+            end_ns = _unix_nano_now()
+            for sink in event_sinks
+                sink(SpanEvent(
+                    kind=:end, name=:market_search,
+                    trace_id=trace_id, span_id=span_id,
+                    parent_span_id=parent_span_id,
+                    unix_nano=end_ns, worker_slot=ctx.worker_slot, status=:error,
+                    attributes=Dict{Symbol,Any}(
+                        :exception_type => string(typeof(e)),
+                        :elapsed_ms     => (end_ns - start_ns) / 1e6,
+                    ),
+                ))
             end
         end
     finally
@@ -886,6 +1060,11 @@ end
 - `markets`: vector of `(origin, dest)` string pairs, e.g. `[("ORD","LHR")]`
 - `dates::Union{Date, AbstractVector{Date}}`: one or more target travel dates
 - `mct_path::AbstractString=""`: optional path to MCT file; omit for global defaults
+- `event_sinks::Vector{<:Function}=Function[]`: optional OTel-shaped span event
+  sinks. Each sink is a `(event)::Nothing` function called for every emitted
+  `SpanEvent` (root `:search_markets` + per-market `:market_search` start/end
+  pairs). Workers may call sinks concurrently — sinks are responsible for
+  their own thread safety.
 - All remaining keyword arguments are forwarded to `SearchConfig()`
 
 # Returns
@@ -909,6 +1088,7 @@ function search_markets(
     markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
     dates::Union{Date,AbstractVector{Date}},
     mct_path::AbstractString = "",
+    event_sinks::Vector{<:Function} = Function[],
     kwargs...,
 )::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
     config = SearchConfig(; kwargs...)
@@ -926,11 +1106,11 @@ function search_markets(
         use_parallel = config.parallel_markets && Threads.nthreads() > 1
         if use_parallel
             return _search_markets_parallel_all_dates(
-                config, store, date_vec, markets, target_source,
+                config, store, date_vec, markets, target_source, event_sinks,
             )
         else
             return _search_markets_sequential_all_dates(
-                config, store, date_vec, markets, target_source,
+                config, store, date_vec, markets, target_source, event_sinks,
             )
         end
     finally
