@@ -9,7 +9,7 @@ Captures enough context to triage without replaying the search.
 - `market::Tuple{String,String,Date}`: `(origin, destination, date)` key
 - `exception::Exception`: preserved exception type
 - `backtrace::Vector{Base.StackTraces.StackFrame}`: stacktrace at catch site
-- `worker_slot::Int`: 1..nthreads pool slot that hit the failure
+- `worker_slot::Int`: 1..nthreads pool slot, or 0 on the sequential path (no pool)
 - `elapsed_ms::Float64`: wall time from task start to catch
 """
 struct MarketSearchFailure
