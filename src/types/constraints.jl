@@ -70,7 +70,7 @@ function _validate_circuity_tiers(tiers::Vector{CircuityTier})
 end
 
 """
-    `circuity_factor_at(tiers::Vector{CircuityTier}, distance::Float64)::Float64`
+    `_circuity_factor_at(tiers::Vector{CircuityTier}, distance::Float64)::Float64`
 ---
 
 # Description
@@ -85,7 +85,7 @@ end
 # Returns
 - `::Float64`: the applicable circuity factor
 """
-@inline function circuity_factor_at(tiers::Vector{CircuityTier}, distance::Float64)::Float64
+@inline function _circuity_factor_at(tiers::Vector{CircuityTier}, distance::Float64)::Float64
     for t in tiers
         distance <= t.max_distance && return t.factor
     end
@@ -379,7 +379,7 @@ end
 - `::Float64`: the effective circuity factor (tier value capped by scalar ceiling)
 """
 @inline function _effective_circuity_factor(p::ParameterSet, distance::Float64)::Float64
-    tier_factor = circuity_factor_at(p.circuity_tiers, distance)
+    tier_factor = _circuity_factor_at(p.circuity_tiers, distance)
     return min(tier_factor, p.max_circuity)
 end
 

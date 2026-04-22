@@ -868,6 +868,18 @@ end
   `(org_code, dst_code)` tuple) to avoid repeated haversine calls
 - Round-trip connections and same-origin/destination pairs always pass
 
+# Asymmetry with `check_itn_circuity_range`
+`CircuityRule.{domestic,international}_extra_miles` are **baked in at
+`build_cnx_rules` time** from `constraints.defaults` and are *not* resolved
+per-connection. `check_itn_circuity_range`, by contrast, reads extra-miles
+live from the resolved `ParameterSet` returned by `_resolve_circuity_params`,
+so market overrides that carry non-default `*_circuity_extra_miles` take
+effect at the itinerary layer only. The built-in CSV loaders
+(`load_circuity_overrides`) only override `circuity_tiers`, so this is
+currently a latent gap — but constructing a `MarketOverride` by hand with
+custom extra_miles will expose it. If you need per-market extra_miles at
+connection time, change `CircuityRule` to resolve them in its callable body.
+
 # Fields
 - `domestic_extra_miles::Float64` — flat mileage tolerance for domestic routes (default 500.0)
 - `international_extra_miles::Float64` — flat mileage tolerance for international routes (default 1000.0)
@@ -901,7 +913,7 @@ CircuityRule() = CircuityRule(500.0, 1000.0)
 
 # Arguments
 1. `cp::GraphConnection`: connection to evaluate
-2. `ctx`: runtime context; accesses `ctx.gc_cache::Dict{UInt64, Float64}` and `ctx.config::SearchConfig`
+2. `ctx`: runtime context; accesses `ctx.gc_cache::Dict{Tuple{StationCode,StationCode}, Float64}`, `ctx.constraints::SearchConstraints`, and `ctx.config::SearchConfig`
 
 # Returns
 - `::Int`: `PASS` or `FAIL_CIRCUITY`

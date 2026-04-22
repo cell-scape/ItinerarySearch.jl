@@ -1,6 +1,6 @@
 using Test
 using ItinerarySearch
-using ItinerarySearch: _validate_circuity_tiers, circuity_factor_at, _effective_circuity_factor, _resolve_circuity_params
+using ItinerarySearch: _validate_circuity_tiers, _circuity_factor_at, _effective_circuity_factor, _resolve_circuity_params
 
 @testset "Circuity Tiers" begin
     @testset "CircuityTier struct" begin
@@ -33,19 +33,19 @@ using ItinerarySearch: _validate_circuity_tiers, circuity_factor_at, _effective_
         )
     end
 
-    @testset "circuity_factor_at" begin
+    @testset "_circuity_factor_at" begin
         d = DEFAULT_CIRCUITY_TIERS
-        @test circuity_factor_at(d,    0.0) == 2.4
-        @test circuity_factor_at(d,  250.0) == 2.4  # inclusive upper bound
-        @test circuity_factor_at(d,  251.0) == 1.9
-        @test circuity_factor_at(d,  800.0) == 1.9
-        @test circuity_factor_at(d,  801.0) == 1.5
-        @test circuity_factor_at(d, 2000.0) == 1.5
-        @test circuity_factor_at(d, 2001.0) == 1.3
-        @test circuity_factor_at(d, 99999.0) == 1.3
+        @test _circuity_factor_at(d,    0.0) == 2.4
+        @test _circuity_factor_at(d,  250.0) == 2.4  # inclusive upper bound
+        @test _circuity_factor_at(d,  251.0) == 1.9
+        @test _circuity_factor_at(d,  800.0) == 1.9
+        @test _circuity_factor_at(d,  801.0) == 1.5
+        @test _circuity_factor_at(d, 2000.0) == 1.5
+        @test _circuity_factor_at(d, 2001.0) == 1.3
+        @test _circuity_factor_at(d, 99999.0) == 1.3
         # Non-Inf top tier: fall back to last factor
         finite = [CircuityTier(1000.0, 2.0), CircuityTier(99999.0, 1.4)]
-        @test circuity_factor_at(finite, 1_000_000.0) == 1.4  # exceeded all, use last
+        @test _circuity_factor_at(finite, 1_000_000.0) == 1.4  # exceeded all, use last
     end
 
     @testset "_effective_circuity_factor" begin

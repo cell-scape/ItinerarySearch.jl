@@ -169,7 +169,8 @@ end
 - `::Int`: `PASS` or `FAIL_ITN_CIRCUITY`
 """
 function check_itn_circuity_range(itn::Itinerary, ctx)::Int
-    # Nonstop and 1-stop are handled by the connection-level CircuityRule.
+    # Nonstop and 1-stop are handled by the connection-level CircuityRule
+    # (when `circuity_check_scope` includes `:connection`).
     itn.num_stops < Int16(2) && return PASS
 
     market_dist = Float64(itn.market_distance)
