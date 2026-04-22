@@ -684,8 +684,10 @@ end
 - Creates an in-memory `DuckDBStore`, ingests the NewSSIM CSV and optional MCT
   file, then iterates over every `(origin, dest, date)` combination
 - The graph is rebuilt once per date (schedule window shifts with the target day)
-- Returns deep-copied itineraries keyed by `(origin, dest, date)` strings, safe
-  to retain indefinitely
+- Returns itinerary vectors keyed by `(origin, dest, date)`. Each vector is
+  a `copy` of the search context's result buffer; the inner `Itinerary`
+  objects hold their own `connections` allocations, so retaining the
+  returned vectors across subsequent searches is safe.
 - The store is closed automatically on return (or on error)
 
 # When to use
