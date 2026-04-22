@@ -1210,6 +1210,30 @@ function _itinref_entry_rich(itn::Itinerary, idx::Int; date::String="")
              " → ")
     end
 
+    # Per-itinerary status flags computed from the actual leg list rather
+    # than from `itn.status` bits.  The internal STATUS_CODESHARE /
+    # STATUS_INTERLINE bits are set per-connection by `_set_connection_status!`
+    # using a different (mutually-exclusive) convention required by the
+    # search rule chain (INTERLINE_ONLINE / INTERLINE_CODESHARE filter modes).
+    # For the viz we want the user-facing definitions, which are independent
+    # and can co-occur on the same itinerary:
+    #
+    #   codeshare = ANY leg has marketing carrier+flight differing from its
+    #               own operating carrier+flight (per-leg property folded up)
+    #   interline = the marketing carrier CHANGES between any two consecutive
+    #               legs of this itinerary (per-itinerary property)
+    is_codeshare_itn = any(d -> d["is_codeshare_leg"]::Bool, leg_dicts)
+    is_interline_itn = false
+    if length(leg_dicts) >= 2
+        first_carrier = leg_dicts[1]["carrier"]
+        for d in leg_dicts
+            if d["carrier"] != first_carrier
+                is_interline_itn = true
+                break
+            end
+        end
+    end
+
     Dict{String,Any}(
         "date"             => date,
         "idx"              => idx,
@@ -1223,10 +1247,10 @@ function _itinref_entry_rich(itn::Itinerary, idx::Int; date::String="")
         "layover_minutes"  => layover,
         "distance_miles"   => round(Float64(itn.total_distance); digits=0),
         "circuity"         => round(Float64(itn.circuity); digits=2),
-        # Status flags (display as badges)
+        # Status flags (display as independent badges)
         "is_international" => is_international(itn.status),
-        "is_interline"     => is_interline(itn.status),
-        "is_codeshare"     => is_codeshare(itn.status),
+        "is_codeshare"     => is_codeshare_itn,
+        "is_interline"     => is_interline_itn,
         "has_through"      => is_through(itn.status),
         "legs"             => leg_dicts,
         "cnxs"             => cnx_dicts,

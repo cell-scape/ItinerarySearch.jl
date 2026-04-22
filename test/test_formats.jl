@@ -683,6 +683,98 @@ using DataFrames
         @test cnx["mct_source"] in ("exception", "standard", "default")
     end
 
+    @testset "_itinref_entry_rich: codeshare and interline are independent" begin
+        # User-facing definitions (per the rich viz contract):
+        #   codeshare = any leg has marketing carrier+flight != operating
+        #   interline = marketing carrier CHANGES between legs of an itinerary
+        # Both can be true at once.  Cover the four corners.
+        using ItinerarySearch: _itinref_entry_rich
+
+        # Helper to build one nonstop leg with explicit marketing/operating.
+        function _custom_leg(mkt_carrier, mkt_fno, op_carrier, op_fno;
+                              org="JFK", dst="ORD", op_date=UInt32(20260615),
+                              row=UInt64(1), serial=UInt32(1))
+            org_stn = GraphStation(_stn_rec(org, "US", "NAM"))
+            dst_stn = GraphStation(_stn_rec(dst, "US", "NAM"))
+            rec = LegRecord(
+                carrier=AirlineCode(mkt_carrier), flight_number=Int16(mkt_fno),
+                operational_suffix=' ', itinerary_var_id=UInt8(1),
+                itinerary_var_overflow=' ',
+                leg_sequence_number=UInt8(1), service_type='J',
+                departure_station=StationCode(org), arrival_station=StationCode(dst),
+                passenger_departure_time=Int16(540),
+                passenger_arrival_time=Int16(660),
+                aircraft_departure_time=Int16(540),
+                aircraft_arrival_time=Int16(660),
+                departure_utc_offset=Int16(0), arrival_utc_offset=Int16(0),
+                departure_date_variation=Int8(0),
+                arrival_date_variation=Int8(0),
+                aircraft_type=InlineString7("738"), body_type='N',
+                departure_terminal=InlineString3("1"),
+                arrival_terminal=InlineString3("1"),
+                aircraft_owner=AirlineCode(mkt_carrier),
+                operating_date=op_date, day_of_week=UInt8(1),
+                effective_date=UInt32(20260101),
+                discontinue_date=UInt32(20261231),
+                frequency=UInt8(0x7f), dep_intl_dom='D', arr_intl_dom='D',
+                traffic_restriction_for_leg=InlineString15(""),
+                traffic_restriction_overflow=' ',
+                record_serial=serial, row_number=row, segment_hash=UInt64(0),
+                distance=Distance(800.0f0),
+                operating_carrier=AirlineCode(op_carrier),
+                operating_flight_number=Int16(op_fno),
+                dei_10="", wet_lease=false, dei_127="",
+                prbd=InlineString31(""),
+            )
+            GraphLeg(rec, org_stn, dst_stn)
+        end
+
+        # Build a 1-stop from two custom legs; reuses the leg helper above.
+        function _two_leg_itin(leg1, leg2)
+            cnx_stn = leg1.dst::GraphStation
+            cp1 = nonstop_connection(leg1, leg1.org::GraphStation)
+            cp2 = GraphConnection(from_leg=leg1, to_leg=leg2, station=cnx_stn,
+                                  mct=Minutes(60), mxct=Minutes(240),
+                                  cnx_time=Minutes(120))
+            Itinerary(connections=GraphConnection[cp1, cp2], num_stops=Int16(1))
+        end
+
+        # Case 1: neither codeshare nor interline (both legs UA host)
+        leg1 = _custom_leg("UA", 100, "", 0)              # host
+        leg2 = _custom_leg("UA", 200, "", 0;              # host, same marketing
+                           org="ORD", dst="LAX", row=UInt64(2))
+        e1 = _itinref_entry_rich(_two_leg_itin(leg1, leg2), 1)
+        @test e1["is_codeshare"] == false
+        @test e1["is_interline"] == false
+
+        # Case 2: codeshare (leg 1 marketed UA but operated LH) but no
+        # interline (both legs marketed UA)
+        leg1 = _custom_leg("UA", 8835, "LH", 431)         # codeshare leg
+        leg2 = _custom_leg("UA", 200, "", 0;              # host, same marketing
+                           org="ORD", dst="LAX", row=UInt64(2))
+        e2 = _itinref_entry_rich(_two_leg_itin(leg1, leg2), 1)
+        @test e2["is_codeshare"] == true
+        @test e2["is_interline"] == false
+
+        # Case 3: interline (UA → LH marketing change) but neither leg is a
+        # codeshare on its own (both are host flights)
+        leg1 = _custom_leg("UA", 100, "", 0)              # host
+        leg2 = _custom_leg("LH", 431, "", 0;              # host, different marketing
+                           org="ORD", dst="LAX", row=UInt64(2))
+        e3 = _itinref_entry_rich(_two_leg_itin(leg1, leg2), 1)
+        @test e3["is_codeshare"] == false
+        @test e3["is_interline"] == true
+
+        # Case 4: both — marketing changes UA→LH AND each leg has its own
+        # operating carrier (the "UA 1 op AC 2 → LH 3 op LX 4" example).
+        leg1 = _custom_leg("UA", 1, "AC", 2)
+        leg2 = _custom_leg("LH", 3, "LX", 4;
+                           org="ORD", dst="LAX", row=UInt64(2))
+        e4 = _itinref_entry_rich(_two_leg_itin(leg1, leg2), 1)
+        @test e4["is_codeshare"] == true
+        @test e4["is_interline"] == true
+    end
+
     @testset "_dedup_visible collapses itineraries with same visible fields" begin
         # Build two nonstop itineraries that have IDENTICAL visible fields
         # (same carrier+flight+operating_date+stations+leg_seq) but different
