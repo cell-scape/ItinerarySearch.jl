@@ -683,6 +683,72 @@ using DataFrames
         @test cnx["mct_source"] in ("exception", "standard", "default")
     end
 
+    @testset "_dedup_visible collapses itineraries with same visible fields" begin
+        # Build two nonstop itineraries that have IDENTICAL visible fields
+        # (same carrier+flight+operating_date+stations+leg_seq) but different
+        # row_numbers and record_serials — simulating duplicate SSIM Type-3
+        # records with overlapping eff/disc ranges.  The existing row_number
+        # fingerprint sees them as distinct; the viz dedup should fold them.
+        using ItinerarySearch: _dedup_visible
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+
+        function _ns_itin(row_num::UInt64, rec_serial::UInt32)
+            rec = LegRecord(
+                carrier=AirlineCode("UA"), flight_number=Int16(100),
+                operational_suffix=' ', itinerary_var_id=UInt8(1),
+                itinerary_var_overflow=' ',
+                leg_sequence_number=UInt8(1), service_type='J',
+                departure_station=StationCode("JFK"),
+                arrival_station=StationCode("LHR"),
+                passenger_departure_time=Int16(540),
+                passenger_arrival_time=Int16(1320),
+                aircraft_departure_time=Int16(540),
+                aircraft_arrival_time=Int16(1320),
+                departure_utc_offset=Int16(0), arrival_utc_offset=Int16(0),
+                departure_date_variation=Int8(0),
+                arrival_date_variation=Int8(0),
+                aircraft_type=InlineString7("777"), body_type='W',
+                departure_terminal=InlineString3("1"),
+                arrival_terminal=InlineString3("1"),
+                aircraft_owner=AirlineCode("UA"),
+                operating_date=UInt32(20260615), day_of_week=UInt8(1),
+                effective_date=UInt32(20260101),
+                discontinue_date=UInt32(20261231),
+                frequency=UInt8(0x7f), dep_intl_dom='I', arr_intl_dom='I',
+                traffic_restriction_for_leg=InlineString15(""),
+                traffic_restriction_overflow=' ',
+                record_serial=rec_serial, row_number=row_num,
+                segment_hash=UInt64(0),
+                distance=Distance(3451.0f0),
+                operating_carrier=AirlineCode(""),
+                operating_flight_number=Int16(0),
+                dei_10="", wet_lease=false, dei_127="",
+                prbd=InlineString31(""),
+            )
+            leg = GraphLeg(rec, jfk, lhr)
+            cp = nonstop_connection(leg, jfk)
+            Itinerary(connections=GraphConnection[cp])
+        end
+
+        a = _ns_itin(UInt64(111), UInt32(1001))
+        b = _ns_itin(UInt64(222), UInt32(1002))   # diff row+serial, same visible
+        c = _ns_itin(UInt64(333), UInt32(1003))   # also a duplicate
+        deduped = _dedup_visible(Itinerary[a, b, c])
+        @test length(deduped) == 1
+        @test deduped[1] === a   # first occurrence wins
+    end
+
+    @testset "_dedup_visible keeps genuinely distinct itineraries" begin
+        # Same fixture pair the other rich tests use — both nonstops but
+        # with different flight numbers (100 vs implicitly distinct from
+        # the 1-stop fixture).  They should NOT collapse.
+        using ItinerarySearch: _dedup_visible
+        a = _nonstop_itinerary()
+        b = _one_stop_itinerary()
+        @test length(_dedup_visible(Itinerary[a, b])) == 2
+    end
+
     @testset "_itinref_entry_rich nonstop has zero cnxs" begin
         using ItinerarySearch: _itinref_entry_rich
         itn = _nonstop_itinerary()

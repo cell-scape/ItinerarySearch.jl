@@ -1034,8 +1034,9 @@ function viz_itinerary_refs(
     title::String = "",
     date::String = "",
 )::Nothing
+    deduped = _dedup_visible(data)
     entries = Dict{String,Any}[
-        _itinref_entry_rich(itn, i; date=date) for (i, itn) in enumerate(data)
+        _itinref_entry_rich(itn, i; date=date) for (i, itn) in enumerate(deduped)
     ]
     _write_itinref_html(path, JSON3.write(entries), title)
 end
@@ -1049,13 +1050,59 @@ function viz_itinerary_refs(
     for (d, org_dict) in data
         for (_, dst_dict) in org_dict
             for (_, itins) in dst_dict
-                for (i, itn) in enumerate(itins)
+                deduped = _dedup_visible(itins)
+                for (i, itn) in enumerate(deduped)
                     push!(entries, _itinref_entry_rich(itn, i; date=string(d)))
                 end
             end
         end
     end
     _write_itinref_html(path, JSON3.write(entries), title)
+end
+
+# ── Viz-only dedup ────────────────────────────────────────────────────────────
+# `_itinerary_fingerprint` (in formats.jl) hashes by `row_number` to detect
+# leg-identical itineraries.  But SSIM occasionally has multiple Type-3
+# records describing the same logical flight (overlapping eff/disc date
+# ranges, different carrier suffixes, etc.) — different row_numbers, same
+# user-visible fields.  The DataFrame / JSON paths keep these as distinct
+# data points (callers may want them for analysis); the viz collapses
+# them so the table doesn't show consecutive identical-looking rows.
+#
+# Visible fingerprint: per-leg (carrier, flight_number, operating_date,
+# departure_station, arrival_station, leg_sequence_number).  Same operating
+# date + same flight identity at the leg level = same row in the viz.
+
+function _itinerary_visible_fingerprint(itn::Itinerary)::UInt64
+    h = UInt64(0)
+    last_rn = UInt64(0)
+    for cp in itn.connections
+        from_l = cp.from_leg::GraphLeg
+        to_l   = cp.to_leg::GraphLeg
+        for leg in (from_l, to_l)
+            leg === to_l && from_l === to_l && continue
+            rn = leg.record.row_number
+            rn == last_rn && continue
+            last_rn = rn
+            r = leg.record
+            h = hash((r.carrier, r.flight_number, r.operating_date,
+                      r.departure_station, r.arrival_station,
+                      r.leg_sequence_number), h)
+        end
+    end
+    return h
+end
+
+function _dedup_visible(itns::Vector{Itinerary})::Vector{Itinerary}
+    seen = Set{UInt64}()
+    out  = Itinerary[]
+    for itn in itns
+        fp = _itinerary_visible_fingerprint(itn)
+        fp in seen && continue
+        push!(seen, fp)
+        push!(out, itn)
+    end
+    return out
 end
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
