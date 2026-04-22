@@ -44,6 +44,7 @@ include("types/mct_audit_config.jl")
 include("types/display.jl")
 include("config.jl")
 include("observe/events.jl")
+include("observe/trace_context.jl")
 include("observe/metrics.jl")
 include("observe/event_log.jl")
 include("observe/sinks.jl")
@@ -120,7 +121,7 @@ export replay_misconnects, mct_inspect
 export DisplayStyle, PlainStyle
 
 # Observe
-export SpanEvent
+export SpanEvent, TraceContext
 
 # Visualization
 export viz_network_map, viz_timeline, viz_trip_comparison, viz_itinerary_refs
@@ -191,6 +192,10 @@ using PrecompileTools
         # CLI parser construction
         CLI._build_parser()
     end
+end
+
+function __init__()
+    _init_unix_nano_origin!()
 end
 
 end # module

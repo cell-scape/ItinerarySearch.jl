@@ -62,6 +62,7 @@ const TEST_FILES_FULL = [
     "test_status.jl",           # ~0.05s
     "test_circuity_tiers.jl",   # ~0.1s
     "test_span_event.jl",       # ~0.05s
+    "test_trace_context.jl",   # ~0.05s
 ]
 
 # Apply the static-analysis env filters.
