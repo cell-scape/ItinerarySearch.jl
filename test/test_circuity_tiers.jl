@@ -95,4 +95,45 @@ using ItinerarySearch: _validate_circuity_tiers, circuity_factor_at, _effective_
         p3 = _resolve_circuity_params(sc_c, StationCode("ATL"), StationCode("YYZ"))
         @test p3.circuity_tiers == [CircuityTier(Inf, 2.7)]  # matches despite carrier mismatch
     end
+
+    @testset "load_circuity_tiers — sample file" begin
+        path = joinpath(@__DIR__, "..", "data", "demo", "cirOvrdDflt.dat")
+        tiers = load_circuity_tiers(path)
+        @test length(tiers) == 4
+        @test tiers[1] == CircuityTier(250.0, 2.4)
+        @test tiers[2] == CircuityTier(800.0, 1.9)
+        @test tiers[3] == CircuityTier(2000.0, 1.5)
+        @test tiers[4] == CircuityTier(99999.0, 1.3)
+    end
+
+    @testset "load_circuity_tiers — empty HIGH → Inf" begin
+        path = tempname() * ".csv"
+        write(path, "HIGH,CIRCUITY\n250,2.4\n,1.3\n")
+        try
+            tiers = load_circuity_tiers(path)
+            @test tiers == [CircuityTier(250.0, 2.4), CircuityTier(Inf, 1.3)]
+        finally
+            rm(path; force=true)
+        end
+    end
+
+    @testset "load_circuity_tiers — malformed inputs" begin
+        # Missing column
+        p1 = tempname() * ".csv"
+        write(p1, "HIGH\n250\n")
+        @test_throws ArgumentError load_circuity_tiers(p1)
+        rm(p1; force=true)
+
+        # Descending thresholds
+        p2 = tempname() * ".csv"
+        write(p2, "HIGH,CIRCUITY\n800,1.9\n250,2.4\n")
+        @test_throws ArgumentError load_circuity_tiers(p2)
+        rm(p2; force=true)
+
+        # Non-positive factor
+        p3 = tempname() * ".csv"
+        write(p3, "HIGH,CIRCUITY\n250,0\n800,1.9\n")
+        @test_throws ArgumentError load_circuity_tiers(p3)
+        rm(p3; force=true)
+    end
 end
