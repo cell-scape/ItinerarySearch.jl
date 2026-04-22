@@ -45,6 +45,7 @@ include("_test_setup.jl")
         )
         fails = failed_markets(d)
         @test length(fails) == 2
+        @test eltype(fails) == MarketSearchFailure
         @test Set(f.market for f in fails) == Set([
             ("A", "B", Date(2026, 1, 1)),
             ("C", "D", Date(2026, 1, 2)),

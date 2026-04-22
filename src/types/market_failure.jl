@@ -21,7 +21,7 @@ struct MarketSearchFailure
 end
 
 """
-    is_failure(x)::Bool
+    `is_failure(x)::Bool`
 
 Return `true` iff `x` is a `MarketSearchFailure`. Useful for filtering
 `search_markets` result dicts without pattern matching.
@@ -30,10 +30,10 @@ is_failure(::MarketSearchFailure) = true
 is_failure(::Any) = false
 
 """
-    failed_markets(d::AbstractDict)::Vector{MarketSearchFailure}
+    `failed_markets(d::AbstractDict)::Vector{MarketSearchFailure}`
 
 Extract all `MarketSearchFailure` values from a `search_markets` result
 dict. Returns an empty vector if there are no failures.
 """
 failed_markets(d::AbstractDict) =
-    [v for v in values(d) if v isa MarketSearchFailure]
+    MarketSearchFailure[v for v in values(d) if v isa MarketSearchFailure]
