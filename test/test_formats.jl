@@ -903,6 +903,70 @@ using DataFrames
         @test length(_dedup_visible(Itinerary[a, b])) == 2
     end
 
+    @testset "_dedup_visible: distinct nonstops on different op_dates survive" begin
+        # Regression for an earlier dedup bug: the fingerprint loop was
+        # skipping BOTH iterations of `for leg in (from_l, to_l)` when
+        # from_l === to_l (self-cp = nonstop), so every nonstop hashed to
+        # h=0 and collapsed to a single entry — the user reported "only
+        # one nonstop in each output file".  Build three nonstops with
+        # the same flight on different operating_dates (the realistic
+        # multi-day search-window case) and verify they all survive.
+        using ItinerarySearch: _dedup_visible, _itinerary_visible_fingerprint
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        function _nonstop_on_date(opdate::UInt32, row::UInt64)
+            rec = LegRecord(
+                carrier=AirlineCode("UA"), flight_number=Int16(100),
+                operational_suffix=' ', itinerary_var_id=UInt8(1),
+                itinerary_var_overflow=' ',
+                leg_sequence_number=UInt8(1), service_type='J',
+                departure_station=StationCode("JFK"),
+                arrival_station=StationCode("LHR"),
+                passenger_departure_time=Int16(540),
+                passenger_arrival_time=Int16(1320),
+                aircraft_departure_time=Int16(540),
+                aircraft_arrival_time=Int16(1320),
+                departure_utc_offset=Int16(0), arrival_utc_offset=Int16(0),
+                departure_date_variation=Int8(0),
+                arrival_date_variation=Int8(0),
+                aircraft_type=InlineString7("777"), body_type='W',
+                departure_terminal=InlineString3("1"),
+                arrival_terminal=InlineString3("1"),
+                aircraft_owner=AirlineCode("UA"),
+                operating_date=opdate, day_of_week=UInt8(1),
+                effective_date=UInt32(20260101),
+                discontinue_date=UInt32(20261231),
+                frequency=UInt8(0x7f), dep_intl_dom='I', arr_intl_dom='I',
+                traffic_restriction_for_leg=InlineString15(""),
+                traffic_restriction_overflow=' ',
+                record_serial=UInt32(row), row_number=row,
+                segment_hash=UInt64(0),
+                distance=Distance(3451.0f0),
+                operating_carrier=AirlineCode(""),
+                operating_flight_number=Int16(0),
+                dei_10="", wet_lease=false, dei_127="",
+                prbd=InlineString31(""),
+            )
+            leg = GraphLeg(rec, jfk, lhr)
+            cp = nonstop_connection(leg, jfk)
+            Itinerary(connections=GraphConnection[cp])
+        end
+
+        a = _nonstop_on_date(UInt32(20260317), UInt64(1))
+        b = _nonstop_on_date(UInt32(20260318), UInt64(2))
+        c = _nonstop_on_date(UInt32(20260319), UInt64(3))
+
+        # Each fingerprint must be non-zero (the bug returned 0 for all).
+        @test _itinerary_visible_fingerprint(a) != UInt64(0)
+        @test _itinerary_visible_fingerprint(b) != UInt64(0)
+        @test _itinerary_visible_fingerprint(c) != UInt64(0)
+        # And the three must be distinct (different operating_dates).
+        @test _itinerary_visible_fingerprint(a) != _itinerary_visible_fingerprint(b)
+        @test _itinerary_visible_fingerprint(b) != _itinerary_visible_fingerprint(c)
+        # Dedup keeps all three.
+        @test length(_dedup_visible(Itinerary[a, b, c])) == 3
+    end
+
     @testset "_itinref_entry_rich nonstop has zero cnxs" begin
         using ItinerarySearch: _itinref_entry_rich
         itn = _nonstop_itinerary()

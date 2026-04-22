@@ -1117,20 +1117,32 @@ end
 # date + same flight identity at the leg level = same row in the viz.
 
 function _itinerary_visible_fingerprint(itn::Itinerary)::UInt64
+    # Mirrors the structure of `_itinerary_fingerprint` (formats.jl) — explicit
+    # check for `from_l === to_l` (the nonstop self-cp case) avoids the
+    # `for leg in (from_l, to_l)` pitfall where both iterations would skip
+    # the same leg and yield h=0 for every nonstop.
     h = UInt64(0)
     last_rn = UInt64(0)
     for cp in itn.connections
         from_l = cp.from_leg::GraphLeg
         to_l   = cp.to_leg::GraphLeg
-        for leg in (from_l, to_l)
-            leg === to_l && from_l === to_l && continue
-            rn = leg.record.row_number
-            rn == last_rn && continue
-            last_rn = rn
-            r = leg.record
+        rn = from_l.record.row_number
+        if rn != last_rn
+            r = from_l.record
             h = hash((r.carrier, r.flight_number, r.operating_date,
                       r.departure_station, r.arrival_station,
                       r.leg_sequence_number), h)
+            last_rn = rn
+        end
+        if !(from_l === to_l)
+            rn2 = to_l.record.row_number
+            if rn2 != last_rn
+                r2 = to_l.record
+                h = hash((r2.carrier, r2.flight_number, r2.operating_date,
+                          r2.departure_station, r2.arrival_station,
+                          r2.leg_sequence_number), h)
+                last_rn = rn2
+            end
         end
     end
     return h
