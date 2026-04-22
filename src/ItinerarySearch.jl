@@ -37,6 +37,7 @@ include("types/enums.jl")
 include("types/records.jl")
 include("types/status.jl")
 include("types/stats.jl")
+include("types/dict_ctor_helpers.jl")
 include("types/constraints.jl")
 include("types/graph.jl")
 include("types/mct_audit_config.jl")
@@ -65,11 +66,13 @@ include("graph/mct_trace.jl")
 include("audit/mct_audit_log.jl")
 include("audit/mct_replay.jl")
 include("audit/mct_inspect.jl")
+include("graph/time_helpers.jl")
 include("graph/rules_cnx.jl")
 include("graph/rules_itn.jl")
 include("graph/connect.jl")
 include("graph/search.jl")
 include("graph/builder.jl")
+include("output/dt_helpers.jl")
 include("output/formats.jl")
 include("output/viz.jl")
 include("server.jl")
@@ -103,6 +106,9 @@ export RuntimeContext, SearchConstraints, build_itn_rules
 # Output
 export write_legs, write_itineraries, write_trips
 export itinerary_legs, itinerary_legs_multi, itinerary_legs_json
+export itinerary_long_format, itinerary_wide_format
+export itinerary_legs_df, itinerary_summary_df, itinerary_pivot_df
+export leg_departure_dt, leg_arrival_dt
 
 # MCT audit
 export MCTAuditConfig, MCTTrace, MCTCandidateTrace, EMPTY_MCT_RESULT

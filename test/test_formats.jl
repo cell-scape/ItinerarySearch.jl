@@ -3,6 +3,7 @@ using ItinerarySearch
 using InlineStrings
 using Dates
 using JSON3
+using DataFrames
 
 @testset "Output Formats" begin
 
@@ -28,6 +29,8 @@ using JSON3
         arrival_station="ORD",
         passenger_departure_time=Int16(480),
         passenger_arrival_time=Int16(600),
+        departure_utc_offset=Int16(0),
+        arrival_utc_offset=Int16(0),
         arrival_date_variation=Int8(0),
         distance=800.0f0,
         aircraft_type="738",
@@ -40,6 +43,7 @@ using JSON3
         leg_sequence_number=UInt8(1),
         departure_terminal="1",
         arrival_terminal="1",
+        traffic_restriction_for_leg="",
     )
         LegRecord(
             carrier=AirlineCode(carrier),
@@ -55,8 +59,8 @@ using JSON3
             passenger_arrival_time=passenger_arrival_time,
             aircraft_departure_time=passenger_departure_time,
             aircraft_arrival_time=passenger_arrival_time,
-            departure_utc_offset=Int16(0),
-            arrival_utc_offset=Int16(0),
+            departure_utc_offset=departure_utc_offset,
+            arrival_utc_offset=arrival_utc_offset,
             departure_date_variation=Int8(0),
             arrival_date_variation=arrival_date_variation,
             aircraft_type=InlineString7(aircraft_type),
@@ -71,7 +75,7 @@ using JSON3
             frequency=frequency,
             dep_intl_dom=dep_intl_dom,
             arr_intl_dom=arr_intl_dom,
-            traffic_restriction_for_leg=InlineString15(""),
+            traffic_restriction_for_leg=InlineString15(traffic_restriction_for_leg),
             traffic_restriction_overflow=' ',
             record_serial=record_serial,
             row_number=UInt64(1),
@@ -436,6 +440,738 @@ using JSON3
         @test rows[1].itinerary_id == 1
         @test rows[2].itinerary_id == 2
         @test rows[3].itinerary_id == 3
+    end
+
+    # ── MCT audit passthrough in long format ─────────────────────────────────
+
+    @testset "itinerary_long_format — MCT audit fields present" begin
+        rows = itinerary_long_format(Itinerary[_one_stop_itinerary()])
+        @test length(rows) == 2
+        # Both rows carry the audit columns; fixture uses default (zero) MCTResult
+        # so the values are the zero-sentinels.  The key assertion is that the
+        # columns exist and have the right types.
+        for r in rows
+            @test hasproperty(r, :mct_matched_id)
+            @test hasproperty(r, :mct_matched_fields)
+            @test r.mct_matched_id isa Int
+            @test r.mct_matched_fields isa UInt32
+        end
+        # Origin leg (seq=1) carries zero; connecting legs (seq>1) also zero
+        # here because the fixture doesn't stamp a match.
+        @test rows[1].mct_matched_id == 0
+        @test rows[1].mct_matched_fields == UInt32(0)
+    end
+
+    @testset "itinerary_long_format — MCT audit populated from MCTResult" begin
+        # Build a 1-stop itinerary with an MCTResult that has a non-trivial
+        # mct_id and matched_fields bitmask to verify population.
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        rec1 = _leg_rec(carrier="UA", flight_number=200,
+                        departure_station="JFK", arrival_station="ORD",
+                        record_serial=UInt32(10))
+        rec2 = _leg_rec(carrier="UA", flight_number=916,
+                        departure_station="ORD", arrival_station="LHR",
+                        record_serial=UInt32(20), arr_intl_dom='I')
+        leg1 = GraphLeg(rec1, jfk, ord)
+        leg2 = GraphLeg(rec2, ord, lhr)
+        cp1 = nonstop_connection(leg1, jfk)
+        mct_res = MCTResult(
+            time=Minutes(75),
+            queried_status=MCT_DI,
+            matched_status=MCT_DI,
+            suppressed=false,
+            source=SOURCE_EXCEPTION,
+            specificity=UInt32(42),
+            mct_id=Int32(4242),
+            matched_fields=UInt32(0b1010_1010),
+        )
+        cp2 = GraphConnection(
+            from_leg=leg1, to_leg=leg2, station=ord,
+            mct=Minutes(60), mxct=Minutes(240), cnx_time=Minutes(120),
+            mct_result=mct_res,
+        )
+        itn = Itinerary(connections=GraphConnection[cp1, cp2],
+                        num_stops=Int16(1), status=STATUS_INTERNATIONAL)
+        rows = itinerary_long_format(Itinerary[itn])
+        @test length(rows) == 2
+
+        # Connecting leg row (seq=2 → terminal to_leg at end of cp2) carries
+        # the audit fields from cp2.mct_result.  seq=1 origin leg stays at 0
+        # since the origin has no upstream connection.
+        @test rows[1].mct_matched_id == 0
+        @test rows[2].mct_matched_id == 4242
+        @test rows[2].mct_matched_fields == UInt32(0b1010_1010)
+    end
+
+    # ── DataFrame wrappers ───────────────────────────────────────────────────
+
+    @testset "itinerary_legs_df — DataFrame round-trip of long format" begin
+        df = itinerary_legs_df(Itinerary[_nonstop_itinerary(), _one_stop_itinerary()])
+        @test df isa DataFrame
+        # 1 row for nonstop + 2 rows for 1-stop
+        @test nrow(df) == 3
+        @test "itinerary_id" in names(df)
+        @test "leg_seq" in names(df)
+        @test "mct_matched_id" in names(df)
+        @test "mct_matched_fields" in names(df)
+        @test df.itinerary_id == [1, 2, 2]
+    end
+
+    @testset "itinerary_legs_df — empty input returns empty DataFrame" begin
+        df = itinerary_legs_df(Itinerary[])
+        @test df isa DataFrame
+        @test nrow(df) == 0
+    end
+
+    @testset "itinerary_summary_df — DataFrame round-trip of wide format" begin
+        df = itinerary_summary_df(Itinerary[_nonstop_itinerary(), _one_stop_itinerary()])
+        @test df isa DataFrame
+        @test nrow(df) == 2
+        @test "itinerary_id" in names(df)
+        @test "flights" in names(df)
+        @test "record_serials" in names(df)
+        @test df.itinerary_id == [1, 2]
+    end
+
+    @testset "itinerary_summary_df — empty input returns empty DataFrame" begin
+        df = itinerary_summary_df(Itinerary[])
+        @test df isa DataFrame
+        @test nrow(df) == 0
+    end
+
+    # ── Pivoted wide DataFrame ───────────────────────────────────────────────
+
+    @testset "itinerary_pivot_df — nonstop fills leg1, leaves leg2/leg3 missing" begin
+        df = itinerary_pivot_df(Itinerary[_nonstop_itinerary()])
+        @test df isa DataFrame
+        @test nrow(df) == 1
+        @test df.num_legs[1] == 1
+        @test df.num_stops[1] == 0
+        @test df.origin[1] == "JFK"
+        @test df.destination[1] == "LHR"
+        # leg1 populated
+        @test df.leg1_carrier[1] == "UA"
+        @test df.leg1_flight_number[1] == 100
+        @test df.leg1_departure_station[1] == "JFK"
+        @test df.leg1_arrival_station[1] == "LHR"
+        @test df.leg1_is_nonstop[1] == true
+        # leg2, leg3, cnx1, cnx2 all missing
+        @test ismissing(df.leg2_carrier[1])
+        @test ismissing(df.leg3_carrier[1])
+        @test ismissing(df.cnx1_cnx_time[1])
+        @test ismissing(df.cnx2_cnx_time[1])
+    end
+
+    @testset "itinerary_pivot_df — 1-stop fills leg1+leg2+cnx1, leg3/cnx2 missing" begin
+        df = itinerary_pivot_df(Itinerary[_one_stop_itinerary()])
+        @test nrow(df) == 1
+        @test df.num_legs[1] == 2
+        @test df.num_stops[1] == 1
+        @test df.origin[1] == "JFK"
+        @test df.destination[1] == "LHR"
+        @test df.leg1_carrier[1] == "UA"
+        @test df.leg1_flight_number[1] == 200
+        @test df.leg1_departure_station[1] == "JFK"
+        @test df.leg1_arrival_station[1] == "ORD"
+        @test df.leg2_carrier[1] == "UA"
+        @test df.leg2_flight_number[1] == 916
+        @test df.leg2_departure_station[1] == "ORD"
+        @test df.leg2_arrival_station[1] == "LHR"
+        @test df.cnx1_cnx_time[1] == 120
+        @test df.cnx1_mct[1] == 60
+        # leg3 and cnx2 missing
+        @test ismissing(df.leg3_carrier[1])
+        @test ismissing(df.cnx2_cnx_time[1])
+    end
+
+    @testset "itinerary_pivot_df — max_legs parameter controls schema width" begin
+        df = itinerary_pivot_df(Itinerary[_nonstop_itinerary()]; max_legs=2)
+        @test "leg1_carrier" in names(df)
+        @test "leg2_carrier" in names(df)
+        @test !("leg3_carrier" in names(df))
+        @test "cnx1_cnx_time" in names(df)
+        @test !("cnx2_cnx_time" in names(df))
+    end
+
+    @testset "itinerary_pivot_df — errors when itinerary exceeds max_legs" begin
+        @test_throws ArgumentError itinerary_pivot_df(
+            Itinerary[_one_stop_itinerary()]; max_legs=1,
+        )
+    end
+
+    @testset "itinerary_pivot_df — errors on max_legs < 1" begin
+        @test_throws ArgumentError itinerary_pivot_df(Itinerary[]; max_legs=0)
+    end
+
+    @testset "itinerary_pivot_df — empty input returns empty DataFrame" begin
+        df = itinerary_pivot_df(Itinerary[])
+        @test df isa DataFrame
+        @test nrow(df) == 0
+        @test "leg1_carrier" in names(df)  # schema present even when empty
+    end
+
+    @testset "itinerary_pivot_df — mct_matched_id populated on cnx columns" begin
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        rec1 = _leg_rec(carrier="UA", flight_number=200,
+                        departure_station="JFK", arrival_station="ORD",
+                        record_serial=UInt32(10))
+        rec2 = _leg_rec(carrier="UA", flight_number=916,
+                        departure_station="ORD", arrival_station="LHR",
+                        record_serial=UInt32(20), arr_intl_dom='I')
+        leg1 = GraphLeg(rec1, jfk, ord)
+        leg2 = GraphLeg(rec2, ord, lhr)
+        cp1 = nonstop_connection(leg1, jfk)
+        mct_res = MCTResult(
+            time=Minutes(75),
+            queried_status=MCT_DI, matched_status=MCT_DI, suppressed=false,
+            source=SOURCE_EXCEPTION, specificity=UInt32(42),
+            mct_id=Int32(7777), matched_fields=UInt32(0xFF),
+        )
+        cp2 = GraphConnection(
+            from_leg=leg1, to_leg=leg2, station=ord,
+            mct=Minutes(60), mxct=Minutes(240), cnx_time=Minutes(120),
+            mct_result=mct_res,
+        )
+        itn = Itinerary(connections=GraphConnection[cp1, cp2],
+                        num_stops=Int16(1), status=STATUS_INTERNATIONAL)
+        df = itinerary_pivot_df(Itinerary[itn])
+        @test df.cnx1_mct_matched_id[1] == 7777
+        @test df.cnx1_mct_matched_fields[1] == UInt32(0xFF)
+    end
+
+    # ── viz_itinerary_refs rich entry ─────────────────────────────────────────
+
+    @testset "_itinref_entry_rich populates legs + cnxs + status flags" begin
+        using ItinerarySearch: _itinref_entry_rich
+        itn = _one_stop_itinerary()
+        entry = _itinref_entry_rich(itn, 7; date="2026-06-15")
+
+        @test entry["idx"] == 7
+        @test entry["date"] == "2026-06-15"
+        @test entry["origin"] == "JFK"
+        @test entry["destination"] == "LHR"
+        @test entry["num_stops"] == 1
+        @test entry["is_international"] == true   # _one_stop_itinerary is intl
+        @test haskey(entry, "is_codeshare")
+        @test haskey(entry, "is_interline")
+        @test haskey(entry, "has_through")
+
+        # Two legs (1-stop) and one connection between them.
+        @test length(entry["legs"]) == 2
+        @test length(entry["cnxs"]) == 1
+
+        # Each leg dict carries timestamps + TRC + canonical identity fields.
+        for leg in entry["legs"]
+            @test haskey(leg, "dep_dt")
+            @test haskey(leg, "arr_dt")
+            @test haskey(leg, "trc")
+            @test haskey(leg, "carrier")
+            @test haskey(leg, "flight_number")
+            @test haskey(leg, "row_number")
+            @test haskey(leg, "record_serial")
+        end
+
+        # Connection dict carries MCT audit info.
+        cnx = entry["cnxs"][1]
+        @test cnx["station"] == "ORD"   # leg1 arrives at ORD
+        @test haskey(cnx, "mct_id")
+        @test haskey(cnx, "mct_time")
+        @test haskey(cnx, "mct_source")
+        @test cnx["mct_source"] in ("exception", "standard", "default")
+    end
+
+    @testset "_itinref_entry_rich: codeshare and interline are independent" begin
+        # User-facing definitions (per the rich viz contract):
+        #   codeshare = any leg has marketing carrier+flight != operating
+        #   interline = marketing carrier CHANGES between legs of an itinerary
+        # Both can be true at once.  Cover the four corners.
+        using ItinerarySearch: _itinref_entry_rich
+
+        # Helper to build one nonstop leg with explicit marketing/operating.
+        function _custom_leg(mkt_carrier, mkt_fno, op_carrier, op_fno;
+                              org="JFK", dst="ORD", op_date=UInt32(20260615),
+                              row=UInt64(1), serial=UInt32(1))
+            org_stn = GraphStation(_stn_rec(org, "US", "NAM"))
+            dst_stn = GraphStation(_stn_rec(dst, "US", "NAM"))
+            rec = LegRecord(
+                carrier=AirlineCode(mkt_carrier), flight_number=Int16(mkt_fno),
+                operational_suffix=' ', itinerary_var_id=UInt8(1),
+                itinerary_var_overflow=' ',
+                leg_sequence_number=UInt8(1), service_type='J',
+                departure_station=StationCode(org), arrival_station=StationCode(dst),
+                passenger_departure_time=Int16(540),
+                passenger_arrival_time=Int16(660),
+                aircraft_departure_time=Int16(540),
+                aircraft_arrival_time=Int16(660),
+                departure_utc_offset=Int16(0), arrival_utc_offset=Int16(0),
+                departure_date_variation=Int8(0),
+                arrival_date_variation=Int8(0),
+                aircraft_type=InlineString7("738"), body_type='N',
+                departure_terminal=InlineString3("1"),
+                arrival_terminal=InlineString3("1"),
+                aircraft_owner=AirlineCode(mkt_carrier),
+                operating_date=op_date, day_of_week=UInt8(1),
+                effective_date=UInt32(20260101),
+                discontinue_date=UInt32(20261231),
+                frequency=UInt8(0x7f), dep_intl_dom='D', arr_intl_dom='D',
+                traffic_restriction_for_leg=InlineString15(""),
+                traffic_restriction_overflow=' ',
+                record_serial=serial, row_number=row, segment_hash=UInt64(0),
+                distance=Distance(800.0f0),
+                operating_carrier=AirlineCode(op_carrier),
+                operating_flight_number=Int16(op_fno),
+                dei_10="", wet_lease=false, dei_127="",
+                prbd=InlineString31(""),
+            )
+            GraphLeg(rec, org_stn, dst_stn)
+        end
+
+        # Build a 1-stop from two custom legs; reuses the leg helper above.
+        function _two_leg_itin(leg1, leg2)
+            cnx_stn = leg1.dst::GraphStation
+            cp1 = nonstop_connection(leg1, leg1.org::GraphStation)
+            cp2 = GraphConnection(from_leg=leg1, to_leg=leg2, station=cnx_stn,
+                                  mct=Minutes(60), mxct=Minutes(240),
+                                  cnx_time=Minutes(120))
+            Itinerary(connections=GraphConnection[cp1, cp2], num_stops=Int16(1))
+        end
+
+        # Case 1: neither codeshare nor interline (both legs UA host)
+        leg1 = _custom_leg("UA", 100, "", 0)              # host
+        leg2 = _custom_leg("UA", 200, "", 0;              # host, same marketing
+                           org="ORD", dst="LAX", row=UInt64(2))
+        e1 = _itinref_entry_rich(_two_leg_itin(leg1, leg2), 1)
+        @test e1["is_codeshare"] == false
+        @test e1["is_interline"] == false
+
+        # Case 2: codeshare (leg 1 marketed UA but operated LH) but no
+        # interline (both legs marketed UA)
+        leg1 = _custom_leg("UA", 8835, "LH", 431)         # codeshare leg
+        leg2 = _custom_leg("UA", 200, "", 0;              # host, same marketing
+                           org="ORD", dst="LAX", row=UInt64(2))
+        e2 = _itinref_entry_rich(_two_leg_itin(leg1, leg2), 1)
+        @test e2["is_codeshare"] == true
+        @test e2["is_interline"] == false
+
+        # Case 3: interline (UA → LH marketing change) but neither leg is a
+        # codeshare on its own (both are host flights)
+        leg1 = _custom_leg("UA", 100, "", 0)              # host
+        leg2 = _custom_leg("LH", 431, "", 0;              # host, different marketing
+                           org="ORD", dst="LAX", row=UInt64(2))
+        e3 = _itinref_entry_rich(_two_leg_itin(leg1, leg2), 1)
+        @test e3["is_codeshare"] == false
+        @test e3["is_interline"] == true
+
+        # Case 4: both — marketing changes UA→LH AND each leg has its own
+        # operating carrier (the "UA 1 op AC 2 → LH 3 op LX 4" example).
+        leg1 = _custom_leg("UA", 1, "AC", 2)
+        leg2 = _custom_leg("LH", 3, "LX", 4;
+                           org="ORD", dst="LAX", row=UInt64(2))
+        e4 = _itinref_entry_rich(_two_leg_itin(leg1, leg2), 1)
+        @test e4["is_codeshare"] == true
+        @test e4["is_interline"] == true
+    end
+
+    @testset "_itinref_entry_rich per-leg flags: IL boundary, INTL crossing" begin
+        # Build a 1-stop where leg 1 is domestic UA, leg 2 is intl LH.
+        # Expected per-leg flags:
+        #   leg 1 (UA, US→US): is_intl_leg=false, is_interline_leg=false (first)
+        #   leg 2 (LH, US→DE): is_intl_leg=true,  is_interline_leg=true  (boundary)
+        # Itinerary-level: is_codeshare=false (both host), is_interline=true,
+        # is_international=true.
+        using ItinerarySearch: _itinref_entry_rich
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        fra = GraphStation(_stn_rec("FRA", "DE", "EUR"))
+        rec1 = _leg_rec(carrier="UA", flight_number=100,
+                        departure_station="ORD", arrival_station="JFK",
+                        record_serial=UInt32(1))
+        rec2 = _leg_rec(carrier="LH", flight_number=431,
+                        departure_station="JFK", arrival_station="FRA",
+                        arr_intl_dom='I', record_serial=UInt32(2))
+        leg1 = GraphLeg(rec1, ord, jfk)
+        leg2 = GraphLeg(rec2, jfk, fra)
+        cp1 = nonstop_connection(leg1, ord)
+        cp2 = GraphConnection(from_leg=leg1, to_leg=leg2, station=jfk,
+                              mct=Minutes(60), mxct=Minutes(240),
+                              cnx_time=Minutes(120))
+        itn = Itinerary(connections=GraphConnection[cp1, cp2], num_stops=Int16(1))
+        e = _itinref_entry_rich(itn, 1)
+
+        # Per-leg flags
+        @test e["legs"][1]["is_intl_leg"] == false
+        @test e["legs"][1]["is_interline_leg"] == false   # first leg, no predecessor
+        @test e["legs"][2]["is_intl_leg"] == true         # US → DE
+        @test e["legs"][2]["is_interline_leg"] == true    # UA → LH boundary
+
+        # Itinerary-level rollup unchanged
+        @test e["is_interline"] == true
+        @test e["is_codeshare"] == false                  # both legs host
+    end
+
+    @testset "_itinref_entry_rich has_trc rollup is true if any leg has a TRC" begin
+        using ItinerarySearch: _itinref_entry_rich
+        # Construct a 1-stop where leg 2 carries a TRC code.  has_trc must
+        # be true on the itinerary, with the actual code preserved per-leg.
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        rec1 = _leg_rec(carrier="UA", flight_number=200,
+                        departure_station="JFK", arrival_station="ORD",
+                        record_serial=UInt32(1))
+        rec2 = _leg_rec(carrier="UA", flight_number=916,
+                        departure_station="ORD", arrival_station="LHR",
+                        arr_intl_dom='I', record_serial=UInt32(2),
+                        traffic_restriction_for_leg="A")  # TRC 'A'
+        leg1 = GraphLeg(rec1, jfk, ord)
+        leg2 = GraphLeg(rec2, ord, lhr)
+        cp1 = nonstop_connection(leg1, jfk)
+        cp2 = GraphConnection(from_leg=leg1, to_leg=leg2, station=ord,
+                              mct=Minutes(60), mxct=Minutes(240),
+                              cnx_time=Minutes(120))
+        itn = Itinerary(connections=GraphConnection[cp1, cp2], num_stops=Int16(1))
+        e = _itinref_entry_rich(itn, 1)
+        @test e["has_trc"] == true
+        @test e["legs"][1]["trc"] == ""
+        @test e["legs"][2]["trc"] == "A"
+    end
+
+    @testset "_itinref_entry_rich has_trc=false when no leg carries a TRC" begin
+        using ItinerarySearch: _itinref_entry_rich
+        e = _itinref_entry_rich(_nonstop_itinerary(), 1)
+        @test e["has_trc"] == false
+    end
+
+    @testset "_itinref_entry_rich flights string: arrows, no repeats on through" begin
+        # Verify two related rendering rules for the rich-entry "flights" string:
+        # - Separator is " → " (matches the route style), not " / ".
+        # - Consecutive identical carrier+flight_number entries collapse to one
+        #   (the through-flight case: a single flight number serving multiple
+        #   board/off points isn't repeated in the display).
+        using ItinerarySearch: _itinref_entry_rich
+
+        # Distinct flight numbers across legs → both shown, joined with arrows.
+        e_distinct = _itinref_entry_rich(_one_stop_itinerary(), 1)
+        @test e_distinct["flights"] == "UA 200 → UA 916"
+
+        # Same flight number across two "legs" (through-flight surrogate built
+        # by reusing the same record on both legs) → not repeated.
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+        lax = GraphStation(_stn_rec("LAX", "US", "NAM"))
+        rec1 = _leg_rec(carrier="UA", flight_number=100,
+                        departure_station="JFK", arrival_station="ORD",
+                        record_serial=UInt32(1))
+        rec2 = _leg_rec(carrier="UA", flight_number=100,
+                        departure_station="ORD", arrival_station="LAX",
+                        record_serial=UInt32(2))
+        leg1 = GraphLeg(rec1, jfk, ord)
+        leg2 = GraphLeg(rec2, ord, lax)
+        cp1 = nonstop_connection(leg1, jfk)
+        cp2 = GraphConnection(from_leg=leg1, to_leg=leg2, station=ord,
+                              mct=Minutes(60), mxct=Minutes(240),
+                              cnx_time=Minutes(120))
+        through_itn = Itinerary(connections=GraphConnection[cp1, cp2],
+                                num_stops=Int16(1))
+        e_through = _itinref_entry_rich(through_itn, 1)
+        @test e_through["flights"] == "UA 100"
+    end
+
+    @testset "_filter_dei10 keeps only entries present in the cross-ref set" begin
+        using ItinerarySearch: _filter_dei10
+        # Cross-ref set: pretend our schedule has UA 8835 and AC 9694 only.
+        valid = Set{Tuple{String,Int16}}([("UA", Int16(8835)), ("AC", Int16(9694))])
+        # DEI 10 lists three dupes; only two should survive.
+        @test _filter_dei10("UA 8835 /AC 9694 /VA 8355", valid) == "UA 8835 / AC 9694"
+        @test _filter_dei10("VA 8355", valid) == ""
+        @test _filter_dei10("UA 8835", valid) == "UA 8835"
+        # Empty input → empty output regardless of filter.
+        @test _filter_dei10("", valid) == ""
+    end
+
+    @testset "_filter_dei10 nothing-filter passes through" begin
+        using ItinerarySearch: _filter_dei10
+        # Default behaviour (no graph supplied) preserves the raw DEI 10 string.
+        @test _filter_dei10("UA 8835 /AC 9694 /VA 8355", nothing) == "UA 8835 /AC 9694 /VA 8355"
+        @test _filter_dei10("", nothing) == ""
+    end
+
+    @testset "_filter_dei10 handles malformed entries gracefully" begin
+        using ItinerarySearch: _filter_dei10
+        valid = Set{Tuple{String,Int16}}([("UA", Int16(100))])
+        # Garbage entries (no flight number, non-numeric, single token) get skipped.
+        @test _filter_dei10("UA 100 /BADENTRY /UA notanumber /UA 100", valid) ==
+              "UA 100 / UA 100"
+    end
+
+    @testset "_dedup_visible collapses itineraries with same visible fields" begin
+        # Build two nonstop itineraries that have IDENTICAL visible fields
+        # (same carrier+flight+operating_date+stations+leg_seq) but different
+        # row_numbers and record_serials — simulating duplicate SSIM Type-3
+        # records with overlapping eff/disc ranges.  The existing row_number
+        # fingerprint sees them as distinct; the viz dedup should fold them.
+        using ItinerarySearch: _dedup_visible
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+
+        function _ns_itin(row_num::UInt64, rec_serial::UInt32)
+            rec = LegRecord(
+                carrier=AirlineCode("UA"), flight_number=Int16(100),
+                operational_suffix=' ', itinerary_var_id=UInt8(1),
+                itinerary_var_overflow=' ',
+                leg_sequence_number=UInt8(1), service_type='J',
+                departure_station=StationCode("JFK"),
+                arrival_station=StationCode("LHR"),
+                passenger_departure_time=Int16(540),
+                passenger_arrival_time=Int16(1320),
+                aircraft_departure_time=Int16(540),
+                aircraft_arrival_time=Int16(1320),
+                departure_utc_offset=Int16(0), arrival_utc_offset=Int16(0),
+                departure_date_variation=Int8(0),
+                arrival_date_variation=Int8(0),
+                aircraft_type=InlineString7("777"), body_type='W',
+                departure_terminal=InlineString3("1"),
+                arrival_terminal=InlineString3("1"),
+                aircraft_owner=AirlineCode("UA"),
+                operating_date=UInt32(20260615), day_of_week=UInt8(1),
+                effective_date=UInt32(20260101),
+                discontinue_date=UInt32(20261231),
+                frequency=UInt8(0x7f), dep_intl_dom='I', arr_intl_dom='I',
+                traffic_restriction_for_leg=InlineString15(""),
+                traffic_restriction_overflow=' ',
+                record_serial=rec_serial, row_number=row_num,
+                segment_hash=UInt64(0),
+                distance=Distance(3451.0f0),
+                operating_carrier=AirlineCode(""),
+                operating_flight_number=Int16(0),
+                dei_10="", wet_lease=false, dei_127="",
+                prbd=InlineString31(""),
+            )
+            leg = GraphLeg(rec, jfk, lhr)
+            cp = nonstop_connection(leg, jfk)
+            Itinerary(connections=GraphConnection[cp])
+        end
+
+        a = _ns_itin(UInt64(111), UInt32(1001))
+        b = _ns_itin(UInt64(222), UInt32(1002))   # diff row+serial, same visible
+        c = _ns_itin(UInt64(333), UInt32(1003))   # also a duplicate
+        deduped = _dedup_visible(Itinerary[a, b, c])
+        @test length(deduped) == 1
+        @test deduped[1] === a   # first occurrence wins
+    end
+
+    @testset "_dedup_visible keeps genuinely distinct itineraries" begin
+        # Same fixture pair the other rich tests use — both nonstops but
+        # with different flight numbers (100 vs implicitly distinct from
+        # the 1-stop fixture).  They should NOT collapse.
+        using ItinerarySearch: _dedup_visible
+        a = _nonstop_itinerary()
+        b = _one_stop_itinerary()
+        @test length(_dedup_visible(Itinerary[a, b])) == 2
+    end
+
+    @testset "_dedup_visible: distinct nonstops on different op_dates survive" begin
+        # Regression for an earlier dedup bug: the fingerprint loop was
+        # skipping BOTH iterations of `for leg in (from_l, to_l)` when
+        # from_l === to_l (self-cp = nonstop), so every nonstop hashed to
+        # h=0 and collapsed to a single entry — the user reported "only
+        # one nonstop in each output file".  Build three nonstops with
+        # the same flight on different operating_dates (the realistic
+        # multi-day search-window case) and verify they all survive.
+        using ItinerarySearch: _dedup_visible, _itinerary_visible_fingerprint
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        function _nonstop_on_date(opdate::UInt32, row::UInt64)
+            rec = LegRecord(
+                carrier=AirlineCode("UA"), flight_number=Int16(100),
+                operational_suffix=' ', itinerary_var_id=UInt8(1),
+                itinerary_var_overflow=' ',
+                leg_sequence_number=UInt8(1), service_type='J',
+                departure_station=StationCode("JFK"),
+                arrival_station=StationCode("LHR"),
+                passenger_departure_time=Int16(540),
+                passenger_arrival_time=Int16(1320),
+                aircraft_departure_time=Int16(540),
+                aircraft_arrival_time=Int16(1320),
+                departure_utc_offset=Int16(0), arrival_utc_offset=Int16(0),
+                departure_date_variation=Int8(0),
+                arrival_date_variation=Int8(0),
+                aircraft_type=InlineString7("777"), body_type='W',
+                departure_terminal=InlineString3("1"),
+                arrival_terminal=InlineString3("1"),
+                aircraft_owner=AirlineCode("UA"),
+                operating_date=opdate, day_of_week=UInt8(1),
+                effective_date=UInt32(20260101),
+                discontinue_date=UInt32(20261231),
+                frequency=UInt8(0x7f), dep_intl_dom='I', arr_intl_dom='I',
+                traffic_restriction_for_leg=InlineString15(""),
+                traffic_restriction_overflow=' ',
+                record_serial=UInt32(row), row_number=row,
+                segment_hash=UInt64(0),
+                distance=Distance(3451.0f0),
+                operating_carrier=AirlineCode(""),
+                operating_flight_number=Int16(0),
+                dei_10="", wet_lease=false, dei_127="",
+                prbd=InlineString31(""),
+            )
+            leg = GraphLeg(rec, jfk, lhr)
+            cp = nonstop_connection(leg, jfk)
+            Itinerary(connections=GraphConnection[cp])
+        end
+
+        a = _nonstop_on_date(UInt32(20260317), UInt64(1))
+        b = _nonstop_on_date(UInt32(20260318), UInt64(2))
+        c = _nonstop_on_date(UInt32(20260319), UInt64(3))
+
+        # Each fingerprint must be non-zero (the bug returned 0 for all).
+        @test _itinerary_visible_fingerprint(a) != UInt64(0)
+        @test _itinerary_visible_fingerprint(b) != UInt64(0)
+        @test _itinerary_visible_fingerprint(c) != UInt64(0)
+        # And the three must be distinct (different operating_dates).
+        @test _itinerary_visible_fingerprint(a) != _itinerary_visible_fingerprint(b)
+        @test _itinerary_visible_fingerprint(b) != _itinerary_visible_fingerprint(c)
+        # Dedup keeps all three.
+        @test length(_dedup_visible(Itinerary[a, b, c])) == 3
+    end
+
+    @testset "_itinref_entry_rich nonstop has zero cnxs" begin
+        using ItinerarySearch: _itinref_entry_rich
+        itn = _nonstop_itinerary()
+        entry = _itinref_entry_rich(itn, 1)
+        @test entry["num_stops"] == 0
+        @test length(entry["legs"]) == 1
+        @test length(entry["cnxs"]) == 0
+    end
+
+    @testset "_itinref_entry_rich host flight: operating fields fall back to marketing" begin
+        # SSIM convention: host flights leave operating_carrier empty and
+        # operating_flight_number=0.  The rich entry should normalize these
+        # to the marketing values and set is_codeshare_leg=false so the
+        # JS template doesn't render a misleading "(op  0)".
+        using ItinerarySearch: _itinref_entry_rich
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        rec = _leg_rec(
+            carrier="UA", flight_number=100,
+            departure_station="JFK", arrival_station="LHR",
+            # _leg_rec defaults: operating_carrier="" via LegRecord struct
+            # default, operating_flight_number=0.
+        )
+        leg = GraphLeg(rec, jfk, lhr)
+        cp = nonstop_connection(leg, jfk)
+        itn = Itinerary(connections=GraphConnection[cp])
+        entry = _itinref_entry_rich(itn, 1)
+        leg_dict = entry["legs"][1]
+        @test leg_dict["carrier"] == "UA"
+        @test leg_dict["flight_number"] == 100
+        @test leg_dict["operating_carrier"] == "UA"        # filled in
+        @test leg_dict["operating_flight_number"] == 100   # filled in
+        @test leg_dict["is_codeshare_leg"] == false
+    end
+
+    @testset "_itinref_entry_rich codeshare flight: keeps distinct operating fields" begin
+        using ItinerarySearch: _itinref_entry_rich
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        # Build a record with operating fields set distinctly (codeshare).
+        # _leg_rec doesn't expose them as kwargs, so construct LegRecord directly.
+        rec = LegRecord(
+            carrier=AirlineCode("UA"), flight_number=Int16(8835),
+            operational_suffix=' ', itinerary_var_id=UInt8(1), itinerary_var_overflow=' ',
+            leg_sequence_number=UInt8(1), service_type='J',
+            departure_station=StationCode("JFK"), arrival_station=StationCode("LHR"),
+            passenger_departure_time=Int16(540), passenger_arrival_time=Int16(1320),
+            aircraft_departure_time=Int16(540), aircraft_arrival_time=Int16(1320),
+            departure_utc_offset=Int16(0), arrival_utc_offset=Int16(0),
+            departure_date_variation=Int8(0), arrival_date_variation=Int8(0),
+            aircraft_type=InlineString7("777"), body_type='W',
+            departure_terminal=InlineString3("1"), arrival_terminal=InlineString3("1"),
+            aircraft_owner=AirlineCode("LH"),
+            operating_date=UInt32(20260615), day_of_week=UInt8(1),
+            effective_date=UInt32(20260101), discontinue_date=UInt32(20261231),
+            frequency=UInt8(0x7f), dep_intl_dom='I', arr_intl_dom='I',
+            traffic_restriction_for_leg=InlineString15(""),
+            traffic_restriction_overflow=' ',
+            record_serial=UInt32(42), row_number=UInt64(1), segment_hash=UInt64(0),
+            distance=Distance(3451.0f0),
+            operating_carrier=AirlineCode("LH"), operating_flight_number=Int16(431),
+            dei_10="UA 8835 /AC 9694",  # also marketed as
+            wet_lease=false, dei_127="", prbd=InlineString31(""),
+        )
+        leg = GraphLeg(rec, jfk, lhr)
+        cp = nonstop_connection(leg, jfk)
+        itn = Itinerary(connections=GraphConnection[cp])
+        entry = _itinref_entry_rich(itn, 1)
+        leg_dict = entry["legs"][1]
+        @test leg_dict["carrier"] == "UA"
+        @test leg_dict["flight_number"] == 8835
+        @test leg_dict["operating_carrier"] == "LH"
+        @test leg_dict["operating_flight_number"] == 431
+        @test leg_dict["is_codeshare_leg"] == true
+        @test leg_dict["dei_10"] == "UA 8835 /AC 9694"
+    end
+
+    # ── DateTime helpers ──────────────────────────────────────────────────────
+
+    @testset "leg_departure_dt — UTC absolute time" begin
+        # _leg_rec helper sets operating_date = 2026-06-15 (see fixture).
+        # JFK leg, dep 09:00 local (-05:00 EST) → 14:00 UTC same day.
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        rec = _leg_rec(
+            departure_station="JFK", arrival_station="LHR",
+            passenger_departure_time=Int16(540),  # 09:00
+            passenger_arrival_time=Int16(1320),   # 22:00
+            departure_utc_offset=Int16(-300),
+            arrival_utc_offset=Int16(0),
+        )
+        leg = GraphLeg(rec, jfk, lhr)
+        dep_dt = leg_departure_dt(leg)
+        @test dep_dt isa DateTime
+        @test dep_dt == DateTime(2026, 6, 15, 14, 0, 0)
+    end
+
+    @testset "leg_arrival_dt — UTC absolute time with arr_date_var" begin
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        rec = _leg_rec(
+            departure_station="JFK", arrival_station="LHR",
+            passenger_departure_time=Int16(1260),
+            passenger_arrival_time=Int16(480),
+            departure_utc_offset=Int16(-300),
+            arrival_utc_offset=Int16(0),
+            arrival_date_variation=Int8(1),
+        )
+        leg = GraphLeg(rec, jfk, lhr)
+        arr_dt = leg_arrival_dt(leg)
+        # arr 08:00 GMT = 08:00 UTC, +1 day from operating_date 2026-06-15.
+        @test arr_dt == DateTime(2026, 6, 16, 8, 0, 0)
+    end
+
+    @testset "leg_arrival_dt — infers +1 day when arr_date_var is blank" begin
+        # Same overnight flight, but arr_date_var=0 (LH-style data gap).
+        # Helper should still return a sensible DateTime.
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+        fra = GraphStation(_stn_rec("FRA", "DE", "EUR"))
+        rec = _leg_rec(
+            carrier="LH", flight_number=431,
+            departure_station="ORD", arrival_station="FRA",
+            passenger_departure_time=Int16(1200),  # 20:00 CST
+            passenger_arrival_time=Int16(660),     # 11:00 CET
+            departure_utc_offset=Int16(-300),
+            arrival_utc_offset=Int16(120),
+            arrival_date_variation=Int8(0),        # source didn't flag overnight
+        )
+        leg = GraphLeg(rec, ord, fra)
+        dep_dt = leg_departure_dt(leg)   # 2026-01-01 25:00 - which is 2026-01-02 01:00 UTC
+        arr_dt = leg_arrival_dt(leg)
+        @test arr_dt > dep_dt
+        # Sanity: about 8h between
+        @test Dates.value(arr_dt - dep_dt) ÷ 60_000 == 480
     end
 
     # ── Passthrough helpers ────────────────────────────────────────────────────

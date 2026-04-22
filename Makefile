@@ -1,4 +1,4 @@
-.PHONY: test test-serial test-static test-all demo demo-newssim bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve mct-inspect mct-inspect-styled mct-replay sysimage app juliac
+.PHONY: test test-serial test-static test-all demo demo-newssim bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve mct-inspect mct-inspect-styled mct-replay mct-inspect-search sysimage app juliac
 
 # Fast dev test loop — parallel runner (~47s), skips JET + Aqua. Override the
 # worker count with ITINSEARCH_TEST_WORKERS=N (default 4).
@@ -91,6 +91,14 @@ mct-inspect-styled:
 #        make mct-replay FILE=data/input/UA_Misconnect_Report.csv EXTRA="--detailed"
 mct-replay:
 	julia --project=. scripts/mct_inspect.jl $(FILE) --replay $(EXTRA)
+
+# MCT inspector — search mode: run a search, then inspect each connection
+# in each result interactively (a 2-stop itinerary contributes both
+# connections in sequence; step with the same n/p/c/b commands as misconnect
+# rows).  This loads the full schedule, so first invocation takes ~12s.
+# Usage: make mct-inspect-search ORG=ORD DST=LHR DATE=2026-03-20
+mct-inspect-search:
+	julia --project=. scripts/mct_inspect.jl --search $(ORG) $(DST) $(DATE) $(EXTRA)
 
 # PackageCompiler builds (uses test suite as precompile workload)
 sysimage:

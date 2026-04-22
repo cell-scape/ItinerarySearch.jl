@@ -226,21 +226,12 @@ function check_itn_suppcodes(itn::Itinerary, ctx)::Int
 end
 
 # ── Rule 5: MAFT (Maximum Feasible Travel Time) filter ────────────────────────
-
-"""
-    `@inline function _leg_block_time(rec)::Int32`
-
-Compute block time in minutes for a leg record, UTC-adjusted.
-
-Formula: `(arr_local - arr_utc_offset + arr_date_variation × 1440) - (dep_local - dep_utc_offset)`.
-Returns at least 0.
-"""
-@inline function _leg_block_time(rec)::Int32
-    max(Int32(0),
-        (Int32(rec.passenger_arrival_time) - Int32(rec.arrival_utc_offset) +
-         Int32(rec.arrival_date_variation) * Int32(1440)) -
-        (Int32(rec.passenger_departure_time) - Int32(rec.departure_utc_offset)))
-end
+# Block-time helper `_leg_utc_block` lives in src/graph/time_helpers.jl —
+# previously this file had its own `_leg_block_time` with a silent
+# max(0, ...) clamp that hid the LH-overnight-without-arr_date_var bug.
+# All call sites now use the shared `_leg_utc_block` which infers +1 day
+# rollover when the data is missing.
+const _leg_block_time = _leg_utc_block
 
 """
     `function check_itn_maft(itn::Itinerary, ctx)::Int`

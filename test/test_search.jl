@@ -498,6 +498,105 @@ using Dates
             itn = Itinerary(connections=GraphConnection[cp])
             @test _compute_elapsed(itn) == Int32(80)
         end
+
+        @testset "overnight with missing arrival_date_variation infers +1 day" begin
+            # Regression test for LH-style records in uaoa_ssim.new.dat: the
+            # SSIM file leaves column 194 blank for some non-UA carriers, so
+            # arrival_date_variation parses to 0 even for overnight flights.
+            # Before the fix, _compute_elapsed would produce a negative total
+            # and the outer `max(0, total)` clamp would silently return 0.
+            #
+            # Example from real data — LH 431 ORD→FRA:
+            #   pax_dep = 1605 (16:05 CST),   dep_utc_offset = -300 (UTC-5)
+            #   pax_arr = 0725 (07:25 CET),   arr_utc_offset = +120 (UTC+2)
+            #   arrival_date_variation = 0 (SHOULD be 1 but source left blank)
+            # UTC: dep = 1605 - (-300) = 1905; arr = 0725 - 120 = 605
+            #      block = 605 - 1905 = -1300  → with +1440 rollover → +140? No.
+            # Actual: 8h20m = 500 min.  arr = 605 + 1440 = 2045; 2045-1905 = 140.
+            # Hmm that's 2h20m which is wrong.  Let me use times that give 500:
+            #   pax_dep = 1200 (12:00 CST),   dep_utc = 1200-(-300) = 1500
+            #   pax_arr = 0320 (03:20 CET),   arr_utc = 0320-120 = 200
+            #   Want block = 500 → arr needs to be 2000 UTC → +1440 gives 1640 (no).
+            # Simpler: construct a case where block without +1440 is negative,
+            # and verify the inferred day rollover gives a sensible positive
+            # value.
+            ord_stn = GraphStation(_stn_rec("ORD", "US", "NAM"))
+            fra_stn = GraphStation(_stn_rec("FRA", "DE", "EUR"))
+            rec = _leg_rec(
+                carrier="LH", flight_number=431,
+                departure_station="ORD", arrival_station="FRA",
+                passenger_departure_time=Int16(1200),  # 20:00 local ORD
+                passenger_arrival_time=Int16(660),     # 11:00 local FRA
+                departure_utc_offset=Int16(-300),      # UTC-5
+                arrival_utc_offset=Int16(120),         # UTC+2
+                arrival_date_variation=Int8(0),        # BUG: source didn't flag overnight
+            )
+            leg = GraphLeg(rec, ord_stn, fra_stn)
+            cp = nonstop_connection(leg, ord_stn)
+            itn = Itinerary(connections=GraphConnection[cp])
+            # Raw UTC math: dep=1500, arr=540, diff=-960 (negative → overnight).
+            # With +1440 day rollover: 1980 - 1500 = 480 min = 8h.
+            elapsed = _compute_elapsed(itn)
+            @test elapsed == Int32(480)
+            @test elapsed > Int32(0)   # critical: not silently clamped to 0
+        end
+
+        @testset "_leg_utc_block: blank arr_date_var on overnight infers +1 day" begin
+            # Direct test of the shared helper; same scenario as the
+            # Itinerary-level test above but exercises the helper alone so
+            # downstream consumers (flight_time accumulator, MAFT rule,
+            # CSV/JSON output flight_minutes) all benefit.
+            using ItinerarySearch: _leg_utc_block
+            ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+            fra = GraphStation(_stn_rec("FRA", "DE", "EUR"))
+            rec = _leg_rec(
+                carrier="LH", flight_number=431,
+                departure_station="ORD", arrival_station="FRA",
+                passenger_departure_time=Int16(1200),
+                passenger_arrival_time=Int16(660),
+                departure_utc_offset=Int16(-300),
+                arrival_utc_offset=Int16(120),
+                arrival_date_variation=Int8(0),    # source missed it
+            )
+            @test _leg_utc_block(rec) == Int32(480)  # 8h, not 0
+        end
+
+        @testset "_leg_utc_block: same-day flight unchanged" begin
+            using ItinerarySearch: _leg_utc_block
+            jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+            bos = GraphStation(_stn_rec("BOS", "US", "NAM"))
+            rec = _leg_rec(
+                departure_station="JFK", arrival_station="BOS",
+                passenger_departure_time=Int16(480),
+                passenger_arrival_time=Int16(560),
+                departure_utc_offset=Int16(-300),
+                arrival_utc_offset=Int16(-300),
+                arrival_date_variation=Int8(0),
+            )
+            @test _leg_utc_block(rec) == Int32(80)  # JFK→BOS, 80 min, no rollover
+        end
+
+        @testset "arrival_date_variation=1 explicitly still works" begin
+            # When the source DOES flag overnight correctly, behaviour is
+            # unchanged — we don't double-add 1440.
+            jfk_stn = GraphStation(_stn_rec("JFK", "US", "NAM"))
+            lhr_stn = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+            rec = _leg_rec(
+                carrier="UA", flight_number=99,
+                departure_station="JFK", arrival_station="LHR",
+                passenger_departure_time=Int16(1260),  # 21:00 EST
+                passenger_arrival_time=Int16(480),     # 08:00 GMT next day
+                departure_utc_offset=Int16(-300),
+                arrival_utc_offset=Int16(0),
+                arrival_date_variation=Int8(1),        # explicit
+            )
+            leg = GraphLeg(rec, jfk_stn, lhr_stn)
+            cp = nonstop_connection(leg, jfk_stn)
+            itn = Itinerary(connections=GraphConnection[cp])
+            # UTC: dep = 1260-(-300) = 1560; arr = 480-0 + 1*1440 = 1920
+            # block = 1920 - 1560 = 360 min = 6h.
+            @test _compute_elapsed(itn) == Int32(360)
+        end
     end
 
     # ── UTC elapsed via search_itineraries ────────────────────────────────────

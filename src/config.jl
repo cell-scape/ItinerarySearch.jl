@@ -142,6 +142,80 @@ see also `docs/src/getting-started.md`. Fields fall into five groups:
     mct_audit::MCTAuditConfig = MCTAuditConfig()    # MCT audit logging configuration
 end
 
+# ── Dict constructor ─────────────────────────────────────────────────────────
+#
+# `SearchConfig(::AbstractDict)` lets callers build a config from an untyped
+# source (YAML, TOML, user-built Dict, deserialized JSON).  Keys may be
+# `Symbol` or `AbstractString`; enum-valued fields accept their string form
+# (e.g. `"intl"` for `SCOPE_INTL`).  Unknown keys throw `ArgumentError`.
+#
+# Shared key-normalization and field-validation helpers live in
+# `src/types/dict_ctor_helpers.jl`.
+
+"""
+    `SearchConfig(d::AbstractDict)::SearchConfig`
+---
+
+# Description
+- Construct a `SearchConfig` from an `AbstractDict`
+- Accepts both `String` and `Symbol` keys; normalizes internally
+- Enum-valued fields accept their string form (e.g. `"intl"` for `SCOPE_INTL`,
+  `"codeshare"` for `INTERLINE_CODESHARE`) in addition to the canonical enum
+- Symbol-valued fields (`log_level`, `metrics_level`, `distance_formula`,
+  `mct_codeshare_mode`, `mct_schengen_mode`) accept their string form too
+- `output_formats::Vector{Symbol}` accepts a `Vector{String}`
+- Nested `mct_audit::MCTAuditConfig` accepts an `AbstractDict` and is
+  constructed recursively
+- Unknown keys throw `ArgumentError`
+
+# Arguments
+1. `d::AbstractDict`: configuration values keyed by field name
+
+# Returns
+- `::SearchConfig`: constructed config with all unspecified fields at defaults
+
+# Examples
+```julia
+julia> SearchConfig(Dict(:max_stops => 3, :scope => "intl"));
+julia> SearchConfig(Dict("max_stops" => 3, "interline" => "all"));
+```
+"""
+function SearchConfig(d::AbstractDict)::SearchConfig
+    kw = _normalize_dict_keys(d)
+    _validate_known_fields(kw, SearchConfig)
+
+    # Enum-valued fields: accept canonical enum or string form
+    if haskey(kw, :scope) && kw[:scope] isa AbstractString
+        kw[:scope] = _parse_scope(kw[:scope])
+    end
+    if haskey(kw, :interline) && kw[:interline] isa AbstractString
+        kw[:interline] = _parse_interline(kw[:interline])
+    end
+
+    # Symbol-valued fields: accept string form
+    for sym_key in (:log_level, :metrics_level, :distance_formula,
+                    :mct_codeshare_mode, :mct_schengen_mode)
+        if haskey(kw, sym_key) && kw[sym_key] isa AbstractString
+            kw[sym_key] = Symbol(kw[sym_key])
+        end
+    end
+
+    # Vector{Symbol}: accept Vector{String}
+    if haskey(kw, :output_formats) && kw[:output_formats] isa AbstractVector
+        vec = kw[:output_formats]
+        if !isempty(vec) && all(x -> x isa AbstractString, vec)
+            kw[:output_formats] = Symbol[Symbol(x) for x in vec]
+        end
+    end
+
+    # Nested struct: MCTAuditConfig
+    if haskey(kw, :mct_audit) && kw[:mct_audit] isa AbstractDict
+        kw[:mct_audit] = MCTAuditConfig(kw[:mct_audit])
+    end
+
+    return SearchConfig(; kw...)
+end
+
 # ── JSON3 field extraction helpers ────────────────────────────────────────────
 # JSON3 object field access returns a wide union type. These helpers narrow
 # the return type so JET can verify correctness.
@@ -433,8 +507,44 @@ function load_config(path::String)::SearchConfig
             val = search[:allow_roundtrips]
             val isa Bool && (kwargs[:allow_roundtrips] = val)
         end
+        # `mct_cache_enabled` in `search` is kept for backward compat — the
+        # canonical location is the `mct_behaviour` section handled below.
         b = _json_bool(search, :mct_cache_enabled)
         b !== nothing && (kwargs[:mct_cache_enabled] = b)
+        s = _json_str(search, :distance_formula)
+        if s !== nothing
+            sym = Symbol(lowercase(s))
+            sym in (:haversine, :vincenty) && (kwargs[:distance_formula] = sym)
+        end
+        b = _json_bool(search, :maft_enabled)
+        b !== nothing && (kwargs[:maft_enabled] = b)
+        b = _json_bool(search, :interline_dcnx_enabled)
+        b !== nothing && (kwargs[:interline_dcnx_enabled] = b)
+        b = _json_bool(search, :crs_cnx_enabled)
+        b !== nothing && (kwargs[:crs_cnx_enabled] = b)
+    end
+
+    # MCT behaviour toggles (canonical home — takes priority over the
+    # backward-compat `search.mct_cache_enabled` read above).
+    mct_behaviour = _json_obj(raw, :mct_behaviour)
+    if mct_behaviour !== nothing
+        b = _json_bool(mct_behaviour, :mct_cache_enabled)
+        b !== nothing && (kwargs[:mct_cache_enabled] = b)
+        b = _json_bool(mct_behaviour, :mct_serial_ascending)
+        b !== nothing && (kwargs[:mct_serial_ascending] = b)
+        s = _json_str(mct_behaviour, :mct_codeshare_mode)
+        if s !== nothing
+            sym = Symbol(lowercase(s))
+            sym in (:both, :marketing, :operating) && (kwargs[:mct_codeshare_mode] = sym)
+        end
+        s = _json_str(mct_behaviour, :mct_schengen_mode)
+        if s !== nothing
+            sym = Symbol(lowercase(s))
+            sym in (:sch_then_eur, :eur_then_sch, :sch_only, :eur_only) &&
+                (kwargs[:mct_schengen_mode] = sym)
+        end
+        b = _json_bool(mct_behaviour, :mct_suppressions_enabled)
+        b !== nothing && (kwargs[:mct_suppressions_enabled] = b)
     end
 
     data = _json_obj(raw, :data)

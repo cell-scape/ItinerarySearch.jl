@@ -272,10 +272,17 @@ for day_offset in 0:(n_days-1)
     write(compact_file, compact_json)
     println("[$(target)]   JSON (compact): $(round(filesize(compact_file) / 1024; digits=0))KB → $(compact_file)")
 
-    # Interactive HTML table of ItineraryRefs
+    # Interactive HTML table of itineraries.  We pass the full Vector{Itinerary}
+    # collected above (`all_itns`) rather than the ItineraryRef-shaped `result`,
+    # so the rich overload kicks in and the page includes per-connection MCT
+    # info (id/time/source), per-leg TRC codes, status flags
+    # (codeshare/interline/through), and absolute UTC departure/arrival
+    # timestamps in the expanded leg-detail rows.
     ref_table_file = joinpath("data", "viz", "itinerary_refs_$(target).html")
-    viz_itinerary_refs(ref_table_file, result;
+    viz_itinerary_refs(ref_table_file, all_itns;
         title="Itinerary References — $(target)",
+        date=string(target),
+        graph=graph,   # enables DEI 10 cross-reference filter
     )
     println("[$(target)]   Ref table → $(ref_table_file)")
 

@@ -231,31 +231,41 @@ using Dates
     # ── Rule 3: check_cnx_interline ───────────────────────────────────────────
 
     @testset "check_cnx_interline" begin
-        online_status    = StatusBits(DOW_MON)
-        codeshare_status = StatusBits(DOW_MON | STATUS_CODESHARE)
-        interline_status = StatusBits(DOW_MON | STATUS_INTERLINE)
-        intl_interline   = StatusBits(DOW_MON | STATUS_INTERLINE | STATUS_INTERNATIONAL)
+        # Under the user-facing bit semantics:
+        #   STATUS_INTERLINE         = marketing change at this cnx
+        #   STATUS_CNX_OP_THROUGH    = STATUS_INTERLINE && operating same
+        #
+        # Fixture meanings:
+        #   online_status        = no marketing change (truly online cnx)
+        #   codeshare_cnx_status = marketing change but op carries through
+        #                          (the airline-industry "codeshare cnx")
+        #   interline_status     = marketing AND operating both differ
+        #                          (the airline-industry "true interline cnx")
+        online_status        = StatusBits(DOW_MON)
+        codeshare_cnx_status = StatusBits(DOW_MON | STATUS_INTERLINE | STATUS_CNX_OP_THROUGH)
+        interline_status     = StatusBits(DOW_MON | STATUS_INTERLINE)
+        intl_interline       = StatusBits(DOW_MON | STATUS_INTERLINE | STATUS_INTERNATIONAL)
 
-        @testset "INTERLINE_ONLINE rejects codeshare" begin
+        @testset "INTERLINE_ONLINE rejects any marketing change" begin
             ctx = _mock_ctx(interline=INTERLINE_ONLINE)
-            @test check_cnx_interline(_test_connection(status=online_status),    ctx) == PASS
-            @test check_cnx_interline(_test_connection(status=codeshare_status), ctx) == FAIL_ONLINE
-            @test check_cnx_interline(_test_connection(status=interline_status), ctx) == FAIL_ONLINE
+            @test check_cnx_interline(_test_connection(status=online_status),        ctx) == PASS
+            @test check_cnx_interline(_test_connection(status=codeshare_cnx_status), ctx) == FAIL_ONLINE
+            @test check_cnx_interline(_test_connection(status=interline_status),     ctx) == FAIL_ONLINE
         end
 
-        @testset "INTERLINE_CODESHARE allows codeshare, rejects interline" begin
+        @testset "INTERLINE_CODESHARE allows op-through interline, rejects op-different" begin
             ctx = _mock_ctx(interline=INTERLINE_CODESHARE)
-            @test check_cnx_interline(_test_connection(status=online_status),    ctx) == PASS
-            @test check_cnx_interline(_test_connection(status=codeshare_status), ctx) == PASS
-            @test check_cnx_interline(_test_connection(status=interline_status), ctx) == FAIL_CODESHARE
+            @test check_cnx_interline(_test_connection(status=online_status),        ctx) == PASS
+            @test check_cnx_interline(_test_connection(status=codeshare_cnx_status), ctx) == PASS
+            @test check_cnx_interline(_test_connection(status=interline_status),     ctx) == FAIL_CODESHARE
         end
 
-        @testset "INTERLINE_ALL allows international interline, rejects domestic interline" begin
+        @testset "INTERLINE_ALL allows international op-different, rejects domestic op-different" begin
             ctx = _mock_ctx(interline=INTERLINE_ALL)
-            @test check_cnx_interline(_test_connection(status=online_status),    ctx) == PASS
-            @test check_cnx_interline(_test_connection(status=codeshare_status), ctx) == PASS
-            @test check_cnx_interline(_test_connection(status=interline_status), ctx) == FAIL_INTERLINE
-            @test check_cnx_interline(_test_connection(status=intl_interline),   ctx) == PASS
+            @test check_cnx_interline(_test_connection(status=online_status),        ctx) == PASS
+            @test check_cnx_interline(_test_connection(status=codeshare_cnx_status), ctx) == PASS
+            @test check_cnx_interline(_test_connection(status=interline_status),     ctx) == FAIL_INTERLINE
+            @test check_cnx_interline(_test_connection(status=intl_interline),       ctx) == PASS
         end
     end
 

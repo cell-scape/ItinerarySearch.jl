@@ -38,8 +38,17 @@ SearchConfig
 SearchConstraints
 ParameterSet
 MarketOverride
+MCTAuditConfig
 RuntimeContext
 ```
+
+All five `@kwdef` config structs above have both the canonical keyword
+constructor and an `AbstractDict` constructor form. The dict form accepts
+`String` or `Symbol` keys, parses enum-valued fields from their string
+representations (`"intl"` → `SCOPE_INTL`), recursively constructs nested
+struct-typed fields (e.g. `MarketOverride.params` from a nested dict),
+and throws `ArgumentError` on unknown keys. See [`config/README.md`](../../../config/README.md)
+for the full field reference and JSON schema.
 
 ## Enums and Status Bits
 

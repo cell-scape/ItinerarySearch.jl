@@ -23,10 +23,38 @@ resolve_legs
 ## Table Formats
 
 Convert `Vector{Itinerary}` to `Vector{NamedTuple}` for tabular analysis.
+Any `Vector{NamedTuple}` is a valid Tables.jl source, so the output flows
+directly into `DataFrame`, `CSV.write`, `Arrow.write`, `Parquet.write`, or
+any other Tables.jl sink.
 
 ```@docs
 itinerary_long_format
 itinerary_wide_format
+```
+
+## DataFrame Output
+
+Thin convenience wrappers that construct `DataFrame`s directly from the
+formats above. All three are tidy-data ready: one row per logical record,
+typed columns, missing-aware for sparse fields.
+
+```@docs
+itinerary_legs_df
+itinerary_summary_df
+itinerary_pivot_df
+```
+
+`itinerary_pivot_df` emits one row per itinerary with `legN_*` and
+`cnxN_*` column blocks, padded with `missing` for shorter itineraries.
+Its `max_legs` keyword pins the schema — passing an itinerary with more
+legs than `max_legs` throws `ArgumentError` rather than silently
+truncating. Default `max_legs = 3` matches the project's default
+`max_stops = 2` (3 legs = 2 stops + 1 origin leg).
+
+## High-Level Convenience
+
+```@docs
+search_markets
 ```
 
 ## CSV File Writers
@@ -113,7 +141,9 @@ One row per leg per itinerary:
 | `is_through` | Bool | True when this is a through-service leg |
 | `is_nonstop` | Bool | True when this connection is a nonstop self-connection |
 | `cnx_time` | Int | Connection time at this leg's origin (minutes; 0 for first leg) |
-| `mct` | Int | Minimum connecting time (minutes; 0 for first leg) |
+| `mct` | Int | Minimum connecting time enforced at this connection (minutes; 0 for first leg) |
+| `mct_matched_id` | Int | PK of the matched MCT table row for audit traceability (0 = global default or first leg) |
+| `mct_matched_fields` | UInt32 | SSIM8 specificity bitmask — which fields the matched record required |
 | `departure_terminal` | String | Departure terminal code |
 | `arrival_terminal` | String | Arrival terminal code |
 

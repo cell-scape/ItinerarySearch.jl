@@ -190,6 +190,82 @@ end
     flight_delays::Dict{UInt64,Minutes} = Dict{UInt64,Minutes}()
 end
 
+# ── Dict constructors ────────────────────────────────────────────────────────
+# Accept AbstractDict inputs with Symbol or String keys.  Nested dict values
+# for struct-typed fields (`defaults`, `params`, `overrides` elements) are
+# constructed recursively.  Unknown keys throw ArgumentError.
+# Key normalization and unknown-key validation live in
+# `src/types/dict_ctor_helpers.jl` (loaded earlier).
+
+"""
+    `ParameterSet(d::AbstractDict)::ParameterSet`
+
+Construct a `ParameterSet` from an `AbstractDict` with `String` or `Symbol`
+keys.  Scalar numeric fields coerce through `@kwdef`; `Set`-typed fields
+accept any iterable (e.g. `Vector{String}`) and are wrapped with the
+appropriate element type.  Unknown keys throw `ArgumentError`.
+"""
+function ParameterSet(d::AbstractDict)::ParameterSet
+    kw = _normalize_dict_keys(d)
+    _validate_known_fields(kw, ParameterSet)
+    return ParameterSet(; kw...)
+end
+
+"""
+    `MarketOverride(d::AbstractDict)::MarketOverride`
+
+Construct a `MarketOverride` from an `AbstractDict`.  Station/carrier fields
+accept `String` values (wrapped via `StationCode`/`AirlineCode`); nested
+`params` accepts an `AbstractDict` and is constructed recursively.  Unknown
+keys throw `ArgumentError`.
+"""
+function MarketOverride(d::AbstractDict)::MarketOverride
+    kw = _normalize_dict_keys(d)
+    _validate_known_fields(kw, MarketOverride)
+    # String → wrapped inline string types
+    if haskey(kw, :origin) && kw[:origin] isa AbstractString
+        kw[:origin] = StationCode(kw[:origin])
+    end
+    if haskey(kw, :destination) && kw[:destination] isa AbstractString
+        kw[:destination] = StationCode(kw[:destination])
+    end
+    if haskey(kw, :carrier) && kw[:carrier] isa AbstractString
+        kw[:carrier] = AirlineCode(kw[:carrier])
+    end
+    for fld in (:origin_country, :dest_country, :origin_region, :dest_region)
+        if haskey(kw, fld) && kw[fld] isa AbstractString
+            kw[fld] = InlineString3(kw[fld])
+        end
+    end
+    # Nested ParameterSet
+    if haskey(kw, :params) && kw[:params] isa AbstractDict
+        kw[:params] = ParameterSet(kw[:params])
+    end
+    return MarketOverride(; kw...)
+end
+
+"""
+    `SearchConstraints(d::AbstractDict)::SearchConstraints`
+
+Construct a `SearchConstraints` from an `AbstractDict`.  Recursively
+constructs `defaults::ParameterSet` from a nested dict and each element of
+`overrides::Vector{MarketOverride}` from a nested dict (if the element is
+not already a `MarketOverride`).  Unknown keys throw `ArgumentError`.
+"""
+function SearchConstraints(d::AbstractDict)::SearchConstraints
+    kw = _normalize_dict_keys(d)
+    _validate_known_fields(kw, SearchConstraints)
+    if haskey(kw, :defaults) && kw[:defaults] isa AbstractDict
+        kw[:defaults] = ParameterSet(kw[:defaults])
+    end
+    if haskey(kw, :overrides) && kw[:overrides] isa AbstractVector
+        kw[:overrides] = MarketOverride[
+            x isa MarketOverride ? x : MarketOverride(x) for x in kw[:overrides]
+        ]
+    end
+    return SearchConstraints(; kw...)
+end
+
 # ── Override matching ─────────────────────────────────────────────────────────
 
 """

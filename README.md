@@ -225,7 +225,13 @@ See [docs/src/architecture.md](docs/src/architecture.md) for the full Mermaid di
 | `log_json_path` | `""` | DynaTrace-compatible JSON log file (empty = disabled) |
 | `event_log_enabled` | `false` | Structured event log with JSONL sink |
 
-Constraints (numeric ranges, categorical allow/deny filters) are configured via `SearchConstraints` / `ParameterSet` and loaded from JSON via `load_constraints("config.json")`. See [Getting Started](docs/src/getting-started.md) for examples.
+Constraints (numeric ranges, categorical allow/deny filters) are configured via `SearchConstraints` / `ParameterSet` and loaded from the `"constraints"` section of a JSON file via `load_constraints("config.json")`. See [Getting Started](docs/src/getting-started.md) for examples.
+
+### Configuration from files or dicts
+
+The tracked [`config/defaults.json`](config/defaults.json) is an exhaustive exemplar listing every `SearchConfig` field at its compiled-in default — copy it, trim the sections you don't need, and tweak only the fields you want to override. Missing keys fall back to the struct defaults. See [`config/README.md`](config/README.md) for a grouped field reference including the `mct_behaviour` JSON section (MCT cache, codeshare and Schengen mode toggles, suppression handling).
+
+`SearchConfig`, `SearchConstraints`, `ParameterSet`, `MarketOverride`, and `MCTAuditConfig` each have an `AbstractDict` constructor in addition to their keyword form — pass a `Dict{String,Any}` from YAML/TOML, environment variables, or a caller-built map and the struct will normalize keys, parse enum-valued fields from strings, and throw `ArgumentError` on unknown keys.
 
 ## Benchmarks
 

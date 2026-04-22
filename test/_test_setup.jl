@@ -18,8 +18,9 @@ import ItinerarySearch:
     # Status bits & helpers
     DOW_MON, DOW_TUE, DOW_WED, DOW_THU, DOW_FRI, DOW_SAT, DOW_SUN, DOW_MASK,
     STATUS_INTERNATIONAL, STATUS_INTERLINE, STATUS_ROUNDTRIP,
-    STATUS_CODESHARE, STATUS_THROUGH, STATUS_WETLEASE,
+    STATUS_CODESHARE, STATUS_THROUGH, STATUS_WETLEASE, STATUS_CNX_OP_THROUGH,
     is_international, is_interline, is_codeshare, is_roundtrip, is_through, is_wetlease,
+    is_cnx_op_through,
     dow_bit,
     WILDCARD_STATION, WILDCARD_AIRLINE, WILDCARD_COUNTRY, WILDCARD_REGION, WILDCARD_FLIGHTNO,
     NO_STATION, NO_AIRLINE, NO_MINUTES, NO_DISTANCE, NO_FLIGHTNO,
@@ -104,6 +105,5 @@ import ItinerarySearch:
     build_connections_at_station!, build_connections!,
     # Search internals
     score_trip,
-    # Output internals
-    itinerary_long_format, itinerary_wide_format,
+    # Output internals (now exported; kept here for historical test imports)
     resolve_leg, resolve_segment, resolve_legs

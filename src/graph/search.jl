@@ -187,6 +187,9 @@ end
 end
 
 # ── Elapsed-time computation ────────────────────────────────────────────────────
+# `_leg_utc_block` is defined in src/graph/time_helpers.jl (shared with
+# rules_itn.jl block-time consumers and the formats.jl flight-minutes
+# accumulator).
 
 """
     `function _compute_elapsed(itn::Itinerary)::Int32`
@@ -197,10 +200,11 @@ end
   departure to the last passenger arrival using UTC conversion
 - UTC departure/arrival are derived from local times and `dep_utc_offset` /
   `arr_utc_offset` fields: `utc = local - utc_offset`
-- Overnight arrivals are handled via `arr_date_var` on each leg
-  (each +1 adds 1440 minutes to the UTC arrival)
-- For connecting itineraries, each leg's UTC block time is accumulated; the
-  stored `cnx_time` for connecting `GraphConnection`s is added between legs
+- Each leg's UTC block time is computed via `_leg_utc_block`, which also
+  infers a +1 day rollover when `arrival_date_variation = 0` produces a
+  negative raw block (overnight flights with a blank date-variation byte)
+- For connecting itineraries, the stored `cnx_time` for each connecting
+  `GraphConnection` is added between legs
 - Returns `Int32(0)` for an empty itinerary
 
 # Arguments
@@ -222,27 +226,29 @@ function _compute_elapsed(itn::Itinerary)::Int32
 
     # connections[1] is always the nonstop self-connection of the departure leg;
     # from_leg === to_leg.  Accumulate first leg's UTC block time as the base.
-    first_leg = itn.connections[1].from_leg::GraphLeg  # from_leg is AbstractGraphNode
-    fr = first_leg.record
-    utc_dep_first = Int32(fr.passenger_departure_time) - Int32(fr.departure_utc_offset)
-    utc_arr_first =
-        Int32(fr.passenger_arrival_time) - Int32(fr.arrival_utc_offset) + Int32(fr.arrival_date_variation) * Int32(1440)
-    total = utc_arr_first - utc_dep_first
+    first_leg = itn.connections[1].from_leg::GraphLeg
+    total = _leg_utc_block(first_leg.record)
 
     # For each subsequent connecting cp, add the ground time plus the outbound
     # leg's UTC block time.  cp.to_leg is always the new departing leg.
     for i in 2:length(itn.connections)
         cp = itn.connections[i]
         total += Int32(cp.cnx_time)
-        to = cp.to_leg::GraphLeg  # to_leg is AbstractGraphNode
-        tr = to.record
-        utc_dep = Int32(tr.passenger_departure_time) - Int32(tr.departure_utc_offset)
-        utc_arr =
-            Int32(tr.passenger_arrival_time) - Int32(tr.arrival_utc_offset) + Int32(tr.arrival_date_variation) * Int32(1440)
-        total += utc_arr - utc_dep
+        to = cp.to_leg::GraphLeg
+        total += _leg_utc_block(to.record)
     end
 
-    return max(Int32(0), total)
+    # With per-leg rollover inference above, `total` should be non-negative
+    # for any realistic itinerary.  If we somehow got here with a negative —
+    # data is pathologically bad — warn loudly rather than silently clamping
+    # to zero (the previous behaviour which hid the LH-overnight bug for
+    # months).
+    if total < Int32(0)
+        @warn "_compute_elapsed produced negative total after day-rollover inference; \
+               data likely corrupt" total num_stops=Int(itn.num_stops)
+        return Int32(0)
+    end
+    return total
 end
 
 # ── Geographic diversity helpers ────────────────────────────────────────────────

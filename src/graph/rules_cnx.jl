@@ -191,12 +191,21 @@ end
 """
 function check_cnx_interline(cp::GraphConnection, ctx)::Int
     mode = ctx.config.interline
+    # Under the user-facing bit semantics:
+    #   STATUS_INTERLINE         = marketing carriers differ across the cnx
+    #   STATUS_CNX_OP_THROUGH    = STATUS_INTERLINE && operating carriers match
+    # Filter modes:
+    #   INTERLINE_ONLINE     — reject ANY marketing change at the cnx
+    #   INTERLINE_CODESHARE  — reject only "true" interline (op carriers also differ)
+    #   INTERLINE_ALL        — reject only domestic true-interline; allow intl ones
     if mode == INTERLINE_ONLINE
-        return (is_interline(cp.status) || is_codeshare(cp.status)) ? FAIL_ONLINE : PASS
+        return is_interline(cp.status) ? FAIL_ONLINE : PASS
     elseif mode == INTERLINE_CODESHARE
-        return is_interline(cp.status) ? FAIL_CODESHARE : PASS
+        return (is_interline(cp.status) && !is_cnx_op_through(cp.status)) ?
+            FAIL_CODESHARE : PASS
     else  # INTERLINE_ALL
-        return (is_interline(cp.status) && !is_international(cp.status)) ? FAIL_INTERLINE : PASS
+        return (is_interline(cp.status) && !is_cnx_op_through(cp.status) &&
+                !is_international(cp.status)) ? FAIL_INTERLINE : PASS
     end
 end
 

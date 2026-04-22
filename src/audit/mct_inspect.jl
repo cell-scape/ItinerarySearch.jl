@@ -828,6 +828,7 @@ CSV file and step through them, inspecting MCT cascade decisions.
 function mct_inspect(
     lookup::MCTLookup;
     misconnect::String = "",
+    itineraries::Vector{Itinerary} = Itinerary[],
     airports::Dict{StationCode,StationRecord} = Dict{StationCode,StationRecord}(),
     station_regions::Dict{StationCode,Set{InlineString3}} = Dict{StationCode,Set{InlineString3}}(),
     acft_body::Dict{String,Char} = Dict{String,Char}(),
@@ -845,6 +846,15 @@ function mct_inspect(
             end
         end
         println(io_out, "Loaded $(length(connections)) connections from $(basename(misconnect))")
+    end
+    if !isempty(itineraries)
+        rows = _itinerary_inspector_rows(itineraries; acft_body=acft_body)
+        append!(connections, rows)
+        n_cnx = length(rows)
+        n_itn = length(itineraries)
+        println(io_out,
+            "Loaded $(n_cnx) connection(s) from $(n_itn) itineraries " *
+            "(2-stop itineraries contribute both connections in sequence)")
     end
 
     if isempty(connections)
@@ -864,6 +874,140 @@ function mct_inspect(
 
     state.position = 1
     _advance_to_next!(state, io_in, io_out)
+end
+
+# ── Itinerary → inspector row conversion ──────────────────────────────────────
+
+"""
+    `_itinerary_inspector_rows(itineraries::Vector{Itinerary}; acft_body)::Vector{NamedTuple}`
+
+Build inspector rows from a vector of `Itinerary` results.  One row per
+connection in each itinerary — a 2-stop itinerary contributes both of its
+connections in sequence, so the user can step through them like consecutive
+misconnect-report rows.
+
+The returned NamedTuples mirror the shape produced by `parse_misconnect_row`,
+so the existing `InspectorState` and REPL loop work without modification.
+
+`their_mct` / `their_mctrec` / `their_mct_diff` carry the MCT result the
+SEARCH stored at graph-build time (`cp.mct_result`), so the inspector's
+fresh `lookup_mct_traced` call compares "what the build picked" against
+"what the lookup picks now" — useful for catching cache or rule-set
+divergence between build and inspect.
+
+The `rcrd_loc` field is synthesized as `"ITN<idx>_CNX<k>"` so each row has
+a stable identity for filtering.
+"""
+function _itinerary_inspector_rows(
+    itineraries::Vector{Itinerary};
+    acft_body::Dict{String,Char} = Dict{String,Char}(),
+)::Vector{NamedTuple}
+    rows = NamedTuple[]
+    for (itn_idx, itn) in enumerate(itineraries)
+        # Walk the itinerary's connection chain.  connections[1] is the
+        # nonstop self-cp for leg1 (no real connection); connections[2..end]
+        # are the actual connection edges with from_leg=prev, to_leg=next.
+        n_cnx = length(itn.connections)
+        n_cnx <= 1 && continue   # nonstops have no connection to inspect
+        for k in 2:n_cnx
+            cp = itn.connections[k]
+            arr_leg = cp.from_leg::GraphLeg
+            dep_leg = cp.to_leg::GraphLeg
+            push!(rows, _itinerary_row(itn_idx, k - 1, cp, arr_leg, dep_leg, acft_body))
+        end
+    end
+    return rows
+end
+
+# Build one inspector NamedTuple from an arriving leg / departing leg pair.
+function _itinerary_row(itn_idx::Int, cnx_idx::Int,
+                        cp::GraphConnection,
+                        arr_leg::GraphLeg, dep_leg::GraphLeg,
+                        acft_body::Dict{String,Char})::NamedTuple
+    arr_rec = arr_leg.record
+    dep_rec = dep_leg.record
+    arr_stn = (arr_leg.dst::GraphStation)
+    dep_stn = (dep_leg.org::GraphStation)
+    prv_stn_node = (arr_leg.org::GraphStation)
+    nxt_stn_node = (dep_leg.dst::GraphStation)
+
+    # Resolve operating fields with the SSIM host-flight convention
+    # (empty operating_carrier / 0 operating_flight_number ⇒ same as marketing).
+    arr_op_carrier_raw = arr_rec.operating_carrier
+    arr_op_carrier = isempty(strip(String(arr_op_carrier_raw))) ?
+        arr_rec.carrier : arr_op_carrier_raw
+    arr_op_flt = arr_rec.operating_flight_number == FlightNumber(0) ?
+        arr_rec.flight_number : arr_rec.operating_flight_number
+    dep_op_carrier_raw = dep_rec.operating_carrier
+    dep_op_carrier = isempty(strip(String(dep_op_carrier_raw))) ?
+        dep_rec.carrier : dep_op_carrier_raw
+    dep_op_flt = dep_rec.operating_flight_number == FlightNumber(0) ?
+        dep_rec.flight_number : dep_rec.operating_flight_number
+
+    arr_is_codeshare = (arr_rec.carrier != arr_op_carrier) ||
+                       (arr_rec.flight_number != arr_op_flt)
+    dep_is_codeshare = (dep_rec.carrier != dep_op_carrier) ||
+                       (dep_rec.flight_number != dep_op_flt)
+
+    # MCT status — interpret intl/dom flags into the four-letter code.
+    status = _intl_dom_to_mct_status(arr_rec.arr_intl_dom, dep_rec.dep_intl_dom)
+
+    # Body type via aircrafts table when available, fall back to leg.body_type
+    arr_acft_str = strip(String(arr_rec.aircraft_type))
+    dep_acft_str = strip(String(dep_rec.aircraft_type))
+    arr_body = get(acft_body, arr_acft_str, arr_rec.body_type)
+    dep_body = get(acft_body, dep_acft_str, dep_rec.body_type)
+    arr_body = arr_body == 'W' ? 'W' : (arr_body == ' ' ? ' ' : 'N')
+    dep_body = dep_body == 'W' ? 'W' : (dep_body == ' ' ? ' ' : 'N')
+
+    (;
+        rcrd_loc = "ITN$(itn_idx)_CNX$(cnx_idx)",
+        arr_carrier = arr_rec.carrier,
+        dep_carrier = dep_rec.carrier,
+        arr_station = arr_stn.code,
+        dep_station = dep_stn.code,
+        prv_stn = prv_stn_node.code,
+        nxt_stn = nxt_stn_node.code,
+        status = status,
+        arr_term = InlineString3(strip(String(arr_rec.arrival_terminal))),
+        dep_term = InlineString3(strip(String(dep_rec.departure_terminal))),
+        arr_body = arr_body,
+        dep_body = dep_body,
+        arr_acft_type = InlineString7(arr_acft_str),
+        dep_acft_type = InlineString7(dep_acft_str),
+        arr_flt_no = arr_rec.flight_number,
+        dep_flt_no = dep_rec.flight_number,
+        arr_op_carrier = arr_op_carrier,
+        dep_op_carrier = dep_op_carrier,
+        arr_op_flt_no  = arr_op_flt,
+        dep_op_flt_no  = dep_op_flt,
+        arr_is_codeshare = arr_is_codeshare,
+        dep_is_codeshare = dep_is_codeshare,
+        prv_country = prv_stn_node.country,
+        nxt_country = nxt_stn_node.country,
+        prv_state   = prv_stn_node.record.state,
+        nxt_state   = nxt_stn_node.record.state,
+        target_date = arr_rec.operating_date,
+        # "Their" carries the search-time MCT decision (cp.mct_result), so
+        # the inspector's fresh lookup is comparable: a divergence between
+        # `their_mctrec` and `our_mct_id` would indicate cache / rule-set
+        # drift between graph build and the current inspect session.
+        their_mct      = cp.mct_result.time,
+        their_mctrec   = Int(cp.mct_result.mct_id),
+        cnx_time       = cp.cnx_time,
+        their_mct_diff = Float64(cp.cnx_time) - Float64(cp.mct_result.time),
+    )
+end
+
+# Map the per-leg intl/dom flags (which are 'D' or 'I') to the canonical
+# four-letter MCT status enum (DD/DI/ID/II).
+function _intl_dom_to_mct_status(arr_id::Char, dep_id::Char)::MCTStatus
+    arr = (arr_id == 'I') ? 'I' : 'D'
+    dep = (dep_id == 'I') ? 'I' : 'D'
+    arr == 'D' && dep == 'D' && return MCT_DD
+    arr == 'D' && dep == 'I' && return MCT_DI
+    arr == 'I' && dep == 'D' && return MCT_ID
+    return MCT_II
 end
 
 # ── REPL loop ─────────────────────────────────────────────────────────────────

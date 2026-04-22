@@ -12,8 +12,14 @@
 # Replay mode (write comparison CSV instead of interactive):
 #   julia --project=. scripts/mct_inspect.jl data/input/UA_Misconnect_Report.csv --replay
 #   julia --project=. scripts/mct_inspect.jl data/input/UA_Misconnect_Report.csv --replay --detailed
+#
+# Search mode (run a search and inspect each connection in each result):
+#   julia --project=. scripts/mct_inspect.jl --search ORD LHR 2026-03-20
+#   2-stop itineraries contribute both connections in sequence — step through
+#   them with the same n/p/c/b commands as misconnect rows.
 
 using ItinerarySearch
+using Dates
 import ItinerarySearch: materialize_mct_lookup, DuckDBStore, ingest_mct!,
     load_airports!, load_aircrafts!, load_regions!, StationRecord
 
@@ -27,6 +33,10 @@ function parse_args()
     regions_path = ""
     replay = false
     detailed = false
+    search_mode = false
+    search_org = ""
+    search_dst = ""
+    search_date = ""
 
     i = 1
     while i <= length(ARGS)
@@ -49,6 +59,12 @@ function parse_args()
         elseif arg == "--detailed"
             detailed = true
             i += 1
+        elseif arg == "--search" && i + 3 <= length(ARGS)
+            search_mode = true
+            search_org = ARGS[i + 1]
+            search_dst = ARGS[i + 2]
+            search_date = ARGS[i + 3]
+            i += 4
         elseif !startswith(arg, "-") && isempty(misconnect_path)
             misconnect_path = arg
             i += 1
@@ -68,7 +84,9 @@ function parse_args()
     isempty(aircrafts_path) && (aircrafts_path = _default("aircraft.txt"))
     isempty(regions_path) && (regions_path = _default("REGIMFILUA.DAT"))
 
-    return (; misconnect_path, mct_path, airports_path, aircrafts_path, regions_path, replay, detailed)
+    return (; misconnect_path, mct_path, airports_path, aircrafts_path,
+            regions_path, replay, detailed,
+            search_mode, search_org, search_dst, search_date)
 end
 
 # ── Main ─────────────────────────────────────────────────────────────────────
@@ -76,23 +94,29 @@ end
 function main()
     args = parse_args()
 
-    if isempty(args.misconnect_path)
+    if isempty(args.misconnect_path) && !args.search_mode
         println("Usage: julia --project=. scripts/mct_inspect.jl <misconnect.csv> [--mct mct.dat] [--replay] [--detailed]")
+        println("       julia --project=. scripts/mct_inspect.jl --search ORG DST YYYY-MM-DD [--mct mct.dat]")
         println()
         println("Examples:")
         println("  julia --project=. scripts/mct_inspect.jl data/input/UA_Misconnect_Report.csv")
         println("  julia --project=. scripts/mct_inspect.jl data/input/UAOA_Misconnect_Report.csv --replay")
+        println("  julia --project=. scripts/mct_inspect.jl --search ORD LHR 2026-03-20")
         exit(1)
     end
 
-    if !isfile(args.misconnect_path)
+    if !args.search_mode && !isfile(args.misconnect_path)
         println("Error: misconnect file not found: $(args.misconnect_path)")
         exit(1)
     end
 
     println("MCT Audit Inspector")
     println("="^50)
-    println("  Misconnect: $(args.misconnect_path)")
+    if args.search_mode
+        println("  Search:     $(args.search_org) → $(args.search_dst) on $(args.search_date)")
+    else
+        println("  Misconnect: $(args.misconnect_path)")
+    end
     println("  MCT file:   $(args.mct_path)")
     println("  Airports:   $(args.airports_path)")
     println("  Regions:    $(args.regions_path)")
@@ -178,7 +202,7 @@ function main()
     println("  MCT lookup ready")
     println()
 
-    if args.replay
+    if args.replay && !args.search_mode
         # Replay mode — write comparison CSV/JSONL
         detail = args.detailed ? :detailed : :summary
         ext = args.detailed ? ".jsonl" : ".csv"
@@ -190,8 +214,43 @@ function main()
             output_io=io, detail=detail, airports=airports, acft_body=acft_body)
         close(io)
         println("Replay written to: $outpath")
+    elseif args.search_mode
+        # Search mode — load schedule, run a search, hand the resulting
+        # itineraries to the inspector.  Each itinerary contributes one row
+        # per connection (a 2-stop yields two rows in sequence), so the user
+        # can step through them with the same n/p/c/b commands.
+        println("\nLoading schedule (this may take a moment)...")
+        cfg = SearchConfig()
+        sched_store = DuckDBStore()
+        load_schedule!(sched_store, cfg)
+        target = Date(args.search_date)
+        println("Building graph for $(target)...")
+        graph = build_graph!(sched_store, cfg, target)
+        ctx = RuntimeContext(
+            config = cfg,
+            constraints = SearchConstraints(),
+            itn_rules = build_itn_rules(cfg),
+        )
+        println("Searching $(args.search_org) → $(args.search_dst)...")
+        itineraries = search_itineraries(graph.stations,
+            StationCode(args.search_org), StationCode(args.search_dst),
+            target, ctx)
+        n_with_cnx = count(i -> length(i.connections) > 1, itineraries)
+        println("Found $(length(itineraries)) itineraries " *
+                "($(n_with_cnx) with at least one connection)\n")
+        if n_with_cnx == 0
+            println("No connecting itineraries to inspect (all results are nonstops).")
+            close(sched_store)
+            return
+        end
+        mct_inspect(lookup;
+            itineraries = collect(itineraries),
+            airports = airports,
+            station_regions = station_regions,
+            acft_body = acft_body)
+        close(sched_store)
     else
-        # Interactive mode
+        # Interactive mode (misconnect CSV)
         mct_inspect(lookup;
             misconnect=args.misconnect_path,
             airports=airports,

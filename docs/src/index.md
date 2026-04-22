@@ -12,7 +12,7 @@ ItinerarySearch.jl ingests OAG/SSIM schedule data and MCT (Minimum Connecting Ti
 - **Graph-based connection building** — O(n²) rule-chain pass producing `GraphConnection` edges at every station
 - **DFS search with pruning** — depth-first traversal with elapsed-time, circuity, direction, and stop-count pruning
 - **Trip search with scoring** — multi-leg trip pairing with configurable weighted scoring
-- **Multiple output formats** — CSV files, JSON (full and compact), `itinerary_long_format` / `itinerary_wide_format` tables
+- **Multiple output formats** — CSV files, JSON (full and compact), `itinerary_long_format` / `itinerary_wide_format` tables, and `DataFrame`-returning wrappers (`itinerary_legs_df`, `itinerary_summary_df`, `itinerary_pivot_df`) for direct Tables.jl / CSV.jl / Arrow.jl interop
 - **Interactive visualizations** — self-contained HTML network map (Leaflet), timeline (D3 Gantt), and trip comparison chart
 - **Observability** — structured event log with typed events and JSONL sink, DynaTrace-compatible JSON logging via LoggingExtras TeeLogger, cooperative system metrics polling, Tier 1 instrumentation (rule counters, MCT cascade stats, geographic aggregation)
 - **CLI** — `itinsearch search ORD LHR 2026-03-20` with 6 commands (search, trip, build, ingest, info, serve), global flags (`--newssim`, `--delimiter`, etc.), per-invocation parameter overrides, JSON output to stdout or file

@@ -303,7 +303,12 @@ using Dates
             dep_rec = _make_leg_record(
                 departure_station="ORD", arrival_station="LHR",
                 passenger_departure_time=Int16(660),
-                dep_intl_dom='D',
+                # Real-data convention: an international leg has BOTH
+                # dep_intl_dom AND arr_intl_dom set to 'I' (the flags mark
+                # the leg's nature, not per-side intl status).  The
+                # connection-status logic now uses these per-leg flags
+                # rather than country-equality of the OD endpoints.
+                dep_intl_dom='I', arr_intl_dom='I',
             )
             arr_leg = GraphLeg(arr_rec, jfk_stn, ord_stn)
             dep_leg = GraphLeg(dep_rec, ord_stn, lhr_stn)
