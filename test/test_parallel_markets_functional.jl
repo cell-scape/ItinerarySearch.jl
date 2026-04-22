@@ -1,6 +1,14 @@
 include("_test_setup.jl")
 
 @testset "parallel markets — functional equivalence with sequential" begin
+    # Guard: under `JULIA_NUM_THREADS=1`, `search_markets` falls back to the
+    # sequential path even when `parallel_markets=true`, so this test passes
+    # vacuously. Emit a warning so CI logs make it clear whether the parallel
+    # branch was actually exercised.
+    if Threads.nthreads() == 1
+        @warn "parallel_markets test running with nthreads=1 — parallel branch not exercised; run with JULIA_NUM_THREADS>1 to verify it"
+    end
+
     # Use the demo dataset for a deterministic, bounded-size run.
     newssim_path = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
     @assert isfile(newssim_path) "demo dataset missing: $(newssim_path)"
