@@ -637,10 +637,10 @@ end
   so each returned itinerary vector is `copy`-ed before being stored
 - A sibling `_search_markets_parallel_all_dates` with the same signature is
   used by `search_markets` when `config.parallel_markets && Threads.nthreads() > 1`
-- Return type is unified with the parallel path as a `Union` with
-  `MarketSearchFailure` for forward compatibility; this helper never
-  populates the `MarketSearchFailure` arm (failure handling lives on the
-  parallel worker body in a later task)
+- Each market's `search_itineraries` call is wrapped in try/catch so a single
+  throwing market becomes a `MarketSearchFailure` sentinel written into
+  `results` (worker_slot `0` here — the sequential context has no pool slot).
+  Without this the whole date's iteration would abort on the first bad market.
 
 # Arguments
 1. `config::SearchConfig`: shared search configuration
@@ -667,10 +667,24 @@ function _search_markets_sequential_all_dates(
     for target in dates
         graph = build_graph!(store, config, target; source = target_source)
         for (org, dst) in markets
-            origin = StationCode(org)
-            dest = StationCode(dst)
-            itns = search_itineraries(graph.stations, origin, dest, target, ctx)
-            results[(String(org), String(dst), target)] = copy(itns)
+            t0_ns = time_ns()
+            try
+                origin = StationCode(org)
+                dest = StationCode(dst)
+                itns = search_itineraries(graph.stations, origin, dest, target, ctx)
+                results[(String(org), String(dst), target)] = copy(itns)
+            catch e
+                # Same sentinel contract as the parallel path — see
+                # `_run_one_market!`. `ctx.worker_slot` is `0` here (sequential
+                # context; no pool slot).
+                bt = stacktrace(catch_backtrace())
+                elapsed_ms = (time_ns() - t0_ns) / 1e6
+                fail = MarketSearchFailure(
+                    (String(org), String(dst), target), e, bt,
+                    ctx.worker_slot, elapsed_ms,
+                )
+                results[(String(org), String(dst), target)] = fail
+            end
         end
     end
 
@@ -702,9 +716,9 @@ end
        across workers for the remainder of the per-date phase.
 
 !!! note
-    Task 7 wires the pool. Task 8 will add try/catch failure handling inside
-    `_run_one_market!` — today an exception in `search_itineraries` propagates
-    out through `wait(task)`.
+    Failure handling (try/catch → `MarketSearchFailure` sentinel) lives in
+    `_run_one_market!` so a single bad market does not tear down the whole
+    date's iteration.
 
 # Arguments
 1. `config::SearchConfig`: shared search configuration
@@ -716,8 +730,9 @@ end
 
 # Returns
 - `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`:
-  results keyed by `(origin_string, dest_string, date)`; the `MarketSearchFailure`
-  arm of the Union is forward-compatible with Task 8 and not populated today.
+  results keyed by `(origin_string, dest_string, date)`; a bad market's cell
+  holds a `MarketSearchFailure` sentinel (wrapping the exception, backtrace,
+  worker slot, and elapsed time) rather than aborting the batch.
 """
 function _search_markets_parallel_all_dates(
     config::SearchConfig,
@@ -767,10 +782,20 @@ end
   via a `finally` clause (so even a throwing market does not leak its slot).
 - The graph is accessed read-only; only `results` + its lock are shared.
 
-!!! note
-    Task 8 will add try/catch failure handling and `MarketSearchFailure`
-    sentinel creation here. For now, exceptions propagate out through the
-    task and are surfaced when `wait` is called on it.
+# Failure isolation
+- Two nested try blocks:
+  1. Inner try/catch turns any exception raised by `StationCode(…)` /
+     `search_itineraries` into a `MarketSearchFailure` sentinel written into
+     `results[(origin, dest, target)]`. The catch site captures the exception
+     object, a `Vector{Base.StackTraces.StackFrame}` (via
+     `stacktrace(catch_backtrace())`), the worker's pool slot, and the
+     elapsed wall time so callers can triage without replaying the search.
+  2. Outer `finally` always returns the context to `ctx_pool`, so even an
+     exception path does not leak a slot and deadlock the next `take!`.
+- The raw backtrace from `catch_backtrace()` is `Vector{Union{Ptr{Nothing},
+  Base.InterpreterIP}}`; `stacktrace(…)` converts to `StackFrame`s which is
+  what the `MarketSearchFailure.backtrace` field is typed for. Prefer this
+  over `Base.current_exceptions()[end].backtrace` which returns the raw form.
 
 # Arguments
 1. `ctx_pool::Channel{RuntimeContext}`: bounded channel of worker contexts
@@ -792,12 +817,28 @@ function _run_one_market!(
     origin::String, dest::String, target::Date,
 )
     ctx = take!(ctx_pool)
+    t0_ns = time_ns()
     try
-        itns = search_itineraries(graph.stations,
-                                  StationCode(origin), StationCode(dest),
-                                  target, ctx)
-        lock(results_lock) do
-            results[(origin, dest, target)] = copy(itns)
+        try
+            itns = search_itineraries(graph.stations,
+                                      StationCode(origin), StationCode(dest),
+                                      target, ctx)
+            lock(results_lock) do
+                results[(origin, dest, target)] = copy(itns)
+            end
+        catch e
+            # stacktrace(catch_backtrace()) returns Vector{StackFrame}, which
+            # matches MarketSearchFailure.backtrace. catch_backtrace() alone
+            # returns a raw backtrace (incompatible type) — do not use it here.
+            bt = stacktrace(catch_backtrace())
+            elapsed_ms = (time_ns() - t0_ns) / 1e6
+            fail = MarketSearchFailure(
+                (origin, dest, target), e, bt,
+                ctx.worker_slot, elapsed_ms,
+            )
+            lock(results_lock) do
+                results[(origin, dest, target)] = fail
+            end
         end
     finally
         put!(ctx_pool, ctx)   # MUST return context, even on exception
@@ -824,9 +865,10 @@ end
   a `copy` of the search context's result buffer; the inner `Itinerary`
   objects hold their own `connections` allocations, so retaining the
   returned vectors across subsequent searches is safe.
-- The returned dict's value type is a `Union` with `MarketSearchFailure` as
-  a forward-compatible sentinel for per-market failures (wired up in a
-  later task); today all values are `Vector{Itinerary}`.
+- The returned dict's value type is a `Union` with `MarketSearchFailure`:
+  any market whose `search_itineraries` call throws is caught and written
+  as a sentinel (see `_run_one_market!` / sequential loop) instead of
+  aborting the whole batch. Use `is_failure` / `failed_markets` to triage.
 - The store is closed automatically on return (or on error)
 
 # When to use

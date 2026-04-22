@@ -41,6 +41,7 @@ end
     include("test_market_failure.jl")
     include("test_runtime_context_worker_slot.jl")
     include("test_parallel_markets_functional.jl")
+    include("test_parallel_markets_failures.jl")
     include("test_logging.jl")
     include("test_cli.jl")
     include("test_server.jl")
