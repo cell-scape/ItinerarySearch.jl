@@ -209,7 +209,7 @@ See [docs/src/architecture.md](docs/src/architecture.md) for the full Mermaid di
 | `leading_days` | `2` | Days before target date in schedule window |
 | `trailing_days` | `0` | Days after target date in schedule window |
 | `max_connection_minutes` | `480` | Maximum connection time (8 hours) |
-| `circuity_factor` | `2.5` | Maximum ratio of flown to great-circle distance |
+| `circuity_check_scope` | `:both` | `:connection`, `:itinerary`, or `:both` — which rules enforce the circuity filter |
 | `scope` | `SCOPE_ALL` | `SCOPE_DOM`, `SCOPE_INTL`, or `SCOPE_ALL` |
 | `interline` | `INTERLINE_CODESHARE` | `INTERLINE_ONLINE`, `INTERLINE_CODESHARE`, or `INTERLINE_ALL` |
 | `distance_formula` | `:haversine` | `:haversine` or `:vincenty` |
@@ -232,6 +232,8 @@ Constraints (numeric ranges, categorical allow/deny filters) are configured via 
 The tracked [`config/defaults.json`](config/defaults.json) is an exhaustive exemplar listing every `SearchConfig` field at its compiled-in default — copy it, trim the sections you don't need, and tweak only the fields you want to override. Missing keys fall back to the struct defaults. See [`config/README.md`](config/README.md) for a grouped field reference including the `mct_behaviour` JSON section (MCT cache, codeshare and Schengen mode toggles, suppression handling).
 
 `SearchConfig`, `SearchConstraints`, `ParameterSet`, `MarketOverride`, and `MCTAuditConfig` each have an `AbstractDict` constructor in addition to their keyword form — pass a `Dict{String,Any}` from YAML/TOML, environment variables, or a caller-built map and the struct will normalize keys, parse enum-valued fields from strings, and throw `ArgumentError` on unknown keys.
+
+**Circuity tiers** — the scalar `circuity_factor` has been replaced with `circuity_tiers::Vector{CircuityTier}` on `ParameterSet`. It defaults to `DEFAULT_CIRCUITY_TIERS` (`[(250, 2.4), (800, 1.9), (2000, 1.5), (Inf, 1.3)]` — upper-bound miles → max circuity factor). Load distance-tiered defaults from a CSV with `load_circuity_tiers("path/cirOvrdDflt.dat")` (HIGH,CIRCUITY columns), and supply market-level overrides via `load_circuity_overrides("path/cirOvrd.dat")` (ORG,DEST,ENTNM,CRTY columns — ENTNM is reserved for future entity grouping). Compose both into `SearchConstraints` with `apply_circuity_files!(constraints; defaults_path, overrides_path)`.
 
 ## Benchmarks
 
