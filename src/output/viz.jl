@@ -34,28 +34,33 @@ function _viz_airline_color(airline::String)::String
     return palette[idx]
 end
 
+# Used by `_viz_legs_from_itinerary` to convert Julia DateTime values
+# (whose internal representation is milliseconds since 0001-01-01) into
+# Unix-epoch milliseconds for JavaScript Date interop.
+const _UNIX_EPOCH_MS = Dates.value(DateTime(1970, 1, 1))
+
 """
     `function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}`
 
 Flattens an `Itinerary` into a list of leg dicts suitable for JSON serialisation.
 Each dict contains `carrier`, `flight_number`, `flt_id`, `departure_station`,
-`arrival_station`, `dep_dt` / `arr_dt` (ISO-8601 UTC strings), `dep_offset` /
-`arr_offset` (minutes from itinerary start, monotonically increasing — used by
-the timeline X axis), `aircraft_type`, `distance`, `cnx_time`, `mct`.
+`arrival_station`, `dep_dt` / `arr_dt` (ISO-8601 UTC strings for tooltips),
+`dep_unix_ms` / `arr_unix_ms` (absolute Unix-epoch milliseconds for timeline
+X-axis positioning — JavaScript-friendly, sortable, multi-day correct),
+`aircraft_type`, `distance`, `cnx_time`, `mct`.
 
-The `_offset` fields are computed from the absolute `DateTime`s and the
-itinerary's anchor (first leg's UTC departure), so they correctly handle
-overnight legs and multi-day itineraries without day-wrap artifacts.
+Times are computed via `leg_departure_dt` / `leg_arrival_dt`, which include
+the +1 day rollover inference for overnight records with blank
+`arrival_date_variation`.  Because the values are absolute UTC, downstream
+viz code can place legs on a shared global X axis (anchored to the earliest
+first-leg departure across all itineraries) without day-wrap artifacts.
 """
 function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}
     result = Dict{String,Any}[]
     isempty(itn.connections) && return result
 
-    # Anchor every leg's offset to the first leg's UTC departure.
-    first_leg = itn.connections[1].from_leg::GraphLeg
-    anchor = leg_departure_dt(first_leg)
-    _mins_since(dt::DateTime) = Int(Dates.value(dt - anchor) ÷ 60_000)
     _iso(dt::DateTime) = string(dt) * "Z"   # mark as UTC
+    _unix_ms(dt::DateTime) = Dates.value(dt) - _UNIX_EPOCH_MS
 
     n_cnx = length(itn.connections)
     for (i, cp) in enumerate(itn.connections)
@@ -75,8 +80,8 @@ function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}
             "arrival_station"   => strip(String(r.arrival_station)),
             "dep_dt"            => _iso(dep_dt),
             "arr_dt"            => _iso(arr_dt),
-            "dep_offset"        => _mins_since(dep_dt),
-            "arr_offset"        => _mins_since(arr_dt),
+            "dep_unix_ms"       => _unix_ms(dep_dt),
+            "arr_unix_ms"       => _unix_ms(arr_dt),
             "aircraft_type"     => strip(String(r.aircraft_type)),
             "distance"          => round(Float64(from_l.distance); digits=0),
             "cnx_time"          => i > 1 ? Int(cp.cnx_time) : 0,
@@ -97,8 +102,8 @@ function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}
                 "arrival_station"   => strip(String(tr.arrival_station)),
                 "dep_dt"            => _iso(t_dep_dt),
                 "arr_dt"            => _iso(t_arr_dt),
-                "dep_offset"        => _mins_since(t_dep_dt),
-                "arr_offset"        => _mins_since(t_arr_dt),
+                "dep_unix_ms"       => _unix_ms(t_dep_dt),
+                "arr_unix_ms"       => _unix_ms(t_arr_dt),
                 "aircraft_type"     => strip(String(tr.aircraft_type)),
                 "distance"          => round(Float64(to_l.distance); digits=0),
                 "cnx_time"          => Int(cp.cnx_time),
@@ -494,17 +499,19 @@ function viz_timeline(
     if (ROWS.length === 0) {
       document.getElementById('subtitle').textContent = 'No itineraries to display';
     } else {
-      // ── Compute time range (per-row offsets, anchored to itinerary start)
-      // Every leg.dep_offset / arr_offset is minutes from its own itinerary's
-      // first departure, so all rows start at 0 and extend rightward by their
-      // actual elapsed time.  This sidesteps the day-wrap artifacts that
-      // plagued the previous absolute-UTC-minutes positioning.
-      let globalMin = 0;
-      let globalMax = 0;
+      // ── Compute global time range (absolute UTC, shared across rows)
+      // X axis spans from the earliest first-leg departure to the latest
+      // last-leg arrival across every itinerary in view.  Each leg carries
+      // dep_unix_ms / arr_unix_ms (Unix epoch milliseconds) — JavaScript
+      // Date constructor accepts these directly, and D3's scaleTime
+      // handles tick formatting (HH:MM, day labels for multi-day spans).
+      let globalMin = Infinity, globalMax = -Infinity;
       ROWS.forEach(row => {
-        row.legs.forEach(leg => {
-          if (leg.arr_offset > globalMax) globalMax = leg.arr_offset;
-        });
+        if (row.legs.length === 0) return;
+        const first = row.legs[0];
+        const last  = row.legs[row.legs.length - 1];
+        if (first.dep_unix_ms < globalMin) globalMin = first.dep_unix_ms;
+        if (last.arr_unix_ms  > globalMax) globalMax = last.arr_unix_ms;
       });
       const span = globalMax - globalMin;
 
@@ -520,20 +527,15 @@ function viz_timeline(
       const g = svg.append('g')
         .attr('transform', `translate(\${MARGIN.left},\${MARGIN.top})`);
 
-      const xScale = d3.scaleLinear()
-        .domain([globalMin, globalMax])
+      const xScale = d3.scaleTime()
+        .domain([new Date(globalMin), new Date(globalMax)])
         .range([0, innerW]);
 
-      // ── X axis with elapsed-time labels (e.g. "+2h30") ─────────────────────
-      const formatOffset = m => {
-        if (m === 0) return 'start';
-        const h = Math.floor(Math.abs(m) / 60);
-        const mn = Math.abs(m) % 60;
-        return '+' + h + (mn > 0 ? 'h' + String(mn).padStart(2,'0') : 'h');
-      };
-      const xAxis = d3.axisBottom(xScale)
-        .ticks(10)
-        .tickFormat(formatOffset);
+      // ── X axis with absolute UTC time labels ───────────────────────────────
+      // D3's default time formatter switches between "HH:MM", "DD Mon",
+      // "Mon YYYY", etc. based on the tick interval.  When the chart spans
+      // a single day the ticks are HH:MM; multi-day spans get day boundaries.
+      const xAxis = d3.axisBottom(xScale).ticks(10);
 
       g.append('g')
         .attr('class', 'axis')
@@ -572,8 +574,8 @@ function viz_timeline(
         for (let i = 1; i < row.legs.length; i++) {
           const prev = row.legs[i - 1];
           const curr = row.legs[i];
-          const gx  = xScale(prev.arr_offset);
-          const gx2 = xScale(curr.dep_offset);
+          const gx  = xScale(new Date(prev.arr_unix_ms));
+          const gx2 = xScale(new Date(curr.dep_unix_ms));
           const gw  = Math.max(2, gx2 - gx);
           rowG.append('rect')
             .attr('class', 'cnx-rect')
@@ -589,8 +591,8 @@ function viz_timeline(
 
         // Leg rectangles
         row.legs.forEach(leg => {
-          const lx = xScale(leg.dep_offset);
-          const lw = Math.max(MIN_LEG_W, xScale(leg.arr_offset) - lx);
+          const lx = xScale(new Date(leg.dep_unix_ms));
+          const lw = Math.max(MIN_LEG_W, xScale(new Date(leg.arr_unix_ms)) - lx);
           const color = colorMap[leg.carrier] || '#4e9af1';
 
           rowG.append('rect')
