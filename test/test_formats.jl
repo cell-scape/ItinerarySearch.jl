@@ -29,6 +29,8 @@ using DataFrames
         arrival_station="ORD",
         passenger_departure_time=Int16(480),
         passenger_arrival_time=Int16(600),
+        departure_utc_offset=Int16(0),
+        arrival_utc_offset=Int16(0),
         arrival_date_variation=Int8(0),
         distance=800.0f0,
         aircraft_type="738",
@@ -56,8 +58,8 @@ using DataFrames
             passenger_arrival_time=passenger_arrival_time,
             aircraft_departure_time=passenger_departure_time,
             aircraft_arrival_time=passenger_arrival_time,
-            departure_utc_offset=Int16(0),
-            arrival_utc_offset=Int16(0),
+            departure_utc_offset=departure_utc_offset,
+            arrival_utc_offset=arrival_utc_offset,
             departure_date_variation=Int8(0),
             arrival_date_variation=arrival_date_variation,
             aircraft_type=InlineString7(aircraft_type),
@@ -638,6 +640,65 @@ using DataFrames
         df = itinerary_pivot_df(Itinerary[itn])
         @test df.cnx1_mct_matched_id[1] == 7777
         @test df.cnx1_mct_matched_fields[1] == UInt32(0xFF)
+    end
+
+    # ── DateTime helpers ──────────────────────────────────────────────────────
+
+    @testset "leg_departure_dt — UTC absolute time" begin
+        # _leg_rec helper sets operating_date = 2026-06-15 (see fixture).
+        # JFK leg, dep 09:00 local (-05:00 EST) → 14:00 UTC same day.
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        rec = _leg_rec(
+            departure_station="JFK", arrival_station="LHR",
+            passenger_departure_time=Int16(540),  # 09:00
+            passenger_arrival_time=Int16(1320),   # 22:00
+            departure_utc_offset=Int16(-300),
+            arrival_utc_offset=Int16(0),
+        )
+        leg = GraphLeg(rec, jfk, lhr)
+        dep_dt = leg_departure_dt(leg)
+        @test dep_dt isa DateTime
+        @test dep_dt == DateTime(2026, 6, 15, 14, 0, 0)
+    end
+
+    @testset "leg_arrival_dt — UTC absolute time with arr_date_var" begin
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        rec = _leg_rec(
+            departure_station="JFK", arrival_station="LHR",
+            passenger_departure_time=Int16(1260),
+            passenger_arrival_time=Int16(480),
+            departure_utc_offset=Int16(-300),
+            arrival_utc_offset=Int16(0),
+            arrival_date_variation=Int8(1),
+        )
+        leg = GraphLeg(rec, jfk, lhr)
+        arr_dt = leg_arrival_dt(leg)
+        # arr 08:00 GMT = 08:00 UTC, +1 day from operating_date 2026-06-15.
+        @test arr_dt == DateTime(2026, 6, 16, 8, 0, 0)
+    end
+
+    @testset "leg_arrival_dt — infers +1 day when arr_date_var is blank" begin
+        # Same overnight flight, but arr_date_var=0 (LH-style data gap).
+        # Helper should still return a sensible DateTime.
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+        fra = GraphStation(_stn_rec("FRA", "DE", "EUR"))
+        rec = _leg_rec(
+            carrier="LH", flight_number=431,
+            departure_station="ORD", arrival_station="FRA",
+            passenger_departure_time=Int16(1200),  # 20:00 CST
+            passenger_arrival_time=Int16(660),     # 11:00 CET
+            departure_utc_offset=Int16(-300),
+            arrival_utc_offset=Int16(120),
+            arrival_date_variation=Int8(0),        # source didn't flag overnight
+        )
+        leg = GraphLeg(rec, ord, fra)
+        dep_dt = leg_departure_dt(leg)   # 2026-01-01 25:00 - which is 2026-01-02 01:00 UTC
+        arr_dt = leg_arrival_dt(leg)
+        @test arr_dt > dep_dt
+        # Sanity: about 8h between
+        @test Dates.value(arr_dt - dep_dt) ÷ 60_000 == 480
     end
 
     # ── Passthrough helpers ────────────────────────────────────────────────────

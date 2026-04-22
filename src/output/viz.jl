@@ -38,11 +38,25 @@ end
     `function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}`
 
 Flattens an `Itinerary` into a list of leg dicts suitable for JSON serialisation.
-Each dict contains `carrier`, `flight_number`, `departure_station`, `arrival_station`, `dep_utc`, `arr_utc`,
-`aircraft_type`, `distance`, `cnx_time`, and `mct`.
+Each dict contains `carrier`, `flight_number`, `flt_id`, `departure_station`,
+`arrival_station`, `dep_dt` / `arr_dt` (ISO-8601 UTC strings), `dep_offset` /
+`arr_offset` (minutes from itinerary start, monotonically increasing — used by
+the timeline X axis), `aircraft_type`, `distance`, `cnx_time`, `mct`.
+
+The `_offset` fields are computed from the absolute `DateTime`s and the
+itinerary's anchor (first leg's UTC departure), so they correctly handle
+overnight legs and multi-day itineraries without day-wrap artifacts.
 """
 function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}
     result = Dict{String,Any}[]
+    isempty(itn.connections) && return result
+
+    # Anchor every leg's offset to the first leg's UTC departure.
+    first_leg = itn.connections[1].from_leg::GraphLeg
+    anchor = leg_departure_dt(first_leg)
+    _mins_since(dt::DateTime) = Int(Dates.value(dt - anchor) ÷ 60_000)
+    _iso(dt::DateTime) = string(dt) * "Z"   # mark as UTC
+
     n_cnx = length(itn.connections)
     for (i, cp) in enumerate(itn.connections)
         from_l = cp.from_leg::GraphLeg
@@ -51,16 +65,18 @@ function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}
 
         # Emit from_leg
         r = from_l.record
-        dep_utc = Int(r.passenger_departure_time) - Int(r.departure_utc_offset)
-        arr_utc = Int(r.passenger_arrival_time) - Int(r.arrival_utc_offset) + Int(r.arrival_date_variation) * 1440
+        dep_dt = leg_departure_dt(from_l)
+        arr_dt = leg_arrival_dt(from_l)
         push!(result, Dict{String,Any}(
             "carrier"           => strip(String(r.carrier)),
             "flight_number"     => Int(r.flight_number),
             "flt_id"            => flight_id(r),
             "departure_station" => strip(String(r.departure_station)),
             "arrival_station"   => strip(String(r.arrival_station)),
-            "dep_utc"           => dep_utc,
-            "arr_utc"           => arr_utc,
+            "dep_dt"            => _iso(dep_dt),
+            "arr_dt"            => _iso(arr_dt),
+            "dep_offset"        => _mins_since(dep_dt),
+            "arr_offset"        => _mins_since(arr_dt),
             "aircraft_type"     => strip(String(r.aircraft_type)),
             "distance"          => round(Float64(from_l.distance); digits=0),
             "cnx_time"          => i > 1 ? Int(cp.cnx_time) : 0,
@@ -71,16 +87,18 @@ function _viz_legs_from_itinerary(itn::Itinerary)::Vector{Dict{String,Any}}
         # For the final connecting leg, emit to_leg as well
         if i == n_cnx && !is_nonstop_cp
             tr = to_l.record
-            t_dep_utc = Int(tr.passenger_departure_time) - Int(tr.departure_utc_offset)
-            t_arr_utc = Int(tr.passenger_arrival_time) - Int(tr.arrival_utc_offset) + Int(tr.arrival_date_variation) * 1440
+            t_dep_dt = leg_departure_dt(to_l)
+            t_arr_dt = leg_arrival_dt(to_l)
             push!(result, Dict{String,Any}(
                 "carrier"           => strip(String(tr.carrier)),
                 "flight_number"     => Int(tr.flight_number),
                 "flt_id"            => flight_id(tr),
                 "departure_station" => strip(String(tr.departure_station)),
                 "arrival_station"   => strip(String(tr.arrival_station)),
-                "dep_utc"           => t_dep_utc,
-                "arr_utc"           => t_arr_utc,
+                "dep_dt"            => _iso(t_dep_dt),
+                "arr_dt"            => _iso(t_arr_dt),
+                "dep_offset"        => _mins_since(t_dep_dt),
+                "arr_offset"        => _mins_since(t_arr_dt),
                 "aircraft_type"     => strip(String(tr.aircraft_type)),
                 "distance"          => round(Float64(to_l.distance); digits=0),
                 "cnx_time"          => Int(cp.cnx_time),
@@ -476,12 +494,16 @@ function viz_timeline(
     if (ROWS.length === 0) {
       document.getElementById('subtitle').textContent = 'No itineraries to display';
     } else {
-      // ── Compute global UTC time range ──────────────────────────────────────
-      let globalMin = Infinity, globalMax = -Infinity;
+      // ── Compute time range (per-row offsets, anchored to itinerary start)
+      // Every leg.dep_offset / arr_offset is minutes from its own itinerary's
+      // first departure, so all rows start at 0 and extend rightward by their
+      // actual elapsed time.  This sidesteps the day-wrap artifacts that
+      // plagued the previous absolute-UTC-minutes positioning.
+      let globalMin = 0;
+      let globalMax = 0;
       ROWS.forEach(row => {
         row.legs.forEach(leg => {
-          if (leg.dep_utc < globalMin) globalMin = leg.dep_utc;
-          if (leg.arr_utc > globalMax) globalMax = leg.arr_utc;
+          if (leg.arr_offset > globalMax) globalMax = leg.arr_offset;
         });
       });
       const span = globalMax - globalMin;
@@ -502,15 +524,16 @@ function viz_timeline(
         .domain([globalMin, globalMax])
         .range([0, innerW]);
 
-      // ── X axis with HH:MM labels ───────────────────────────────────────────
-      const formatMin = m => {
-        const h = Math.floor(Math.abs(m) / 60) % 24;
+      // ── X axis with elapsed-time labels (e.g. "+2h30") ─────────────────────
+      const formatOffset = m => {
+        if (m === 0) return 'start';
+        const h = Math.floor(Math.abs(m) / 60);
         const mn = Math.abs(m) % 60;
-        return String(h).padStart(2,'0') + ':' + String(mn).padStart(2,'0');
+        return '+' + h + (mn > 0 ? 'h' + String(mn).padStart(2,'0') : 'h');
       };
       const xAxis = d3.axisBottom(xScale)
         .ticks(10)
-        .tickFormat(formatMin);
+        .tickFormat(formatOffset);
 
       g.append('g')
         .attr('class', 'axis')
@@ -549,8 +572,8 @@ function viz_timeline(
         for (let i = 1; i < row.legs.length; i++) {
           const prev = row.legs[i - 1];
           const curr = row.legs[i];
-          const gx  = xScale(prev.arr_utc);
-          const gx2 = xScale(curr.dep_utc);
+          const gx  = xScale(prev.arr_offset);
+          const gx2 = xScale(curr.dep_offset);
           const gw  = Math.max(2, gx2 - gx);
           rowG.append('rect')
             .attr('class', 'cnx-rect')
@@ -566,8 +589,8 @@ function viz_timeline(
 
         // Leg rectangles
         row.legs.forEach(leg => {
-          const lx = xScale(leg.dep_utc);
-          const lw = Math.max(MIN_LEG_W, xScale(leg.arr_utc) - lx);
+          const lx = xScale(leg.dep_offset);
+          const lw = Math.max(MIN_LEG_W, xScale(leg.arr_offset) - lx);
           const color = colorMap[leg.carrier] || '#4e9af1';
 
           rowG.append('rect')
@@ -581,7 +604,7 @@ function viz_timeline(
             .on('mousemove', ev => showTooltip(ev,
               `<strong>\${leg.flt_id}</strong><br>` +
               `\${leg.departure_station} &rarr; \${leg.arrival_station}<br>` +
-              `Dep: \${formatMin(leg.dep_utc)} UTC · Arr: \${formatMin(leg.arr_utc)} UTC<br>` +
+              `Dep: \${leg.dep_dt} · Arr: \${leg.arr_dt}<br>` +
               `\${leg.aircraft_type} · \${leg.distance.toLocaleString()} mi`))
             .on('mouseleave', hideTooltip);
 

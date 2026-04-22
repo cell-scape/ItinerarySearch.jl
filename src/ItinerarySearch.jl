@@ -71,6 +71,7 @@ include("graph/rules_itn.jl")
 include("graph/connect.jl")
 include("graph/search.jl")
 include("graph/builder.jl")
+include("output/dt_helpers.jl")
 include("output/formats.jl")
 include("output/viz.jl")
 include("server.jl")
@@ -106,6 +107,7 @@ export write_legs, write_itineraries, write_trips
 export itinerary_legs, itinerary_legs_multi, itinerary_legs_json
 export itinerary_long_format, itinerary_wide_format
 export itinerary_legs_df, itinerary_summary_df, itinerary_pivot_df
+export leg_departure_dt, leg_arrival_dt
 
 # MCT audit
 export MCTAuditConfig, MCTTrace, MCTCandidateTrace, EMPTY_MCT_RESULT
