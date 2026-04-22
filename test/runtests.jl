@@ -38,6 +38,7 @@ end
     include("test_observe.jl")
     include("test_span_event.jl")
     include("test_trace_context.jl")
+    include("test_market_failure.jl")
     include("test_logging.jl")
     include("test_cli.jl")
     include("test_server.jl")

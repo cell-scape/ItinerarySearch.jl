@@ -108,4 +108,6 @@ import ItinerarySearch:
     # Search internals
     score_trip,
     # Output internals (now exported; kept here for historical test imports)
-    resolve_leg, resolve_segment, resolve_legs
+    resolve_leg, resolve_segment, resolve_legs,
+    # Failure sentinel
+    MarketSearchFailure, is_failure, failed_markets

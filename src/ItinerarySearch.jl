@@ -42,6 +42,7 @@ include("types/constraints.jl")
 include("types/graph.jl")
 include("types/mct_audit_config.jl")
 include("types/display.jl")
+include("types/market_failure.jl")
 include("config.jl")
 include("observe/events.jl")
 include("observe/trace_context.jl")
@@ -87,6 +88,9 @@ include("cli.jl")
 
 # Types
 export StationCode, Itinerary, Trip, TripLeg, FlightGraph, ConnectionRef
+
+# Failure types
+export MarketSearchFailure, is_failure, failed_markets
 
 # Config
 export SearchConfig, load_config, load_constraints
