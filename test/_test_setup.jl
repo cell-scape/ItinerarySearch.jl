@@ -46,6 +46,7 @@ import ItinerarySearch:
     TripScoringWeights, nonstop_connection,
     # Observe
     SystemMetricsEvent, PhaseEvent, BuildSnapshotEvent, SearchSnapshotEvent, CustomEvent,
+    SpanEvent,
     EventLog, emit!, checkpoint!, with_phase, collect_system_metrics,
     JsonlSink, stdout_sink,
     setup_logger,

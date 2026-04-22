@@ -36,6 +36,7 @@ end
     include("test_integration_graph.jl")
     include("test_instrumentation.jl")
     include("test_observe.jl")
+    include("test_span_event.jl")
     include("test_logging.jl")
     include("test_cli.jl")
     include("test_server.jl")

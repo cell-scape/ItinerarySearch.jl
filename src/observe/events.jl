@@ -110,3 +110,36 @@ Escape hatch for ad-hoc diagnostic events. Not `isbits` (Dict payload).
     message::String = ""
     metadata::Dict{String,Any} = Dict{String,Any}()
 end
+
+"""
+    `SpanEvent(; kind, name, trace_id, span_id, parent_span_id, unix_nano, ...)`
+---
+
+# Description
+- OpenTelemetry-shaped span event emitted at the start and end edges of a span.
+- One `:start` event and one `:end` event are emitted per span; a follow-on OTLP
+  exporter plan pairs them by `span_id` and emits a single OTLP span per pair.
+- `kind` is a documented invariant (`:start` or `:end`), not enforced at the type level.
+
+# Fields
+- `kind::Symbol`: `:start` or `:end` (invariant — not type-enforced)
+- `name::Symbol`: span name, e.g. `:search_markets` or `:market_search`
+- `trace_id::UInt128`: 128-bit trace identifier (W3C Trace Context)
+- `span_id::UInt64`: 64-bit span identifier
+- `parent_span_id::UInt64`: parent's `span_id`, or `0` for root spans
+- `unix_nano::Int64`: nanoseconds since Unix epoch
+- `worker_slot::Int = 0`: `1..nthreads` for per-market spans, `0` for root spans
+- `status::Symbol = :ok`: `:ok` or `:error` (meaningful on `:end` events only)
+- `attributes::Dict{Symbol,Any}`: span attributes (free-form key/value pairs)
+"""
+@kwdef struct SpanEvent
+    kind::Symbol
+    name::Symbol
+    trace_id::UInt128
+    span_id::UInt64
+    parent_span_id::UInt64
+    unix_nano::Int64
+    worker_slot::Int = 0
+    status::Symbol = :ok
+    attributes::Dict{Symbol,Any} = Dict{Symbol,Any}()
+end
