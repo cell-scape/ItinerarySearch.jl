@@ -166,10 +166,19 @@ end
 
 # Returns
 - `::Vector{NamedTuple}`: one NamedTuple per leg with fields:
-  `itinerary_id`, `leg_seq`, `airline`, `flt_no`, `flight_id`,
-  `record_serial`, `segment_hash`, `org`, `dst`, `pax_dep`, `pax_arr`,
-  `eqp`, `body_type`, `distance`, `is_through`, `is_nonstop`,
-  `cnx_time`, `mct`, `dep_term`, `arr_term`
+  `itinerary_id`, `leg_seq`, `carrier`, `flight_number`, `flight_id`,
+  `record_serial`, `segment_hash`, `departure_station`, `arrival_station`,
+  `passenger_departure_time`, `passenger_arrival_time`, `aircraft_type`,
+  `body_type`, `distance`, `is_through`, `is_nonstop`, `cnx_time`,
+  `mct`, `mct_matched_id`, `mct_matched_fields`, `departure_terminal`,
+  `arrival_terminal`
+
+The `mct_matched_id` and `mct_matched_fields` columns populate on connecting
+legs (`seq > 1`) from the `MCTResult` attached to the arriving connection;
+`mct_matched_id` is the PK of the matched `mct` table row (0 when the global
+default was used), `mct_matched_fields` is the SSIM8 specificity bitmask.
+Both carry `0` on the origin leg (no upstream connection) and on nonstop
+itineraries.
 
 # Examples
 ```julia
@@ -212,6 +221,8 @@ function itinerary_long_format(itineraries::Vector{Itinerary})::Vector{NamedTupl
                     is_nonstop = is_nonstop_cp,
                     cnx_time = seq > 1 ? Int(cp.cnx_time) : 0,
                     mct = seq > 1 ? Int(cp.mct) : 0,
+                    mct_matched_id = seq > 1 ? Int(cp.mct_result.mct_id) : 0,
+                    mct_matched_fields = seq > 1 ? cp.mct_result.matched_fields : UInt32(0),
                     departure_terminal = String(rec.departure_terminal),
                     arrival_terminal = String(rec.arrival_terminal),
                 ))
@@ -243,8 +254,10 @@ function itinerary_long_format(itineraries::Vector{Itinerary})::Vector{NamedTupl
                     distance = Float64(to_leg.distance),
                     is_through = false,
                     is_nonstop = false,
-                    cnx_time = 0,
-                    mct = 0,
+                    cnx_time = Int(cp.cnx_time),
+                    mct = Int(cp.mct),
+                    mct_matched_id = Int(cp.mct_result.mct_id),
+                    mct_matched_fields = cp.mct_result.matched_fields,
                     departure_terminal = String(to_rec.departure_terminal),
                     arrival_terminal = String(to_rec.arrival_terminal),
                 ))
@@ -337,6 +350,266 @@ function itinerary_wide_format(itineraries::Vector{Itinerary})::Vector{NamedTupl
         push!(rows, row)
     end
     return rows
+end
+
+# ── DataFrame wrappers ───────────────────────────────────────────────────────
+
+"""
+    `function itinerary_legs_df(itineraries::Vector{Itinerary})::DataFrame`
+---
+
+# Description
+- Thin wrapper around `itinerary_long_format` that returns a `DataFrame`
+- One row per leg per itinerary, ordered by `(itinerary_id, leg_seq)`
+- See `itinerary_long_format` for the column list, including the
+  `mct_matched_id` / `mct_matched_fields` audit columns
+
+# Arguments
+1. `itineraries::Vector{Itinerary}`: search results
+
+# Returns
+- `::DataFrame`: one row per leg
+"""
+itinerary_legs_df(itineraries::Vector{Itinerary})::DataFrame =
+    DataFrame(itinerary_long_format(itineraries))
+
+"""
+    `function itinerary_summary_df(itineraries::Vector{Itinerary})::DataFrame`
+---
+
+# Description
+- Thin wrapper around `itinerary_wide_format` that returns a `DataFrame`
+- One row per itinerary with summary fields; flight numbers and record serials
+  are joined with `/` in leg order
+- See `itinerary_wide_format` for the column list
+
+# Arguments
+1. `itineraries::Vector{Itinerary}`: search results
+
+# Returns
+- `::DataFrame`: one row per itinerary
+"""
+itinerary_summary_df(itineraries::Vector{Itinerary})::DataFrame =
+    DataFrame(itinerary_wide_format(itineraries))
+
+# ── Pivoted wide DataFrame ───────────────────────────────────────────────────
+
+"""
+    `_extract_legs_and_cnxs(itn::Itinerary)::Tuple{Vector{GraphLeg}, Vector{GraphConnection}}`
+
+Walk an itinerary's connection chain and return its legs in order plus the
+connections between them. A K-leg itinerary returns `K` legs and `K-1`
+connections (`cnx[i]` is the connection between `leg[i]` and `leg[i+1]`).
+
+Nonstop itineraries (represented internally as a single self-connection with
+`from_leg === to_leg`) return exactly one leg and zero connections.
+"""
+function _extract_legs_and_cnxs(itn::Itinerary)::Tuple{Vector{GraphLeg}, Vector{GraphConnection}}
+    isempty(itn.connections) && return (GraphLeg[], GraphConnection[])
+    # Convention in the internal data model:
+    #   connections[1]     — self-connection representing leg1 (from_leg === to_leg)
+    #   connections[2..N]  — real connection edges; cp.to_leg is the next leg
+    # So a K-leg itinerary has K connections in its vector, and K-1 real cnxs.
+    first_cp = itn.connections[1]
+    legs = GraphLeg[first_cp.from_leg::GraphLeg]
+    cnxs = GraphConnection[]
+    for i in 2:length(itn.connections)
+        cp = itn.connections[i]
+        push!(legs, cp.to_leg::GraphLeg)
+        push!(cnxs, cp)
+    end
+    return (legs, cnxs)
+end
+
+"""
+    `function itinerary_pivot_df(itineraries::Vector{Itinerary}; max_legs::Int = 3)::DataFrame`
+---
+
+# Description
+- One row per itinerary. Legs are pivoted into `leg1_*..legN_*` column blocks
+  and connections into `cnx1_*..cnxM_*` blocks, where `N = max_legs` and
+  `M = max_legs - 1`. Absent leg/cnx blocks carry `missing`.
+- The `max_legs` parameter pins the output schema. Increasing `max_stops` at
+  search time without also increasing `max_legs` here throws an
+  `ArgumentError` rather than silently truncating — the wide schema is a
+  contract with downstream consumers and breakage should be loud.
+- Intended for tools that want one-row-per-itinerary with comparable column
+  positions (side-by-side reports, spreadsheet pivots, BI tools).  For
+  tidy-data / analytics use `itinerary_legs_df` instead.
+
+# Arguments
+1. `itineraries::Vector{Itinerary}`: search results
+
+# Keyword Arguments
+- `max_legs::Int=3`: fixed number of leg column blocks; defaults to 3 because
+  the project's default `max_stops=2` produces at most 3 legs
+
+# Returns
+- `::DataFrame`: one row per itinerary, with `14 + 16*max_legs + 4*(max_legs-1)`
+  columns (74 columns at the default `max_legs=3`)
+
+# Throws
+- `ArgumentError`: if `max_legs < 1`, or if any itinerary has more legs than
+  `max_legs` (schema-stability contract)
+"""
+function itinerary_pivot_df(
+    itineraries::Vector{Itinerary};
+    max_legs::Int = 3,
+)::DataFrame
+    max_legs >= 1 ||
+        throw(ArgumentError("max_legs must be >= 1; got $max_legs"))
+
+    # Pre-scan to enforce the schema contract up-front.
+    for (i, itn) in enumerate(itineraries)
+        n_legs = Int(itn.num_stops) + 1
+        n_legs <= max_legs ||
+            throw(ArgumentError(
+                "itinerary $i has $n_legs legs which exceeds max_legs=$max_legs; \
+                 bump max_legs or filter the itinerary list",
+            ))
+    end
+
+    n = length(itineraries)
+    max_cnxs = max_legs - 1
+
+    # ── Itinerary-level columns ──────────────────────────────────────────────
+    col_itinerary_id     = Vector{Int}(undef, n)
+    col_origin           = Vector{String}(undef, n)
+    col_destination      = Vector{String}(undef, n)
+    col_num_legs         = Vector{Int}(undef, n)
+    col_num_stops        = Vector{Int}(undef, n)
+    col_num_eqp_changes  = Vector{Int}(undef, n)
+    col_elapsed_time     = Vector{Int}(undef, n)
+    col_total_distance   = Vector{Float64}(undef, n)
+    col_market_distance  = Vector{Float64}(undef, n)
+    col_circuity         = Vector{Float64}(undef, n)
+    col_is_international = Vector{Bool}(undef, n)
+    col_has_interline    = Vector{Bool}(undef, n)
+    col_has_codeshare    = Vector{Bool}(undef, n)
+    col_has_through      = Vector{Bool}(undef, n)
+
+    # ── Per-leg columns (all nullable; absent leg → missing) ─────────────────
+    leg_cols = Dict{Symbol,Any}()
+    for k in 1:max_legs
+        leg_cols[Symbol("leg$(k)_carrier")]                  = Vector{Union{String,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_flight_number")]            = Vector{Union{Int,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_flight_id")]                = Vector{Union{String,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_record_serial")]            = Vector{Union{Int,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_segment_hash")]             = Vector{Union{UInt64,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_departure_station")]        = Vector{Union{String,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_arrival_station")]          = Vector{Union{String,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_passenger_departure_time")] = Vector{Union{Int,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_passenger_arrival_time")]   = Vector{Union{Int,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_aircraft_type")]            = Vector{Union{String,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_body_type")]                = Vector{Union{Char,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_distance")]                 = Vector{Union{Float64,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_is_through")]               = Vector{Union{Bool,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_is_nonstop")]               = Vector{Union{Bool,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_departure_terminal")]       = Vector{Union{String,Missing}}(missing, n)
+        leg_cols[Symbol("leg$(k)_arrival_terminal")]         = Vector{Union{String,Missing}}(missing, n)
+    end
+
+    # ── Per-connection columns (all nullable) ────────────────────────────────
+    cnx_cols = Dict{Symbol,Any}()
+    for k in 1:max_cnxs
+        cnx_cols[Symbol("cnx$(k)_cnx_time")]           = Vector{Union{Int,Missing}}(missing, n)
+        cnx_cols[Symbol("cnx$(k)_mct")]                = Vector{Union{Int,Missing}}(missing, n)
+        cnx_cols[Symbol("cnx$(k)_mct_matched_id")]     = Vector{Union{Int,Missing}}(missing, n)
+        cnx_cols[Symbol("cnx$(k)_mct_matched_fields")] = Vector{Union{UInt32,Missing}}(missing, n)
+    end
+
+    # ── Populate rows ────────────────────────────────────────────────────────
+    for (i, itn) in enumerate(itineraries)
+        legs, cnxs = _extract_legs_and_cnxs(itn)
+        n_legs = length(legs)
+        origin = n_legs > 0 ? String(legs[1].record.departure_station) : ""
+        destination = n_legs > 0 ? String(legs[end].record.arrival_station) : ""
+
+        col_itinerary_id[i]     = i
+        col_origin[i]           = origin
+        col_destination[i]      = destination
+        col_num_legs[i]         = n_legs
+        col_num_stops[i]        = Int(itn.num_stops)
+        col_num_eqp_changes[i]  = Int(itn.num_eqp_changes)
+        col_elapsed_time[i]     = Int(itn.elapsed_time)
+        col_total_distance[i]   = Float64(itn.total_distance)
+        col_market_distance[i]  = Float64(itn.market_distance)
+        col_circuity[i]         = Float64(itn.circuity)
+        col_is_international[i] = is_international(itn.status)
+        col_has_interline[i]    = is_interline(itn.status)
+        col_has_codeshare[i]    = is_codeshare(itn.status)
+        col_has_through[i]      = is_through(itn.status)
+
+        for (k, leg) in enumerate(legs)
+            rec = leg.record
+            leg_cols[Symbol("leg$(k)_carrier")][i]                  = String(rec.carrier)
+            leg_cols[Symbol("leg$(k)_flight_number")][i]            = Int(rec.flight_number)
+            leg_cols[Symbol("leg$(k)_flight_id")][i]                = flight_id(rec)
+            leg_cols[Symbol("leg$(k)_record_serial")][i]            = Int(rec.record_serial)
+            leg_cols[Symbol("leg$(k)_segment_hash")][i]             = rec.segment_hash
+            leg_cols[Symbol("leg$(k)_departure_station")][i]        = String(rec.departure_station)
+            leg_cols[Symbol("leg$(k)_arrival_station")][i]          = String(rec.arrival_station)
+            leg_cols[Symbol("leg$(k)_passenger_departure_time")][i] = Int(rec.passenger_departure_time)
+            leg_cols[Symbol("leg$(k)_passenger_arrival_time")][i]   = Int(rec.passenger_arrival_time)
+            leg_cols[Symbol("leg$(k)_aircraft_type")][i]            = String(rec.aircraft_type)
+            leg_cols[Symbol("leg$(k)_body_type")][i]                = rec.body_type
+            leg_cols[Symbol("leg$(k)_distance")][i]                 = Float64(leg.distance)
+            # `is_through` / `is_nonstop` live on the GraphConnection, not the
+            # leg itself. For nonstop itineraries the single self-connection
+            # carries both flags; otherwise assign per-leg based on the
+            # connection that the leg arrives via (cnxs[k-1]) or departs into
+            # (cnxs[k]).  Attribute `is_nonstop` only to the first leg to
+            # preserve the existing long-format convention.
+            leg_cols[Symbol("leg$(k)_is_through")][i]  = k <= length(cnxs) ? cnxs[k].is_through : false
+            leg_cols[Symbol("leg$(k)_is_nonstop")][i]  = isempty(cnxs) && k == 1
+            leg_cols[Symbol("leg$(k)_departure_terminal")][i] = String(rec.departure_terminal)
+            leg_cols[Symbol("leg$(k)_arrival_terminal")][i]   = String(rec.arrival_terminal)
+        end
+
+        for (k, cp) in enumerate(cnxs)
+            cnx_cols[Symbol("cnx$(k)_cnx_time")][i]           = Int(cp.cnx_time)
+            cnx_cols[Symbol("cnx$(k)_mct")][i]                = Int(cp.mct)
+            cnx_cols[Symbol("cnx$(k)_mct_matched_id")][i]     = Int(cp.mct_result.mct_id)
+            cnx_cols[Symbol("cnx$(k)_mct_matched_fields")][i] = cp.mct_result.matched_fields
+        end
+    end
+
+    # ── Assemble DataFrame with stable column order ──────────────────────────
+    df = DataFrame(
+        itinerary_id     = col_itinerary_id,
+        origin           = col_origin,
+        destination      = col_destination,
+        num_legs         = col_num_legs,
+        num_stops        = col_num_stops,
+        num_eqp_changes  = col_num_eqp_changes,
+        elapsed_time     = col_elapsed_time,
+        total_distance   = col_total_distance,
+        market_distance  = col_market_distance,
+        circuity         = col_circuity,
+        is_international = col_is_international,
+        has_interline    = col_has_interline,
+        has_codeshare    = col_has_codeshare,
+        has_through      = col_has_through,
+    )
+    # Append leg blocks in legN ordinal order, then cnx blocks.
+    for k in 1:max_legs
+        for field in (:carrier, :flight_number, :flight_id, :record_serial,
+                      :segment_hash, :departure_station, :arrival_station,
+                      :passenger_departure_time, :passenger_arrival_time,
+                      :aircraft_type, :body_type, :distance,
+                      :is_through, :is_nonstop,
+                      :departure_terminal, :arrival_terminal)
+            colname = Symbol("leg$(k)_$(field)")
+            df[!, colname] = leg_cols[colname]
+        end
+    end
+    for k in 1:max_cnxs
+        for field in (:cnx_time, :mct, :mct_matched_id, :mct_matched_fields)
+            colname = Symbol("cnx$(k)_$(field)")
+            df[!, colname] = cnx_cols[colname]
+        end
+    end
+    return df
 end
 
 # ── Delimited file export ────────────────────────────────────────────────────

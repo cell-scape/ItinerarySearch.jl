@@ -3,6 +3,7 @@ using ItinerarySearch
 using InlineStrings
 using Dates
 using JSON3
+using DataFrames
 
 @testset "Output Formats" begin
 
@@ -436,6 +437,207 @@ using JSON3
         @test rows[1].itinerary_id == 1
         @test rows[2].itinerary_id == 2
         @test rows[3].itinerary_id == 3
+    end
+
+    # ── MCT audit passthrough in long format ─────────────────────────────────
+
+    @testset "itinerary_long_format — MCT audit fields present" begin
+        rows = itinerary_long_format(Itinerary[_one_stop_itinerary()])
+        @test length(rows) == 2
+        # Both rows carry the audit columns; fixture uses default (zero) MCTResult
+        # so the values are the zero-sentinels.  The key assertion is that the
+        # columns exist and have the right types.
+        for r in rows
+            @test hasproperty(r, :mct_matched_id)
+            @test hasproperty(r, :mct_matched_fields)
+            @test r.mct_matched_id isa Int
+            @test r.mct_matched_fields isa UInt32
+        end
+        # Origin leg (seq=1) carries zero; connecting legs (seq>1) also zero
+        # here because the fixture doesn't stamp a match.
+        @test rows[1].mct_matched_id == 0
+        @test rows[1].mct_matched_fields == UInt32(0)
+    end
+
+    @testset "itinerary_long_format — MCT audit populated from MCTResult" begin
+        # Build a 1-stop itinerary with an MCTResult that has a non-trivial
+        # mct_id and matched_fields bitmask to verify population.
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        rec1 = _leg_rec(carrier="UA", flight_number=200,
+                        departure_station="JFK", arrival_station="ORD",
+                        record_serial=UInt32(10))
+        rec2 = _leg_rec(carrier="UA", flight_number=916,
+                        departure_station="ORD", arrival_station="LHR",
+                        record_serial=UInt32(20), arr_intl_dom='I')
+        leg1 = GraphLeg(rec1, jfk, ord)
+        leg2 = GraphLeg(rec2, ord, lhr)
+        cp1 = nonstop_connection(leg1, jfk)
+        mct_res = MCTResult(
+            time=Minutes(75),
+            queried_status=MCT_DI,
+            matched_status=MCT_DI,
+            suppressed=false,
+            source=SOURCE_EXCEPTION,
+            specificity=UInt32(42),
+            mct_id=Int32(4242),
+            matched_fields=UInt32(0b1010_1010),
+        )
+        cp2 = GraphConnection(
+            from_leg=leg1, to_leg=leg2, station=ord,
+            mct=Minutes(60), mxct=Minutes(240), cnx_time=Minutes(120),
+            mct_result=mct_res,
+        )
+        itn = Itinerary(connections=GraphConnection[cp1, cp2],
+                        num_stops=Int16(1), status=STATUS_INTERNATIONAL)
+        rows = itinerary_long_format(Itinerary[itn])
+        @test length(rows) == 2
+
+        # Connecting leg row (seq=2 → terminal to_leg at end of cp2) carries
+        # the audit fields from cp2.mct_result.  seq=1 origin leg stays at 0
+        # since the origin has no upstream connection.
+        @test rows[1].mct_matched_id == 0
+        @test rows[2].mct_matched_id == 4242
+        @test rows[2].mct_matched_fields == UInt32(0b1010_1010)
+    end
+
+    # ── DataFrame wrappers ───────────────────────────────────────────────────
+
+    @testset "itinerary_legs_df — DataFrame round-trip of long format" begin
+        df = itinerary_legs_df(Itinerary[_nonstop_itinerary(), _one_stop_itinerary()])
+        @test df isa DataFrame
+        # 1 row for nonstop + 2 rows for 1-stop
+        @test nrow(df) == 3
+        @test "itinerary_id" in names(df)
+        @test "leg_seq" in names(df)
+        @test "mct_matched_id" in names(df)
+        @test "mct_matched_fields" in names(df)
+        @test df.itinerary_id == [1, 2, 2]
+    end
+
+    @testset "itinerary_legs_df — empty input returns empty DataFrame" begin
+        df = itinerary_legs_df(Itinerary[])
+        @test df isa DataFrame
+        @test nrow(df) == 0
+    end
+
+    @testset "itinerary_summary_df — DataFrame round-trip of wide format" begin
+        df = itinerary_summary_df(Itinerary[_nonstop_itinerary(), _one_stop_itinerary()])
+        @test df isa DataFrame
+        @test nrow(df) == 2
+        @test "itinerary_id" in names(df)
+        @test "flights" in names(df)
+        @test "record_serials" in names(df)
+        @test df.itinerary_id == [1, 2]
+    end
+
+    @testset "itinerary_summary_df — empty input returns empty DataFrame" begin
+        df = itinerary_summary_df(Itinerary[])
+        @test df isa DataFrame
+        @test nrow(df) == 0
+    end
+
+    # ── Pivoted wide DataFrame ───────────────────────────────────────────────
+
+    @testset "itinerary_pivot_df — nonstop fills leg1, leaves leg2/leg3 missing" begin
+        df = itinerary_pivot_df(Itinerary[_nonstop_itinerary()])
+        @test df isa DataFrame
+        @test nrow(df) == 1
+        @test df.num_legs[1] == 1
+        @test df.num_stops[1] == 0
+        @test df.origin[1] == "JFK"
+        @test df.destination[1] == "LHR"
+        # leg1 populated
+        @test df.leg1_carrier[1] == "UA"
+        @test df.leg1_flight_number[1] == 100
+        @test df.leg1_departure_station[1] == "JFK"
+        @test df.leg1_arrival_station[1] == "LHR"
+        @test df.leg1_is_nonstop[1] == true
+        # leg2, leg3, cnx1, cnx2 all missing
+        @test ismissing(df.leg2_carrier[1])
+        @test ismissing(df.leg3_carrier[1])
+        @test ismissing(df.cnx1_cnx_time[1])
+        @test ismissing(df.cnx2_cnx_time[1])
+    end
+
+    @testset "itinerary_pivot_df — 1-stop fills leg1+leg2+cnx1, leg3/cnx2 missing" begin
+        df = itinerary_pivot_df(Itinerary[_one_stop_itinerary()])
+        @test nrow(df) == 1
+        @test df.num_legs[1] == 2
+        @test df.num_stops[1] == 1
+        @test df.origin[1] == "JFK"
+        @test df.destination[1] == "LHR"
+        @test df.leg1_carrier[1] == "UA"
+        @test df.leg1_flight_number[1] == 200
+        @test df.leg1_departure_station[1] == "JFK"
+        @test df.leg1_arrival_station[1] == "ORD"
+        @test df.leg2_carrier[1] == "UA"
+        @test df.leg2_flight_number[1] == 916
+        @test df.leg2_departure_station[1] == "ORD"
+        @test df.leg2_arrival_station[1] == "LHR"
+        @test df.cnx1_cnx_time[1] == 120
+        @test df.cnx1_mct[1] == 60
+        # leg3 and cnx2 missing
+        @test ismissing(df.leg3_carrier[1])
+        @test ismissing(df.cnx2_cnx_time[1])
+    end
+
+    @testset "itinerary_pivot_df — max_legs parameter controls schema width" begin
+        df = itinerary_pivot_df(Itinerary[_nonstop_itinerary()]; max_legs=2)
+        @test "leg1_carrier" in names(df)
+        @test "leg2_carrier" in names(df)
+        @test !("leg3_carrier" in names(df))
+        @test "cnx1_cnx_time" in names(df)
+        @test !("cnx2_cnx_time" in names(df))
+    end
+
+    @testset "itinerary_pivot_df — errors when itinerary exceeds max_legs" begin
+        @test_throws ArgumentError itinerary_pivot_df(
+            Itinerary[_one_stop_itinerary()]; max_legs=1,
+        )
+    end
+
+    @testset "itinerary_pivot_df — errors on max_legs < 1" begin
+        @test_throws ArgumentError itinerary_pivot_df(Itinerary[]; max_legs=0)
+    end
+
+    @testset "itinerary_pivot_df — empty input returns empty DataFrame" begin
+        df = itinerary_pivot_df(Itinerary[])
+        @test df isa DataFrame
+        @test nrow(df) == 0
+        @test "leg1_carrier" in names(df)  # schema present even when empty
+    end
+
+    @testset "itinerary_pivot_df — mct_matched_id populated on cnx columns" begin
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        rec1 = _leg_rec(carrier="UA", flight_number=200,
+                        departure_station="JFK", arrival_station="ORD",
+                        record_serial=UInt32(10))
+        rec2 = _leg_rec(carrier="UA", flight_number=916,
+                        departure_station="ORD", arrival_station="LHR",
+                        record_serial=UInt32(20), arr_intl_dom='I')
+        leg1 = GraphLeg(rec1, jfk, ord)
+        leg2 = GraphLeg(rec2, ord, lhr)
+        cp1 = nonstop_connection(leg1, jfk)
+        mct_res = MCTResult(
+            time=Minutes(75),
+            queried_status=MCT_DI, matched_status=MCT_DI, suppressed=false,
+            source=SOURCE_EXCEPTION, specificity=UInt32(42),
+            mct_id=Int32(7777), matched_fields=UInt32(0xFF),
+        )
+        cp2 = GraphConnection(
+            from_leg=leg1, to_leg=leg2, station=ord,
+            mct=Minutes(60), mxct=Minutes(240), cnx_time=Minutes(120),
+            mct_result=mct_res,
+        )
+        itn = Itinerary(connections=GraphConnection[cp1, cp2],
+                        num_stops=Int16(1), status=STATUS_INTERNATIONAL)
+        df = itinerary_pivot_df(Itinerary[itn])
+        @test df.cnx1_mct_matched_id[1] == 7777
+        @test df.cnx1_mct_matched_fields[1] == UInt32(0xFF)
     end
 
     # ── Passthrough helpers ────────────────────────────────────────────────────

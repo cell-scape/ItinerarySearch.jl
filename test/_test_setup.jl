@@ -104,6 +104,5 @@ import ItinerarySearch:
     build_connections_at_station!, build_connections!,
     # Search internals
     score_trip,
-    # Output internals
-    itinerary_long_format, itinerary_wide_format,
+    # Output internals (now exported; kept here for historical test imports)
     resolve_leg, resolve_segment, resolve_legs

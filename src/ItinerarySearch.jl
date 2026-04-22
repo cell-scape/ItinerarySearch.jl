@@ -103,6 +103,8 @@ export RuntimeContext, SearchConstraints, build_itn_rules
 # Output
 export write_legs, write_itineraries, write_trips
 export itinerary_legs, itinerary_legs_multi, itinerary_legs_json
+export itinerary_long_format, itinerary_wide_format
+export itinerary_legs_df, itinerary_summary_df, itinerary_pivot_df
 
 # MCT audit
 export MCTAuditConfig, MCTTrace, MCTCandidateTrace, EMPTY_MCT_RESULT
