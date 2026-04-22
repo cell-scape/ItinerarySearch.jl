@@ -487,3 +487,135 @@ A1V22C,7,UA,972,N,UA,972,ORD,BRU,2026-06-16T18:00:00.0,2026-06-17T09:00:00.0,202
 
     rm(tmpfile)
 end
+
+@testset "MCT Inspector: itinerary input" begin
+    # Build a 2-stop itinerary so we can verify both connections appear in
+    # the inspector row stream.  Use the same fixture-helper pattern as
+    # test_formats.jl but inline here to avoid cross-test fixture coupling.
+    using ItinerarySearch: _itinerary_inspector_rows, GraphLeg, GraphStation,
+                          GraphConnection, nonstop_connection,
+                          MCT_DD, MCT_DI, MCT_ID, MCT_II,
+                          SOURCE_EXCEPTION, SOURCE_STATION_STANDARD
+
+    function _stn(code, country, region; state="")
+        StationRecord(code=StationCode(code),
+            country=InlineString3(country), state=InlineString3(state),
+            city=InlineString3(""), region=InlineString3(region),
+            latitude=0.0, longitude=0.0, utc_offset=Int16(0))
+    end
+
+    function _gleg(rec, org_stn, dst_stn)
+        GraphLeg(rec, org_stn, dst_stn)
+    end
+
+    function _leg_record(carrier, fno, op_carrier, op_fno, org, dst;
+                          arr_intl_dom='D', dep_intl_dom='D', record_serial=UInt32(1))
+        LegRecord(
+            carrier=AirlineCode(carrier), flight_number=Int16(fno),
+            operational_suffix=' ', itinerary_var_id=UInt8(1),
+            itinerary_var_overflow=' ',
+            leg_sequence_number=UInt8(1), service_type='J',
+            departure_station=StationCode(org), arrival_station=StationCode(dst),
+            passenger_departure_time=Int16(540),
+            passenger_arrival_time=Int16(660),
+            aircraft_departure_time=Int16(540),
+            aircraft_arrival_time=Int16(660),
+            departure_utc_offset=Int16(0), arrival_utc_offset=Int16(0),
+            departure_date_variation=Int8(0), arrival_date_variation=Int8(0),
+            aircraft_type=InlineString7("738"), body_type='N',
+            departure_terminal=InlineString3("1"), arrival_terminal=InlineString3("2"),
+            aircraft_owner=AirlineCode(carrier),
+            operating_date=UInt32(20260615), day_of_week=UInt8(1),
+            effective_date=UInt32(20260101), discontinue_date=UInt32(20261231),
+            frequency=UInt8(0x7f),
+            dep_intl_dom=dep_intl_dom, arr_intl_dom=arr_intl_dom,
+            traffic_restriction_for_leg=InlineString15(""),
+            traffic_restriction_overflow=' ',
+            record_serial=record_serial, row_number=UInt64(record_serial),
+            segment_hash=UInt64(0), distance=Distance(800.0f0),
+            operating_carrier=AirlineCode(op_carrier),
+            operating_flight_number=Int16(op_fno),
+            dei_10="", wet_lease=false, dei_127="",
+            prbd=InlineString31(""),
+        )
+    end
+
+    @testset "2-stop produces two inspector rows in sequence" begin
+        ord = GraphStation(_stn("ORD", "US", "NAM"; state="IL"))
+        dfw = GraphStation(_stn("DFW", "US", "NAM"; state="TX"))
+        lax = GraphStation(_stn("LAX", "US", "NAM"; state="CA"))
+        # leg 1: ORD→DFW UA host, leg 2: DFW→LAX UA codeshare on AA
+        leg1 = _gleg(_leg_record("UA", 100, "", 0, "ORD", "DFW";
+                                 record_serial=UInt32(1)), ord, dfw)
+        leg2 = _gleg(_leg_record("UA", 8000, "AA", 200, "DFW", "LAX";
+                                 record_serial=UInt32(2)), dfw, lax)
+        leg3 = _gleg(_leg_record("UA", 300, "", 0, "LAX", "LAX";
+                                 record_serial=UInt32(3)), lax, lax)
+        # Mock MCTResult with exception source / specific mct_id
+        mct_res = MCTResult(time=Minutes(45), queried_status=MCT_DD,
+                            matched_status=MCT_DD, suppressed=false,
+                            source=SOURCE_EXCEPTION, specificity=UInt32(7),
+                            mct_id=Int32(12345),
+                            matched_fields=UInt32(0))
+        cp1 = nonstop_connection(leg1, ord)
+        cp2 = GraphConnection(from_leg=leg1, to_leg=leg2, station=dfw,
+                              mct=Minutes(45), mxct=Minutes(240),
+                              cnx_time=Minutes(60), mct_result=mct_res)
+        cp3 = GraphConnection(from_leg=leg2, to_leg=leg3, station=lax,
+                              mct=Minutes(60), mxct=Minutes(240),
+                              cnx_time=Minutes(90), mct_result=mct_res)
+        itn = Itinerary(connections=GraphConnection[cp1, cp2, cp3],
+                        num_stops=Int16(2))
+        rows = _itinerary_inspector_rows(Itinerary[itn])
+        @test length(rows) == 2
+
+        # First inspector row corresponds to cp2 (the connection at DFW).
+        r1 = rows[1]
+        @test r1.rcrd_loc == "ITN1_CNX1"
+        @test r1.arr_carrier == AirlineCode("UA")
+        @test r1.dep_carrier == AirlineCode("UA")
+        @test r1.arr_station == StationCode("DFW")
+        @test r1.dep_station == StationCode("DFW")
+        @test r1.prv_stn == StationCode("ORD")
+        @test r1.nxt_stn == StationCode("LAX")
+        @test r1.cnx_time == Minutes(60)
+        @test r1.their_mct == Minutes(45)        # search-time MCT result
+        @test r1.their_mctrec == 12345           # search-time matched mct_id
+        # leg 2 is a codeshare (UA 8000 op AA 200) → dep_is_codeshare = true
+        @test r1.dep_is_codeshare == true
+        @test r1.dep_op_carrier == AirlineCode("AA")
+        @test r1.dep_op_flt_no == FlightNumber(200)
+        # leg 1 is a host (UA 100 op nothing → fold to UA 100) → not codeshare
+        @test r1.arr_is_codeshare == false
+        @test r1.arr_op_carrier == AirlineCode("UA")
+        @test r1.arr_op_flt_no == FlightNumber(100)
+
+        # Second inspector row corresponds to cp3 (LAX).
+        r2 = rows[2]
+        @test r2.rcrd_loc == "ITN1_CNX2"
+        @test r2.arr_station == StationCode("LAX")
+        @test r2.cnx_time == Minutes(90)
+    end
+
+    @testset "nonstop itinerary contributes no inspector rows" begin
+        ord = GraphStation(_stn("ORD", "US", "NAM"))
+        lhr = GraphStation(_stn("LHR", "GB", "EUR"))
+        leg = _gleg(_leg_record("UA", 100, "", 0, "ORD", "LHR";
+                                arr_intl_dom='I'), ord, lhr)
+        cp = nonstop_connection(leg, ord)
+        itn = Itinerary(connections=GraphConnection[cp], num_stops=Int16(0))
+        rows = _itinerary_inspector_rows(Itinerary[itn])
+        # Nonstops have only the self-cp, no real connection → no rows.
+        @test isempty(rows)
+    end
+
+    @testset "intl/dom flags map to MCTStatus" begin
+        using ItinerarySearch: _intl_dom_to_mct_status
+        @test _intl_dom_to_mct_status('D', 'D') == MCT_DD
+        @test _intl_dom_to_mct_status('D', 'I') == MCT_DI
+        @test _intl_dom_to_mct_status('I', 'D') == MCT_ID
+        @test _intl_dom_to_mct_status('I', 'I') == MCT_II
+        # Unknown chars fall back to D.
+        @test _intl_dom_to_mct_status('X', 'X') == MCT_DD
+    end
+end
