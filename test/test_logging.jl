@@ -184,7 +184,12 @@ using LoggingExtras
             lines = readlines(path)
             @test length(lines) >= 5
 
-            for line in lines
+            # Iterate a FIXED prefix (not `lines`) so the test count is stable.
+            # In serial, this testset's JSON sink can pick up stray log entries
+            # from earlier testsets' background tasks, inflating `length(lines)`
+            # beyond what build_graph! itself emitted — causing the test count
+            # to drift between serial and isolated (parallel-worker) runs.
+            for line in first(lines, 5)
                 parsed = JSON3.read(line)
                 @test haskey(parsed, :timestamp)
                 @test haskey(parsed, :severity)
