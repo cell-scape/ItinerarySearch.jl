@@ -70,6 +70,29 @@ function _validate_circuity_tiers(tiers::Vector{CircuityTier})
 end
 
 """
+    `circuity_factor_at(tiers::Vector{CircuityTier}, distance::Float64)::Float64`
+---
+
+# Description
+- Return the circuity factor for `distance` from `tiers`
+- Tiers must be pre-validated (ascending `max_distance`)
+- Falls back to the last tier's factor when `distance` exceeds every threshold
+
+# Arguments
+1. `tiers::Vector{CircuityTier}`: tier list (pre-validated, ascending)
+2. `distance::Float64`: route or leg distance in miles
+
+# Returns
+- `::Float64`: the applicable circuity factor
+"""
+@inline function circuity_factor_at(tiers::Vector{CircuityTier}, distance::Float64)::Float64
+    for t in tiers
+        distance <= t.max_distance && return t.factor
+    end
+    return last(tiers).factor
+end
+
+"""
     struct ParameterSet
 ---
 
@@ -333,6 +356,72 @@ function SearchConstraints(d::AbstractDict)::SearchConstraints
         ]
     end
     return SearchConstraints(; kw...)
+end
+
+# ── Circuity lookup helpers ───────────────────────────────────────────────────
+
+"""
+    `_effective_circuity_factor(p::ParameterSet, distance::Float64)::Float64`
+---
+
+# Description
+- The circuity factor to use in the rule check: `min(tier_factor, p.max_circuity)`
+- `min` with `Inf` is a no-op, so the default-case overhead is a single comparison
+- Combines the tiered lookup from `p.circuity_tiers` with the scalar ceiling
+  from `p.max_circuity`
+
+# Arguments
+1. `p::ParameterSet`: the effective parameter set for the market
+2. `distance::Float64`: route or leg distance in miles
+
+# Returns
+- `::Float64`: the effective circuity factor (tier value capped by scalar ceiling)
+"""
+@inline function _effective_circuity_factor(p::ParameterSet, distance::Float64)::Float64
+    tier_factor = circuity_factor_at(p.circuity_tiers, distance)
+    return min(tier_factor, p.max_circuity)
+end
+
+"""
+    `function _resolve_circuity_params(constraints::SearchConstraints, origin::StationCode, dest::StationCode)::ParameterSet`
+---
+
+# Description
+- Market-only override resolver for circuity checks
+- Iterates `constraints.overrides` (pre-sorted by descending specificity) and
+  returns the first override whose origin and destination wildcards/equality match
+- **Carrier is ignored** — circuity is a geographic property and should not vary
+  by marketing carrier
+- Returns `constraints.defaults` when no override matches
+
+# Arguments
+1. `constraints::SearchConstraints`: the global constraints holder
+2. `origin::StationCode`: origin airport code of the query
+3. `dest::StationCode`: destination airport code of the query
+
+# Returns
+- `::ParameterSet`: the effective parameter set for circuity evaluation
+
+# Examples
+```julia
+julia> sc = SearchConstraints();
+julia> p = _resolve_circuity_params(sc, StationCode("ORD"), StationCode("LHR"));
+julia> p === sc.defaults
+true
+```
+"""
+function _resolve_circuity_params(
+    constraints::SearchConstraints,
+    origin::StationCode,
+    dest::StationCode,
+)::ParameterSet
+    isempty(constraints.overrides) && return constraints.defaults
+    for override in constraints.overrides
+        (override.origin == WILDCARD_STATION || override.origin == origin) || continue
+        (override.destination == WILDCARD_STATION || override.destination == dest) || continue
+        return override.params
+    end
+    return constraints.defaults
 end
 
 # ── Override matching ─────────────────────────────────────────────────────────

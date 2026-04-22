@@ -1,6 +1,6 @@
 using Test
 using ItinerarySearch
-using ItinerarySearch: _validate_circuity_tiers
+using ItinerarySearch: _validate_circuity_tiers, circuity_factor_at, _effective_circuity_factor, _resolve_circuity_params
 
 @testset "Circuity Tiers" begin
     @testset "CircuityTier struct" begin
@@ -31,5 +31,68 @@ using ItinerarySearch: _validate_circuity_tiers
         @test_throws ArgumentError _validate_circuity_tiers(
             [CircuityTier(500.0, 2.0), CircuityTier(500.0, 1.5)]
         )
+    end
+
+    @testset "circuity_factor_at" begin
+        d = DEFAULT_CIRCUITY_TIERS
+        @test circuity_factor_at(d,    0.0) == 2.4
+        @test circuity_factor_at(d,  250.0) == 2.4  # inclusive upper bound
+        @test circuity_factor_at(d,  251.0) == 1.9
+        @test circuity_factor_at(d,  800.0) == 1.9
+        @test circuity_factor_at(d,  801.0) == 1.5
+        @test circuity_factor_at(d, 2000.0) == 1.5
+        @test circuity_factor_at(d, 2001.0) == 1.3
+        @test circuity_factor_at(d, 99999.0) == 1.3
+        # Non-Inf top tier: fall back to last factor
+        finite = [CircuityTier(1000.0, 2.0), CircuityTier(99999.0, 1.4)]
+        @test circuity_factor_at(finite, 1_000_000.0) == 1.4  # exceeded all, use last
+    end
+
+    @testset "_effective_circuity_factor" begin
+        # Inf ceiling: tier factor wins
+        p_inf = ParameterSet(max_circuity = Inf)  # tiers default to DEFAULT_CIRCUITY_TIERS
+        @test _effective_circuity_factor(p_inf,  100.0) == 2.4
+        @test _effective_circuity_factor(p_inf, 5000.0) == 1.3
+
+        # Ceiling below tier factor: ceiling wins
+        p_cap = ParameterSet(max_circuity = 2.0)
+        @test _effective_circuity_factor(p_cap,  100.0) == 2.0  # tier 2.4 → clamped
+        @test _effective_circuity_factor(p_cap,  500.0) == 1.9  # tier below ceiling
+        @test _effective_circuity_factor(p_cap, 5000.0) == 1.3
+    end
+
+    @testset "_resolve_circuity_params" begin
+        sc_empty = SearchConstraints()
+        p = _resolve_circuity_params(sc_empty, StationCode("ORD"), StationCode("LHR"))
+        @test p === sc_empty.defaults
+
+        # With an O-D match override
+        ovr = MarketOverride(
+            origin = StationCode("ORD"), destination = StationCode("LHR"),
+            carrier = WILDCARD_AIRLINE,
+            params = ParameterSet(
+                circuity_tiers = [CircuityTier(Inf, 1.6)],
+            ),
+            specificity = UInt32(1000),
+        )
+        sc = SearchConstraints(overrides = [ovr])
+        p1 = _resolve_circuity_params(sc, StationCode("ORD"), StationCode("LHR"))
+        @test p1.circuity_tiers == [CircuityTier(Inf, 1.6)]
+
+        # Different O-D falls back to defaults
+        p2 = _resolve_circuity_params(sc, StationCode("DEN"), StationCode("SFO"))
+        @test p2 === sc.defaults
+
+        # Carrier is deliberately ignored — a carrier-specific override still
+        # matches on O-D only for circuity.
+        ovr_carrier = MarketOverride(
+            origin = StationCode("ATL"), destination = StationCode("YYZ"),
+            carrier = AirlineCode("UA"),    # specific carrier
+            params = ParameterSet(circuity_tiers = [CircuityTier(Inf, 2.7)]),
+            specificity = UInt32(1000),
+        )
+        sc_c = SearchConstraints(overrides = [ovr_carrier])
+        p3 = _resolve_circuity_params(sc_c, StationCode("ATL"), StationCode("YYZ"))
+        @test p3.circuity_tiers == [CircuityTier(Inf, 2.7)]  # matches despite carrier mismatch
     end
 end
