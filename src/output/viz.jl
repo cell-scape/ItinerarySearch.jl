@@ -1085,18 +1085,33 @@ function _itinref_entry_rich(itn::Itinerary, idx::Int; date::String="")
     n_legs = length(legs)
 
     # Per-leg dicts (all the existing fields plus timestamps + TRC).
+    # Operating-carrier / -flight-number normalization: SSIM stores them as
+    # empty/0 on host flights (operating == marketing), populated only via
+    # DEI 50 supplements when a different carrier+flight is the marketing
+    # alias of the same physical flight.  We fold the missing case into the
+    # marketing values here so downstream consumers (JS template, callers
+    # of the rich entry) don't need to know about the SSIM convention.
     leg_dicts = Dict{String,Any}[]
     for (k, leg) in enumerate(legs)
         rec = leg.record
         trc = _leg_trc_char(rec)
+        mkt_carrier = strip(String(rec.carrier))
+        mkt_flight  = Int(rec.flight_number)
+        op_carrier_raw = strip(String(rec.operating_carrier))
+        op_flight_raw  = Int(rec.operating_flight_number)
+        op_carrier = isempty(op_carrier_raw) ? mkt_carrier : op_carrier_raw
+        op_flight  = op_flight_raw == 0      ? mkt_flight  : op_flight_raw
+        is_codeshare_leg = (mkt_carrier != op_carrier) || (mkt_flight != op_flight)
         push!(leg_dicts, Dict{String,Any}(
             "leg_pos"                 => k,
-            "carrier"                 => strip(String(rec.carrier)),
-            "flight_number"           => Int(rec.flight_number),
+            "carrier"                 => mkt_carrier,
+            "flight_number"           => mkt_flight,
             "departure_station"       => strip(String(rec.departure_station)),
             "arrival_station"         => strip(String(rec.arrival_station)),
-            "operating_carrier"       => strip(String(rec.operating_carrier)),
-            "operating_flight_number" => Int(rec.operating_flight_number),
+            "operating_carrier"       => op_carrier,
+            "operating_flight_number" => op_flight,
+            "is_codeshare_leg"        => is_codeshare_leg,
+            "dei_10"                  => strip(String(rec.dei_10)),
             "row_number"              => Int(rec.row_number),
             "record_serial"           => Int(rec.record_serial),
             "dep_dt"                  => string(leg_departure_dt(leg)) * "Z",
@@ -1348,12 +1363,16 @@ function _write_itinref_html(path::String, json_data::String, title::String)
     "        if (expanded.has(key) && d.legs) {\n",
     "          d.legs.forEach((leg, li) => {\n",
     "            const lr = appendDetailRow('leg-detail', tbody);\n",
-    "            const isCS = leg.carrier!==leg.operating_carrier||leg.flight_number!==leg.operating_flight_number;\n",
+    "            // is_codeshare_leg is precomputed server-side using the SSIM\n",
+    "            // convention (empty operating_carrier or operating_flight_number=0\n",
+    "            // means host flight, where marketing IS operating).\n",
+    "            const isCS = !!leg.is_codeshare_leg;\n",
     "            addCell(lr, 'L'+(li+1));\n",
     "            addCell(lr, leg.departure_station);\n",
     "            addCell(lr, leg.arrival_station);\n",
     "            const fltCell = addCell(lr, leg.carrier+' '+leg.flight_number);\n",
     "            if (isCS) appendBadgeText(fltCell, '(op '+leg.operating_carrier+' '+leg.operating_flight_number+')', '#8b949e');\n",
+    "            if (leg.dei_10) appendBadgeText(fltCell, 'also: '+leg.dei_10, '#79c0ff');\n",
     "            if (leg.trc) appendBadgeText(fltCell, 'TRC '+leg.trc, '#ff7b8b', 'trc-badge');\n",
     "            if (leg.dep_dt) {\n",
     "              const tsCell = addCell(lr, fmtDt(leg.dep_dt)+' \\u2192 '+fmtDt(leg.arr_dt), 'ts');\n",

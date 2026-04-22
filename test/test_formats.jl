@@ -692,6 +692,74 @@ using DataFrames
         @test length(entry["cnxs"]) == 0
     end
 
+    @testset "_itinref_entry_rich host flight: operating fields fall back to marketing" begin
+        # SSIM convention: host flights leave operating_carrier empty and
+        # operating_flight_number=0.  The rich entry should normalize these
+        # to the marketing values and set is_codeshare_leg=false so the
+        # JS template doesn't render a misleading "(op  0)".
+        using ItinerarySearch: _itinref_entry_rich
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        rec = _leg_rec(
+            carrier="UA", flight_number=100,
+            departure_station="JFK", arrival_station="LHR",
+            # _leg_rec defaults: operating_carrier="" via LegRecord struct
+            # default, operating_flight_number=0.
+        )
+        leg = GraphLeg(rec, jfk, lhr)
+        cp = nonstop_connection(leg, jfk)
+        itn = Itinerary(connections=GraphConnection[cp])
+        entry = _itinref_entry_rich(itn, 1)
+        leg_dict = entry["legs"][1]
+        @test leg_dict["carrier"] == "UA"
+        @test leg_dict["flight_number"] == 100
+        @test leg_dict["operating_carrier"] == "UA"        # filled in
+        @test leg_dict["operating_flight_number"] == 100   # filled in
+        @test leg_dict["is_codeshare_leg"] == false
+    end
+
+    @testset "_itinref_entry_rich codeshare flight: keeps distinct operating fields" begin
+        using ItinerarySearch: _itinref_entry_rich
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        # Build a record with operating fields set distinctly (codeshare).
+        # _leg_rec doesn't expose them as kwargs, so construct LegRecord directly.
+        rec = LegRecord(
+            carrier=AirlineCode("UA"), flight_number=Int16(8835),
+            operational_suffix=' ', itinerary_var_id=UInt8(1), itinerary_var_overflow=' ',
+            leg_sequence_number=UInt8(1), service_type='J',
+            departure_station=StationCode("JFK"), arrival_station=StationCode("LHR"),
+            passenger_departure_time=Int16(540), passenger_arrival_time=Int16(1320),
+            aircraft_departure_time=Int16(540), aircraft_arrival_time=Int16(1320),
+            departure_utc_offset=Int16(0), arrival_utc_offset=Int16(0),
+            departure_date_variation=Int8(0), arrival_date_variation=Int8(0),
+            aircraft_type=InlineString7("777"), body_type='W',
+            departure_terminal=InlineString3("1"), arrival_terminal=InlineString3("1"),
+            aircraft_owner=AirlineCode("LH"),
+            operating_date=UInt32(20260615), day_of_week=UInt8(1),
+            effective_date=UInt32(20260101), discontinue_date=UInt32(20261231),
+            frequency=UInt8(0x7f), dep_intl_dom='I', arr_intl_dom='I',
+            traffic_restriction_for_leg=InlineString15(""),
+            traffic_restriction_overflow=' ',
+            record_serial=UInt32(42), row_number=UInt64(1), segment_hash=UInt64(0),
+            distance=Distance(3451.0f0),
+            operating_carrier=AirlineCode("LH"), operating_flight_number=Int16(431),
+            dei_10="UA 8835 /AC 9694",  # also marketed as
+            wet_lease=false, dei_127="", prbd=InlineString31(""),
+        )
+        leg = GraphLeg(rec, jfk, lhr)
+        cp = nonstop_connection(leg, jfk)
+        itn = Itinerary(connections=GraphConnection[cp])
+        entry = _itinref_entry_rich(itn, 1)
+        leg_dict = entry["legs"][1]
+        @test leg_dict["carrier"] == "UA"
+        @test leg_dict["flight_number"] == 8835
+        @test leg_dict["operating_carrier"] == "LH"
+        @test leg_dict["operating_flight_number"] == 431
+        @test leg_dict["is_codeshare_leg"] == true
+        @test leg_dict["dei_10"] == "UA 8835 /AC 9694"
+    end
+
     # ── DateTime helpers ──────────────────────────────────────────────────────
 
     @testset "leg_departure_dt — UTC absolute time" begin
