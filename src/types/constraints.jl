@@ -194,14 +194,8 @@ end
 # Accept AbstractDict inputs with Symbol or String keys.  Nested dict values
 # for struct-typed fields (`defaults`, `params`, `overrides` elements) are
 # constructed recursively.  Unknown keys throw ArgumentError.
-
-function _normalize_dict_keys_ct(d::AbstractDict)::Dict{Symbol,Any}
-    out = Dict{Symbol,Any}()
-    for (k, v) in d
-        out[k isa Symbol ? k : Symbol(String(k))] = v
-    end
-    return out
-end
+# Key normalization and unknown-key validation live in
+# `src/types/dict_ctor_helpers.jl` (loaded earlier).
 
 """
     `ParameterSet(d::AbstractDict)::ParameterSet`
@@ -212,13 +206,8 @@ accept any iterable (e.g. `Vector{String}`) and are wrapped with the
 appropriate element type.  Unknown keys throw `ArgumentError`.
 """
 function ParameterSet(d::AbstractDict)::ParameterSet
-    kw = _normalize_dict_keys_ct(d)
-    valid = fieldnames(ParameterSet)
-    for k in keys(kw)
-        k in valid || throw(ArgumentError(
-            "unknown ParameterSet field: `$k`. Valid fields: $(valid)",
-        ))
-    end
+    kw = _normalize_dict_keys(d)
+    _validate_known_fields(kw, ParameterSet)
     return ParameterSet(; kw...)
 end
 
@@ -231,13 +220,8 @@ accept `String` values (wrapped via `StationCode`/`AirlineCode`); nested
 keys throw `ArgumentError`.
 """
 function MarketOverride(d::AbstractDict)::MarketOverride
-    kw = _normalize_dict_keys_ct(d)
-    valid = fieldnames(MarketOverride)
-    for k in keys(kw)
-        k in valid || throw(ArgumentError(
-            "unknown MarketOverride field: `$k`. Valid fields: $(valid)",
-        ))
-    end
+    kw = _normalize_dict_keys(d)
+    _validate_known_fields(kw, MarketOverride)
     # String → wrapped inline string types
     if haskey(kw, :origin) && kw[:origin] isa AbstractString
         kw[:origin] = StationCode(kw[:origin])
@@ -269,13 +253,8 @@ constructs `defaults::ParameterSet` from a nested dict and each element of
 not already a `MarketOverride`).  Unknown keys throw `ArgumentError`.
 """
 function SearchConstraints(d::AbstractDict)::SearchConstraints
-    kw = _normalize_dict_keys_ct(d)
-    valid = fieldnames(SearchConstraints)
-    for k in keys(kw)
-        k in valid || throw(ArgumentError(
-            "unknown SearchConstraints field: `$k`. Valid fields: $(valid)",
-        ))
-    end
+    kw = _normalize_dict_keys(d)
+    _validate_known_fields(kw, SearchConstraints)
     if haskey(kw, :defaults) && kw[:defaults] isa AbstractDict
         kw[:defaults] = ParameterSet(kw[:defaults])
     end

@@ -142,46 +142,15 @@ see also `docs/src/getting-started.md`. Fields fall into five groups:
     mct_audit::MCTAuditConfig = MCTAuditConfig()    # MCT audit logging configuration
 end
 
-# ── Dict constructors ────────────────────────────────────────────────────────
+# ── Dict constructor ─────────────────────────────────────────────────────────
 #
-# All @kwdef structs in the public API gain an `AbstractDict` constructor so
-# callers can build them from untyped config sources (YAML, TOML, user-built
-# Dicts, deserialized JSON).  Keys may be `Symbol` or `AbstractString`; values
-# may be the canonical Julia type or a string form that parses to it (enum
-# fields accept e.g. `"intl"` for `SCOPE_INTL`).  Unknown keys throw
-# `ArgumentError` — matching `@kwdef` kwarg semantics, loud rather than silent.
-
-"""
-    `_normalize_dict_keys(d::AbstractDict)::Dict{Symbol,Any}`
-
-Return a new dict with `Symbol` keys.  `AbstractString` keys are converted via
-`Symbol`; `Symbol` keys are copied as-is.  Used by dict-form constructors to
-accept both JSON-loaded (Symbol) and YAML/TOML-loaded (String) shapes.
-"""
-function _normalize_dict_keys(d::AbstractDict)::Dict{Symbol,Any}
-    out = Dict{Symbol,Any}()
-    for (k, v) in d
-        sym_key = k isa Symbol ? k : Symbol(String(k))
-        out[sym_key] = v
-    end
-    return out
-end
-
-"""
-    `_validate_known_fields(kw::Dict{Symbol,Any}, ::Type{T})` where T
-
-Throw `ArgumentError` if any key in `kw` is not a field of `T`.  Matches the
-error behaviour of the `@kwdef` kwarg constructor — unknown fields fail loud
-rather than silently.
-"""
-function _validate_known_fields(kw::Dict{Symbol,Any}, ::Type{T}) where {T}
-    valid = fieldnames(T)
-    for k in keys(kw)
-        k in valid || throw(ArgumentError(
-            "unknown $(nameof(T)) field: `$k`. Valid fields: $(valid)",
-        ))
-    end
-end
+# `SearchConfig(::AbstractDict)` lets callers build a config from an untyped
+# source (YAML, TOML, user-built Dict, deserialized JSON).  Keys may be
+# `Symbol` or `AbstractString`; enum-valued fields accept their string form
+# (e.g. `"intl"` for `SCOPE_INTL`).  Unknown keys throw `ArgumentError`.
+#
+# Shared key-normalization and field-validation helpers live in
+# `src/types/dict_ctor_helpers.jl`.
 
 """
     `SearchConfig(d::AbstractDict)::SearchConfig`

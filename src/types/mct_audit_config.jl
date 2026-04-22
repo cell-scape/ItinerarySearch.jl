@@ -33,16 +33,8 @@ Construct an `MCTAuditConfig` from an `AbstractDict`. Accepts `String` or
 `ArgumentError`.
 """
 function MCTAuditConfig(d::AbstractDict)::MCTAuditConfig
-    kw = Dict{Symbol,Any}()
-    for (k, v) in d
-        kw[k isa Symbol ? k : Symbol(String(k))] = v
-    end
-    valid = fieldnames(MCTAuditConfig)
-    for k in keys(kw)
-        k in valid || throw(ArgumentError(
-            "unknown MCTAuditConfig field: `$k`. Valid fields: $(valid)",
-        ))
-    end
+    kw = _normalize_dict_keys(d)
+    _validate_known_fields(kw, MCTAuditConfig)
     if haskey(kw, :detail) && kw[:detail] isa AbstractString
         kw[:detail] = Symbol(kw[:detail])
     end
