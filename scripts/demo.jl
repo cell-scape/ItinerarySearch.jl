@@ -39,6 +39,44 @@ else
     )
 end
 constraints = config_path !== nothing ? load_constraints(config_path) : SearchConstraints()
+
+# ── Circuity: apply PM-format CSV defaults + market overrides when available ──
+# Demonstrates the full circuity-tiers configuration path:
+#   1. distance-tiered defaults from `cirOvrdDflt.dat` (HIGH,CIRCUITY)
+#   2. market-level overrides from `cirOvrd.dat`     (ORG,DEST,ENTNM,CRTY)
+# Both files follow the profit-manager format documented in
+# `docs/reference/pm_constraint_tables.md`.  Falls back silently to
+# DEFAULT_CIRCUITY_TIERS when the files are absent.
+cir_defaults_path  = joinpath("data", "demo", "cirOvrdDflt.dat")
+cir_overrides_path = joinpath("data", "demo", "cirOvrd.dat")
+if isfile(cir_defaults_path) || isfile(cir_overrides_path)
+    before_tiers    = length(constraints.defaults.circuity_tiers)
+    before_overrides = length(constraints.overrides)
+    # apply_circuity_files! handles missing per-file absence internally.
+    constraints = apply_circuity_files!(
+        constraints;
+        defaults_path  = cir_defaults_path,
+        overrides_path = cir_overrides_path,
+    )
+    after_tiers     = length(constraints.defaults.circuity_tiers)
+    after_overrides = length(constraints.overrides)
+    println("\nCircuity configuration (loaded from PM CSV):")
+    println("  Tier defaults:    $(before_tiers) → $(after_tiers) tiers (from $(cir_defaults_path))")
+    println("  Market overrides: $(before_overrides) → $(after_overrides) rows (from $(cir_overrides_path))")
+    for t in constraints.defaults.circuity_tiers
+        ub = isinf(t.max_distance) ? "Inf" : string(Int(t.max_distance))
+        println("    ≤ $(ub) mi → factor $(t.factor)")
+    end
+    # Peek at a couple of override samples if any
+    if !isempty(constraints.overrides)
+        println("  Sample overrides:")
+        for ov in first(constraints.overrides, min(3, length(constraints.overrides)))
+            cf = first(ov.params.circuity_tiers).factor
+            println("    $(ov.origin) → $(ov.destination): factor $(cf)")
+        end
+    end
+end
+
 store = DuckDBStore()
 graph_source = :ssim
 
@@ -118,7 +156,10 @@ println("="^50)
 println("  Backend: $(config.backend)")
 println("  Max stops: $(config.max_stops)")
 println("  Max connection: $(config.max_connection_minutes) min")
-println("  Circuity factor: $(config.circuity_factor)")
+println("  Circuity check scope: $(config.circuity_check_scope)")
+println("  Circuity tiers ($(length(constraints.defaults.circuity_tiers))): " *
+        join(["≤$(isinf(t.max_distance) ? "Inf" : Int(t.max_distance))mi→$(t.factor)"
+              for t in constraints.defaults.circuity_tiers], ", "))
 println("  Scope: $(config.scope)")
 println("  Interline: $(config.interline)")
 

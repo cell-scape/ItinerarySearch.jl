@@ -114,42 +114,83 @@ end
 # ── Rule 3: Circuity filter ────────────────────────────────────────────────────
 
 """
+    `@inline function _itinerary_endpoints(itn::Itinerary)::Tuple{StationCode,StationCode}`
+---
+
+# Description
+- Extracts `(origin_station_code, destination_station_code)` from an itinerary's
+  connections vector for use in market-override lookups
+- Handles the nonstop self-connection case where `from_leg === to_leg` (the
+  destination is the arrival station of that same leg)
+- Returns `(NO_STATION, NO_STATION)` when `itn.connections` is empty
+
+# Arguments
+1. `itn::Itinerary`: the itinerary to inspect; accesses `itn.connections`
+
+# Returns
+- `::Tuple{StationCode,StationCode}`: `(origin, destination)` station codes
+"""
+@inline function _itinerary_endpoints(itn::Itinerary)::Tuple{StationCode,StationCode}
+    isempty(itn.connections) && return (NO_STATION, NO_STATION)
+    first_cp = itn.connections[1]
+    last_cp = itn.connections[end]
+    origin = (first_cp.from_leg::GraphLeg).record.departure_station
+    dest_leg = (last_cp.to_leg === last_cp.from_leg ?
+        last_cp.from_leg : last_cp.to_leg)::GraphLeg
+    destination = dest_leg.record.arrival_station
+    return (origin, destination)
+end
+
+"""
     `function check_itn_circuity_range(itn::Itinerary, ctx)::Int`
 ---
 
 # Description
-- Checks whether the total flown distance of the itinerary is within an
+- Checks whether the total flown distance of a 2+ stop itinerary is within an
   acceptable ratio of the great-circle origin-to-destination distance
-- Skips the check when the itinerary has no connections or the market distance
-  is zero (no coordinates available)
-- Enforces both a maximum (`max_circuity`) and optional minimum (`min_circuity`)
-  circuity ratio from `ctx.constraints.defaults`
+- Nonstop (`num_stops=0`) and 1-stop (`num_stops=1`) itineraries are skipped —
+  the connection-level `CircuityRule` already handles single-leg circuity
+- Skips the check when the market distance is zero (no coordinates available)
+- Resolves the effective `ParameterSet` via `_resolve_circuity_params` to apply
+  any per-market override; carrier is ignored (circuity is a geographic property)
+- The effective factor is `min(tier_factor, p.max_circuity)` via
+  `_effective_circuity_factor`; `max_circuity=Inf` (default) means tier wins
 - Flat tolerance for the upper bound is `domestic_circuity_extra_miles` for
   domestic itineraries and `international_circuity_extra_miles` for international,
   selected via `itn.status`
-- `min_circuity` check is skipped when `min_circuity <= 0`
+- `min_circuity` floor check is applied when `p.min_circuity > 0`
 
 # Arguments
-1. `itn::Itinerary`: the itinerary to evaluate; accesses `itn.total_distance`,
-   `itn.market_distance`, and `itn.status`
+1. `itn::Itinerary`: the itinerary to evaluate; accesses `itn.num_stops`,
+   `itn.total_distance`, `itn.market_distance`, `itn.connections`, and `itn.status`
 2. `ctx`: runtime context; accesses `ctx.constraints::SearchConstraints`
 
 # Returns
 - `::Int`: `PASS` or `FAIL_ITN_CIRCUITY`
 """
 function check_itn_circuity_range(itn::Itinerary, ctx)::Int
-    isempty(itn.connections) && return PASS
-    itn.market_distance <= Distance(0) && return PASS
-    p = ctx.constraints.defaults
+    # Nonstop and 1-stop are handled by the connection-level CircuityRule
+    # (when `circuity_check_scope` includes `:connection`).
+    itn.num_stops < Int16(2) && return PASS
+
+    market_dist = Float64(itn.market_distance)
+    market_dist > 0.0 || return PASS
+
+    origin_code, dest_code = _itinerary_endpoints(itn)
+    p = _resolve_circuity_params(ctx.constraints, origin_code, dest_code)
+    factor = _effective_circuity_factor(p, market_dist)
+
     extra = is_international(itn.status) ?
         p.international_circuity_extra_miles :
         p.domestic_circuity_extra_miles
-    max_dist = p.max_circuity * Float64(itn.market_distance) + extra
-    Float64(itn.total_distance) > max_dist && return FAIL_ITN_CIRCUITY
-    if p.min_circuity > 0.0 && Float64(itn.market_distance) > 0.0
-        circ_ratio = Float64(itn.total_distance) / Float64(itn.market_distance)
+    max_dist = factor * market_dist + extra
+    Float64(itn.total_distance) <= max_dist || return FAIL_ITN_CIRCUITY
+
+    if p.min_circuity > 0.0
+        circ_ratio = Float64(itn.total_distance) / market_dist
         circ_ratio < p.min_circuity && return FAIL_ITN_CIRCUITY
     end
+
     return PASS
 end
 
@@ -609,9 +650,11 @@ function build_itn_rules(config::SearchConfig; constraints::SearchConstraints = 
     rules = Any[
         check_itn_scope,
         check_itn_opdays,
-        check_itn_circuity_range,
-        check_itn_suppcodes,
     ]
+    if config.circuity_check_scope === :itinerary || config.circuity_check_scope === :both
+        push!(rules, check_itn_circuity_range)
+    end
+    push!(rules, check_itn_suppcodes)
 
     config.maft_enabled && push!(rules, check_itn_maft)
 

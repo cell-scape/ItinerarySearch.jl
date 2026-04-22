@@ -37,6 +37,57 @@ function _parse_scope(s::AbstractString)::ScopeMode
 end
 
 """
+    `_parse_circuity_check_scope(s::AbstractString)::Symbol`
+
+Parse `"connection"`, `"itinerary"`, or `"both"` from a JSON string value.
+Throws for unknown values.
+"""
+function _parse_circuity_check_scope(s::AbstractString)::Symbol
+    s = lowercase(String(s))
+    s == "connection" && return :connection
+    s == "itinerary" && return :itinerary
+    s == "both" && return :both
+    error("Unknown circuity_check_scope: $s. Expected: connection, itinerary, both")
+end
+
+"""
+    `_parse_circuity_tiers(arr)::Vector{CircuityTier}`
+---
+
+# Description
+- Parse a JSON array of `{max_distance, factor}` objects into a `Vector{CircuityTier}`
+- `max_distance: null` → `Inf`
+- Validates via `_validate_circuity_tiers` before returning
+- Skips malformed entries (non-object, missing factor, non-numeric factor) silently;
+  fully empty or all-malformed input will still throw via the validator
+
+# Arguments
+1. `arr`: a JSON array (JSON3.Array) of tier objects
+
+# Returns
+- `::Vector{CircuityTier}`: validated tier list
+"""
+function _parse_circuity_tiers(arr)::Vector{CircuityTier}
+    tiers = CircuityTier[]
+    for obj in arr
+        obj isa JSON3.Object || continue
+        md_raw = get(obj, :max_distance, nothing)
+        max_distance = if md_raw === nothing
+            Inf
+        elseif md_raw isa Number
+            Float64(md_raw)
+        else
+            continue   # skip malformed entry (e.g. non-numeric, non-null)
+        end
+        factor_raw = get(obj, :factor, nothing)
+        factor_raw isa Number || continue
+        push!(tiers, CircuityTier(max_distance, Float64(factor_raw)))
+    end
+    _validate_circuity_tiers(tiers)
+    return tiers
+end
+
+"""
     `_parse_interline(s::AbstractString)::InterlineMode`
 
 Parse an interline string from JSON config to InterlineMode enum.
@@ -67,8 +118,8 @@ The README's *Configuration* table documents each field's default and purpose;
 see also `docs/src/getting-started.md`. Fields fall into five groups:
 
 - **Search shape**: `max_stops`, `max_connection_minutes`, `max_elapsed_minutes`,
-  `scope`, `interline`, `circuity_factor`, `circuity_extra_miles`,
-  `allow_roundtrips`, `distance_formula`.
+  `scope`, `interline`, `circuity_check_scope`, `allow_roundtrips`,
+  `distance_formula`.
 - **Scheduling window**: `leading_days`, `trailing_days`, `max_days` — how many
   days before/after `target_date` the schedule expansion includes.
 - **Input paths**: `ssim_path`, `mct_path`, `airports_path`, `regions_path`,
@@ -100,8 +151,6 @@ see also `docs/src/getting-started.md`. Fields fall into five groups:
     max_stops::Int = 2
     max_connection_minutes::Int = 480
     max_elapsed_minutes::Int = 1440
-    circuity_factor::Float64 = 2.5
-    circuity_extra_miles::Float64 = 500.0
     scope::ScopeMode = SCOPE_ALL
     interline::InterlineMode = INTERLINE_CODESHARE
     max_days::Int = 1
@@ -139,6 +188,7 @@ see also `docs/src/getting-started.md`. Fields fall into five groups:
     maft_enabled::Bool = true              # enable MAFT rule (both connection and itinerary level)
     interline_dcnx_enabled::Bool = true    # enable interline double-connect restriction
     crs_cnx_enabled::Bool = true           # enable CRS distance-based connection time rule
+    circuity_check_scope::Symbol = :both   # :both, :connection, or :itinerary — controls which circuity rules are active
     mct_audit::MCTAuditConfig = MCTAuditConfig()    # MCT audit logging configuration
 end
 
@@ -380,7 +430,6 @@ function _parse_constraints_params(cstr::JSON3.Object)::Union{ParameterSet,Nothi
     for (jk, pk) in [
         (:min_circuity, :min_circuity),
         (:max_circuity, :max_circuity),
-        (:circuity_factor, :circuity_factor),
         (:domestic_circuity_extra_miles, :domestic_circuity_extra_miles),
         (:international_circuity_extra_miles, :international_circuity_extra_miles),
     ]
@@ -415,6 +464,26 @@ function _parse_constraints_params(cstr::JSON3.Object)::Union{ParameterSet,Nothi
     _parse_json_char_set!(ck, cstr, :allow_service_types, :allow_service_types)
     _parse_json_char_set!(ck, cstr, :deny_body_types, :deny_body_types)
     _parse_json_char_set!(ck, cstr, :allow_body_types, :allow_body_types)
+
+    # circuity_tiers — checked in a `defaults` sub-object first (canonical JSON
+    # schema uses constraints.defaults.circuity_tiers), then directly on `cstr`
+    # as a flat fallback for legacy / hand-written configs
+    let defaults_obj = _json_obj(cstr, :defaults)
+        tier_src =
+            if defaults_obj !== nothing && haskey(defaults_obj, :circuity_tiers)
+                defaults_obj
+            elseif haskey(cstr, :circuity_tiers)
+                cstr
+            else
+                nothing
+            end
+        if tier_src !== nothing
+            arr = tier_src[:circuity_tiers]
+            if arr isa JSON3.Array
+                ck[:circuity_tiers] = _parse_circuity_tiers(arr)
+            end
+        end
+    end
 
     isempty(ck) && return nothing
     return ParameterSet(; ck...)
@@ -495,14 +564,12 @@ function load_config(path::String)::SearchConfig
         v !== nothing && (kwargs[:max_connection_minutes] = v)
         v = _json_int(search, :max_elapsed_minutes)
         v !== nothing && (kwargs[:max_elapsed_minutes] = v)
-        f = _json_float(search, :circuity_factor)
-        f !== nothing && (kwargs[:circuity_factor] = f)
-        f = _json_float(search, :circuity_extra_miles)
-        f !== nothing && (kwargs[:circuity_extra_miles] = f)
         s = _json_str(search, :scope)
         s !== nothing && (kwargs[:scope] = _parse_scope(s))
         s = _json_str(search, :interline)
         s !== nothing && (kwargs[:interline] = _parse_interline(s))
+        s = _json_str(search, :circuity_check_scope)
+        s !== nothing && (kwargs[:circuity_check_scope] = _parse_circuity_check_scope(s))
         if haskey(search, :allow_roundtrips)
             val = search[:allow_roundtrips]
             val isa Bool && (kwargs[:allow_roundtrips] = val)

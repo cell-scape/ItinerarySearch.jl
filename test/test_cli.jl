@@ -109,7 +109,6 @@ end
             @test args["max-stops"] === nothing
             @test args["max-elapsed"] === nothing
             @test args["max-connection"] === nothing
-            @test args["circuity-factor"] === nothing
             @test args["scope"] === nothing
             @test args["interline"] === nothing
             @test args["allow-roundtrips"] == false
@@ -238,12 +237,6 @@ end
             args = parse_args(["--allow-roundtrips", "info"], parser)
             cfg = _apply_overrides(SearchConfig(), args)
             @test cfg.allow_roundtrips == true
-        end
-
-        @testset "--circuity-factor 1.8" begin
-            args = parse_args(["--circuity-factor", "1.8", "info"], parser)
-            cfg = _apply_overrides(SearchConfig(), args)
-            @test cfg.circuity_factor ≈ 1.8
         end
 
         @testset "--log-level debug" begin

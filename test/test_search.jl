@@ -103,7 +103,6 @@ using Dates
     )
         ps = ParameterSet(
             max_stops=Int16(max_stops),
-            circuity_factor=5.0,
             domestic_circuity_extra_miles=50_000.0,
             max_circuity=5.0,
         )
@@ -194,7 +193,6 @@ using Dates
         constraints = SearchConstraints(
             defaults=ParameterSet(
                 max_stops=Int16(2),
-                circuity_factor=5.0,
                 domestic_circuity_extra_miles=50_000.0,
                 max_circuity=5.0,
             )
@@ -626,7 +624,6 @@ using Dates
         constraints = SearchConstraints(
             defaults=ParameterSet(
                 max_stops=Int16(0),
-                circuity_factor=5.0,
                 domestic_circuity_extra_miles=50_000.0,
                 max_circuity=5.0,
             ),
@@ -791,7 +788,6 @@ using Dates
         rt_constraints = SearchConstraints(
             defaults=ParameterSet(
                 max_stops=Int16(3),
-                circuity_factor=50.0,
                 domestic_circuity_extra_miles=500_000.0,
                 max_circuity=50.0,
             ),
@@ -914,7 +910,6 @@ using Dates
         tight_ps = ParameterSet(
             max_stops=Int16(2),
             max_elapsed=Int32(480),              # tight: 8h max elapsed
-            circuity_factor=5.0,
             domestic_circuity_extra_miles=50_000.0,
             max_circuity=10.0,                   # generous: don't prune on circuity
         )
@@ -939,7 +934,6 @@ using Dates
         loose_ps = ParameterSet(
             max_stops=Int16(2),
             max_elapsed=Int32(1440),             # default 24h
-            circuity_factor=5.0,
             domestic_circuity_extra_miles=50_000.0,
             max_circuity=10.0,
         )
@@ -1018,7 +1012,6 @@ using Dates
             defaults=ParameterSet(
                 max_stops=Int16(2),
                 max_elapsed=Int32(99_999),       # generous: don't prune on elapsed
-                circuity_factor=5.0,
                 domestic_circuity_extra_miles=50_000.0,
                 max_circuity=2.5,                # tight circuity threshold
             )

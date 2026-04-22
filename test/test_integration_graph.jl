@@ -378,7 +378,6 @@ end
             trailing_days = 0,
             interline = INTERLINE_ALL,
             max_stops = 2,
-            circuity_extra_miles = 50_000.0,   # suppress circuity for zero-coord test stations
         )
 
         store = DuckDBStore()

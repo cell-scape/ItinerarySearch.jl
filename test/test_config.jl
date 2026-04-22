@@ -10,8 +10,6 @@ using ItinerarySearch: _default_path, AirlineCode
         @test cfg.max_stops == 2
         @test cfg.max_connection_minutes == 480
         @test cfg.max_elapsed_minutes == 1440
-        @test cfg.circuity_factor == 2.5
-        @test cfg.circuity_extra_miles == 500.0
         @test cfg.scope == SCOPE_ALL
         @test cfg.interline == INTERLINE_CODESHARE
         @test cfg.max_days == 1
@@ -33,12 +31,15 @@ using ItinerarySearch: _default_path, AirlineCode
     @testset "JSON loading" begin
         json_path = joinpath(@__DIR__, "test_config.json")
         open(json_path, "w") do io
-            write(io, """
-            {
-              "store": { "backend": "duckdb", "path": "/tmp/test.db" },
-              "search": { "max_stops": 3, "scope": "intl" }
-            }
-            """)
+            write(
+                io,
+                """
+      {
+        "store": { "backend": "duckdb", "path": "/tmp/test.db" },
+        "search": { "max_stops": 3, "scope": "intl" }
+      }
+      """
+            )
         end
         cfg = load_config(json_path)
         @test cfg.backend == "duckdb"
@@ -96,7 +97,7 @@ using ItinerarySearch: _default_path, AirlineCode
     @testset "SearchConfig(dict) — nested mct_audit AbstractDict" begin
         cfg = SearchConfig(Dict(
             :mct_audit => Dict(:enabled => true, :detail => "detailed",
-                               :max_candidates => 5),
+                :max_candidates => 5),
         ))
         @test cfg.mct_audit.enabled == true
         @test cfg.mct_audit.detail === :detailed
@@ -129,10 +130,13 @@ end
 
     @testset "search.maft/interline_dcnx/crs_cnx enabled flags" begin
         path = tempname() * ".json"
-        write(path, """
-        {"search": {"maft_enabled": false, "interline_dcnx_enabled": false,
-                    "crs_cnx_enabled": false}}
-        """)
+        write(
+            path,
+            """
+{"search": {"maft_enabled": false, "interline_dcnx_enabled": false,
+            "crs_cnx_enabled": false}}
+"""
+        )
         cfg = load_config(path)
         @test cfg.maft_enabled == false
         @test cfg.interline_dcnx_enabled == false
@@ -142,15 +146,18 @@ end
 
     @testset "mct_behaviour section" begin
         path = tempname() * ".json"
-        write(path, """
-        {"mct_behaviour": {
-            "mct_cache_enabled": false,
-            "mct_serial_ascending": true,
-            "mct_codeshare_mode": "marketing",
-            "mct_schengen_mode": "eur_only",
-            "mct_suppressions_enabled": false
-        }}
-        """)
+        write(
+            path,
+            """
+{"mct_behaviour": {
+    "mct_cache_enabled": false,
+    "mct_serial_ascending": true,
+    "mct_codeshare_mode": "marketing",
+    "mct_schengen_mode": "eur_only",
+    "mct_suppressions_enabled": false
+}}
+"""
+        )
         cfg = load_config(path)
         @test cfg.mct_cache_enabled == false
         @test cfg.mct_serial_ascending == true
@@ -163,10 +170,13 @@ end
     @testset "mct_behaviour overrides search.mct_cache_enabled" begin
         # When both locations set the same key, `mct_behaviour` wins (canonical home).
         path = tempname() * ".json"
-        write(path, """
-        {"search": {"mct_cache_enabled": true},
-         "mct_behaviour": {"mct_cache_enabled": false}}
-        """)
+        write(
+            path,
+            """
+{"search": {"mct_cache_enabled": true},
+ "mct_behaviour": {"mct_cache_enabled": false}}
+"""
+        )
         cfg = load_config(path)
         @test cfg.mct_cache_enabled == false
         rm(path)
@@ -183,13 +193,17 @@ end
         file_cfg = load_config(joinpath(@__DIR__, "..", "config", "defaults.json"))
 
         # Fields that should mirror struct defaults (the "not-tuned" fields).
+        # Note: `circuity_factor` / `circuity_extra_miles` are no longer
+        # SearchConfig fields — circuity is now configured via
+        # `ParameterSet.circuity_tiers` and per-market overrides; the
+        # `circuity_check_scope` field on SearchConfig gates which rule layer
+        # enforces the check.
         @test file_cfg.max_stops == default_cfg.max_stops
         @test file_cfg.max_connection_minutes == default_cfg.max_connection_minutes
         @test file_cfg.max_elapsed_minutes == default_cfg.max_elapsed_minutes
-        @test file_cfg.circuity_factor == default_cfg.circuity_factor
-        @test file_cfg.circuity_extra_miles == default_cfg.circuity_extra_miles
         @test file_cfg.scope == default_cfg.scope
         @test file_cfg.interline == default_cfg.interline
+        @test file_cfg.circuity_check_scope === default_cfg.circuity_check_scope
         @test file_cfg.allow_roundtrips == default_cfg.allow_roundtrips
         @test file_cfg.distance_formula === default_cfg.distance_formula
         @test file_cfg.maft_enabled == default_cfg.maft_enabled
@@ -223,7 +237,7 @@ end
 
     @testset "String keys, detail as string" begin
         a = MCTAuditConfig(Dict("enabled" => true, "detail" => "summary",
-                                "max_candidates" => 20))
+            "max_candidates" => 20))
         @test a.enabled == true
         @test a.detail === :summary
         @test a.max_candidates == 20
@@ -232,6 +246,14 @@ end
     @testset "unknown key errors" begin
         @test_throws ArgumentError MCTAuditConfig(Dict(:bogus => 1))
     end
+end
+
+@testset "circuity_check_scope" begin
+    @test SearchConfig().circuity_check_scope == :both
+    @test SearchConfig(circuity_check_scope=:connection).circuity_check_scope == :connection
+    @test SearchConfig(circuity_check_scope=:itinerary).circuity_check_scope == :itinerary
+    # Invalid values go through the JSON parser (see _parse_circuity_check_scope test);
+    # direct construction is permissive, matching other Symbol-valued SearchConfig fields.
 end
 
 @testset "load_constraints" begin
@@ -299,7 +321,6 @@ end
                 "max_total_distance": 5000,
                 "min_circuity": 0.5,
                 "max_circuity": 2.5,
-                "circuity_factor": 1.8,
                 "international_circuity_extra_miles": 800
             }
         }
@@ -318,7 +339,6 @@ end
         @test p.max_total_distance == Float32(5000.0)
         @test p.min_circuity == 0.5
         @test p.max_circuity == 2.5
-        @test p.circuity_factor == 1.8
         @test p.international_circuity_extra_miles == 800.0
         rm(path)
     end
@@ -346,5 +366,31 @@ end
         @test p.deny_service_types == Set(['C'])
         @test p.allow_body_types == Set(['W'])
         rm(path)
+    end
+
+    @testset "circuity_tiers JSON round-trip" begin
+        raw = """
+        {
+          "constraints": {
+            "defaults": {
+              "circuity_tiers": [
+                {"max_distance": 200, "factor": 2.3},
+                {"max_distance": 900, "factor": 1.8},
+                {"max_distance": null, "factor": 1.2}
+              ]
+            }
+          }
+        }
+        """
+        path = tempname() * ".json"
+        write(path, raw)
+        try
+            sc = load_constraints(path)
+            @test length(sc.defaults.circuity_tiers) == 3
+            @test sc.defaults.circuity_tiers[1] == CircuityTier(200.0, 2.3)
+            @test sc.defaults.circuity_tiers[end] == CircuityTier(Inf, 1.2)
+        finally
+            rm(path; force=true)
+        end
     end
 end

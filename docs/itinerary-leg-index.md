@@ -375,7 +375,7 @@ itinerary,leg_pos,row_number,record_serial,carrier,flight_number,departure_stati
 | `config.max_stops` | 2 | Maximum intermediate stops (0=nonstop only, 1=up to 1-stop, 2=up to 2-stop) |
 | `config.leading_days` | 2 | Days before target date to include in schedule window |
 | `config.max_connection_minutes` | 480 | Maximum connection time (8 hours) |
-| `config.circuity_factor` | 2.5 | Maximum ratio of flown distance to great-circle distance |
+| `config.circuity_check_scope` | `:both` | Which rules enforce circuity: `:connection`, `:itinerary`, or `:both`. The factor itself lives on `ParameterSet.circuity_tiers` (distance-tiered; see `DEFAULT_CIRCUITY_TIERS`) and is per-market overridable via `SearchConstraints`. |
 | `config.interline` | `INTERLINE_CODESHARE` | Carrier mode: `INTERLINE_ONLINE`, `INTERLINE_CODESHARE`, `INTERLINE_ALL` |
 | `config.scope` | `SCOPE_ALL` | `SCOPE_DOM` (domestic only), `SCOPE_INTL` (international only), `SCOPE_ALL` |
 | `config.distance_formula` | `:haversine` | `:haversine` or `:vincenty` for geodesic distance computation |

@@ -19,14 +19,13 @@
   "schedule": {
     "leading_days": 1,
     "trailing_days": 1,
-    "max_days": 2
+    "max_days": 1
   },
   "search": {
     "max_stops": 2,
     "max_connection_minutes": 480,
     "max_elapsed_minutes": 1440,
-    "circuity_factor": 2.5,
-    "circuity_extra_miles": 500.0,
+    "circuity_check_scope": "both",
     "scope": "all",
     "interline": "codeshare",
     "allow_roundtrips": false,
@@ -51,7 +50,7 @@
     "event_log_enabled": false,
     "event_log_path": "data/output/events.jsonl",
     "log_level": "info",
-    "log_json_path": "",
+    "log_json_path": "data/output/info_log.jsonl",
     "log_stdout_json": false,
     "output_formats": [
       "json",
@@ -60,9 +59,9 @@
     ]
   },
   "mct_audit": {
-    "enabled": false,
+    "enabled": true,
     "detail": "summary",
-    "output_path": "",
+    "output_path": "data/output/mct_audit.log",
     "max_connections": 0,
     "max_candidates": 10
   }

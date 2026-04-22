@@ -857,36 +857,28 @@ end
 ---
 
 # Description
-- Callable struct implementing the circuity filter for two-leg connections
+- Fieldless marker struct implementing the circuity filter for two-leg connections
 - Rejects connections where the sum of both leg distances exceeds
   `factor × great_circle_distance(org, dst) + extra_miles`
-- Extra miles are split by international status: domestic connections use
-  `domestic_extra_miles`, international connections use `international_extra_miles`
+- Both `factor` and `extra_miles` are resolved per-connection from the
+  effective `ParameterSet` for the market (via `_resolve_circuity_params`) —
+  matching the resolution the itinerary-level `check_itn_circuity_range`
+  uses, so a `MarketOverride` carrying custom
+  `{domestic,international}_circuity_extra_miles` takes effect at both layers
+- `extra_miles` is split by international status: domestic connections use
+  `p.domestic_circuity_extra_miles`, international connections use
+  `p.international_circuity_extra_miles`
 - Great-circle distances are cached in `ctx.gc_cache` (keyed by
   `(org_code, dst_code)` tuple) to avoid repeated haversine calls
 - Round-trip connections and same-origin/destination pairs always pass
 
-# Fields
-- `factor::Float64` — circuity multiplier (default 2.0)
-- `domestic_extra_miles::Float64` — flat mileage tolerance for domestic routes (default 500.0)
-- `international_extra_miles::Float64` — flat mileage tolerance for international routes (default 1000.0)
-
 # Context fields accessed
+- `ctx.constraints::SearchConstraints` — used by `_resolve_circuity_params` to
+  pick the effective `ParameterSet` (factor tiers + extra miles)
 - `ctx.gc_cache::Dict{Tuple{StationCode,StationCode}, Float64}` — cache of GC distances (mutated)
+- `ctx.config::SearchConfig` — used by `_geodesic_distance` for haversine/vincenty dispatch
 """
-struct CircuityRule
-    factor::Float64
-    domestic_extra_miles::Float64
-    international_extra_miles::Float64
-end
-
-"""
-    `CircuityRule()`
-
-Construct a `CircuityRule` with default factor (2.0), domestic extra miles (500.0),
-and international extra miles (1000.0).
-"""
-CircuityRule() = CircuityRule(2.0, 500.0, 1000.0)
+struct CircuityRule end
 
 """
     `function (r::CircuityRule)(cp::GraphConnection, ctx)::Int`
@@ -899,7 +891,7 @@ CircuityRule() = CircuityRule(2.0, 500.0, 1000.0)
 
 # Arguments
 1. `cp::GraphConnection`: connection to evaluate
-2. `ctx`: runtime context; accesses `ctx.gc_cache::Dict{UInt64, Float64}` and `ctx.config::SearchConfig`
+2. `ctx`: runtime context; accesses `ctx.gc_cache::Dict{Tuple{StationCode,StationCode}, Float64}`, `ctx.constraints::SearchConstraints`, and `ctx.config::SearchConfig`
 
 # Returns
 - `::Int`: `PASS` or `FAIL_CIRCUITY`
@@ -925,9 +917,13 @@ function (r::CircuityRule)(cp::GraphConnection, ctx)::Int
         ctx.gc_cache[gc_key] = gc_dist
     end
 
-    extra = is_international(cp.status) ? r.international_extra_miles : r.domestic_extra_miles
+    p = _resolve_circuity_params(ctx.constraints, from_org.code, to_dst.code)
+    factor = _effective_circuity_factor(p, gc_dist)
+    extra = is_international(cp.status) ?
+        p.international_circuity_extra_miles :
+        p.domestic_circuity_extra_miles
     route_dist = Float64(from_l.distance) + Float64(to_l.distance)
-    return route_dist <= r.factor * gc_dist + extra ? PASS : FAIL_CIRCUITY
+    return route_dist <= factor * gc_dist + extra ? PASS : FAIL_CIRCUITY
 end
 
 """
@@ -1200,8 +1196,9 @@ end
 - Assembles and returns the connection rule chain as a `Tuple` of callables
 - Rules are ordered for maximum short-circuit efficiency: cheap structural checks
   first, expensive MCT and geometry checks later
-- `MAFTRule` and `CircuityRule` are constructed from `constraints.defaults`
-  parameters; `MCTRule` embeds the provided `mct_lookup`
+- `MAFTRule` is constructed from `constraints.defaults`; `CircuityRule` is
+  fieldless and resolves its parameters per-connection from `ctx.constraints`;
+  `MCTRule` embeds the provided `mct_lookup`
 - `ConnectionTimeRule` is included only when non-default time bounds are configured
   (`min_connection_time != NO_MINUTES` or `max_connection_time != 480`)
 - `ConnectionGeoRule` is included only when at least one geographic filter set is
@@ -1242,13 +1239,9 @@ function build_cnx_rules(
     push!(rules, check_cnx_opdays)
     push!(rules, check_cnx_suppcodes)
     config.maft_enabled && push!(rules, MAFTRule())
-    push!(rules,
-        CircuityRule(
-            p.circuity_factor,
-            p.domestic_circuity_extra_miles,
-            p.international_circuity_extra_miles,
-        ),
-    )
+    if config.circuity_check_scope === :connection || config.circuity_check_scope === :both
+        push!(rules, CircuityRule())
+    end
     # Geographic filter (only when any set is non-empty)
     if !isempty(p.allow_stations) || !isempty(p.deny_stations) ||
        !isempty(p.allow_countries) || !isempty(p.deny_countries) ||

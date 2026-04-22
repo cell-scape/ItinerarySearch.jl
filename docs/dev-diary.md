@@ -1,5 +1,28 @@
 # ItinerarySearch Development Diary
 
+## 2026-04-21 — Circuity Tiers and Market-Level Overrides
+- **Scope**: Replace the scalar `SearchConfig.circuity_factor = 2.5` with a distance-tiered, market-overridable circuity model that mirrors the production profit-manager tables
+- **Data model**:
+  - New `CircuityTier` isbits struct (`max_distance::Float64`, `factor::Float64`)
+  - New `DEFAULT_CIRCUITY_TIERS = [(250, 2.4), (800, 1.9), (2000, 1.5), (Inf, 1.3)]` — stricter long-haul than the old 2.5 scalar
+  - `ParameterSet.circuity_factor::Float64 = 2.0` → `circuity_tiers::Vector{CircuityTier} = DEFAULT_CIRCUITY_TIERS`
+  - `max_circuity` default changed from `0.0` to `Inf` so the global ceiling is opt-in
+  - New `SearchConfig.circuity_check_scope::Symbol ∈ {:connection, :itinerary, :both}` (default `:both`); itinerary check waives itself for nonstops/1-stops
+- **Resolution semantics**:
+  - `_resolve_circuity_params(constraints, org, dst)` — **market-only** (carrier ignored, circuity is geographic)
+  - `_effective_circuity_factor(p, distance)` combines tier lookup with `max_circuity` ceiling
+  - `CircuityRule` is now a **fieldless marker struct**; both `factor` and `{domestic,international}_circuity_extra_miles` resolve live from the matched `ParameterSet` at evaluation time, matching `check_itn_circuity_range` — a market override with custom extra_miles takes effect at both layers
+- **CSV loaders** (`src/ingest/circuity.jl`):
+  - `load_circuity_tiers("cirOvrdDflt.dat")` — HIGH,CIRCUITY columns
+  - `load_circuity_overrides("cirOvrd.dat")` — ORG,DEST,ENTNM,CRTY columns (ENTNM reserved for future entity grouping)
+  - `apply_circuity_files!(constraints; defaults_path, overrides_path)` composer
+  - JSON loader `_parse_circuity_tiers` supports `[{"max_distance": ..., "factor": ...}]` arrays in constraints files
+- **Tutorial / docs**:
+  - Getting Started Step 3b added — tiers, programmatic overrides, market-level overrides, CSV loaders
+  - `docs/reference/pm_constraint_tables.md` added — cross-format reference covering circuity and sibling PM tables
+  - Demo CSVs tracked: `data/demo/cirOvrd.dat`, `data/demo/cirOvrdDflt.dat`
+- **Tests**: 19001 passed (down from 20824 pre-tiers baseline; the drop is **expected** — the default 1.3 long-haul factor is stricter than the old 2.5 scalar, so demo-data iteration loops iterate fewer times). New coverage: `test/test_circuity_tiers.jl` (51 tests), per-market extra_miles regression test in `test_rules_cnx.jl`, scope-gating assertions in `test_rules_cnx.jl`, CSV round-trip tests.
+
 ## 2026-03-24 — REST API Service
 - **Scope**: HTTP REST API wrapping the search pipeline, served from a pre-built in-memory flight graph
 - **Changes**:

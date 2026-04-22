@@ -109,11 +109,6 @@ function _build_parser()::ArgParseSettings
         arg_type = Int
         default = nothing
 
-        "--circuity-factor"
-        help = "Maximum circuity ratio (flown / market distance)"
-        arg_type = Float64
-        default = nothing
-
         "--scope"
         help = "Scope filter: all, dom, intl"
         arg_type = String
@@ -293,8 +288,6 @@ function _apply_overrides(config::SearchConfig, args::Dict)::SearchConfig
         :max_stops            => config.max_stops,
         :max_connection_minutes => config.max_connection_minutes,
         :max_elapsed_minutes  => config.max_elapsed_minutes,
-        :circuity_factor      => config.circuity_factor,
-        :circuity_extra_miles => config.circuity_extra_miles,
         :scope                => config.scope,
         :interline            => config.interline,
         :max_days             => config.max_days,
@@ -329,9 +322,6 @@ function _apply_overrides(config::SearchConfig, args::Dict)::SearchConfig
 
     v = args["trailing-days"]
     v !== nothing && (kwargs[:trailing_days] = v)
-
-    v = args["circuity-factor"]
-    v !== nothing && (kwargs[:circuity_factor] = v)
 
     v = args["scope"]
     if v !== nothing
@@ -395,7 +385,7 @@ function _apply_constraint_overrides(
     new_defaults = ParameterSet(
         min_mct_override                  = p.min_mct_override,
         max_mct_override                  = max_connection !== nothing ? Minutes(Int16(max_connection)) : p.max_mct_override,
-        circuity_factor                   = p.circuity_factor,
+        circuity_tiers                    = p.circuity_tiers,
         domestic_circuity_extra_miles     = p.domestic_circuity_extra_miles,
         international_circuity_extra_miles = p.international_circuity_extra_miles,
         valid_codeshare_partners          = p.valid_codeshare_partners,
@@ -494,8 +484,6 @@ function _cmd_search(
         max_stops            = config.max_stops,
         max_connection_minutes = config.max_connection_minutes,
         max_elapsed_minutes  = config.max_elapsed_minutes,
-        circuity_factor      = config.circuity_factor,
-        circuity_extra_miles = config.circuity_extra_miles,
         scope                = config.scope,
         interline            = config.interline,
         max_days             = config.max_days,
@@ -615,8 +603,6 @@ function _cmd_trip(
         max_stops            = config.max_stops,
         max_connection_minutes = config.max_connection_minutes,
         max_elapsed_minutes  = config.max_elapsed_minutes,
-        circuity_factor      = config.circuity_factor,
-        circuity_extra_miles = config.circuity_extra_miles,
         scope                = config.scope,
         interline            = config.interline,
         max_days             = config.max_days,
@@ -801,7 +787,6 @@ function _cmd_info(config::SearchConfig, _args::Dict, global_args::Dict)::Int
                 max_stops          = config.max_stops,
                 max_connection_minutes = config.max_connection_minutes,
                 max_elapsed_minutes = config.max_elapsed_minutes,
-                circuity_factor    = config.circuity_factor,
                 scope              = string(config.scope),
                 interline          = string(config.interline),
                 leading_days       = config.leading_days,

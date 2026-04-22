@@ -59,6 +59,7 @@ include("ingest/mct.jl")
 include("ingest/reference.jl")
 include("ingest/newssim.jl")
 include("ingest/newssim_materialize.jl")
+include("ingest/circuity.jl")
 include("graph/mct_lookup.jl")
 include("types/mct_trace.jl")
 include("graph/mct_decode.jl")
@@ -97,11 +98,13 @@ export DuckDBStore, table_stats, load_schedule!
 # Ingest
 export ingest_ssim!, ingest_mct!, ingest_newssim!
 export load_airports!, load_regions!, load_aircrafts!, load_oa_control!
+export load_circuity_tiers, load_circuity_overrides, apply_circuity_files!
 
 # Build & search
 export build_graph!, search, search_markets
 export search_itineraries, search_trip
 export RuntimeContext, SearchConstraints, build_itn_rules
+export CircuityTier, DEFAULT_CIRCUITY_TIERS
 
 # Output
 export write_legs, write_itineraries, write_trips

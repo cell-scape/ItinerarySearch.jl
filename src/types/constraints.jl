@@ -1,6 +1,98 @@
 # src/types/constraints.jl — Constraint and parameter types for connection building and search
 
 """
+    struct CircuityTier
+
+Distance-tiered circuity factor. A `Vector{CircuityTier}` is evaluated in order;
+the first tier whose `max_distance` is ≥ the query distance supplies the factor.
+The final tier's `factor` is the fallback when the distance exceeds every
+threshold.
+
+# Fields
+- `max_distance::Float64` — inclusive upper bound in miles (`Inf` = catchall)
+- `factor::Float64` — maximum allowed `route_distance / great_circle_distance`
+"""
+struct CircuityTier
+    max_distance::Float64
+    factor::Float64
+end
+
+"""
+    const DEFAULT_CIRCUITY_TIERS::Vector{CircuityTier}
+
+Industry-standard tier values used when no tiered defaults are supplied via
+JSON or CSV. Stable over time.
+"""
+const DEFAULT_CIRCUITY_TIERS = CircuityTier[
+    CircuityTier(250.0, 2.4),
+    CircuityTier(800.0, 1.9),
+    CircuityTier(2000.0, 1.5),
+    CircuityTier(Inf, 1.3),
+]
+
+"""
+    `function _validate_circuity_tiers(tiers::Vector{CircuityTier})`
+---
+
+# Description
+- Validates a `Vector{CircuityTier}` for use in connection/itinerary rules
+- Called once at load time (from JSON and CSV loaders); runtime lookup assumes
+  invariants already hold
+
+# Arguments
+1. `tiers::Vector{CircuityTier}`: tier list to validate
+
+# Returns
+- `nothing` on success
+
+# Throws
+- `ArgumentError` if `tiers` is empty, has non-ascending `max_distance`, or
+  contains a non-positive `factor`
+
+# Notes
+- `NaN` inputs are undefined behaviour; callers must pass finite values or `Inf`.
+"""
+function _validate_circuity_tiers(tiers::Vector{CircuityTier})
+    isempty(tiers) && throw(ArgumentError("circuity_tiers must not be empty"))
+    for i in 2:length(tiers)
+        tiers[i].max_distance > tiers[i - 1].max_distance ||
+            throw(
+                ArgumentError(
+                    "tier thresholds must be strictly ascending; got $(tiers[i-1].max_distance) then $(tiers[i].max_distance)",
+                ),
+            )
+    end
+    for t in tiers
+        t.factor > 0 ||
+            throw(ArgumentError("tier factors must be positive; got $(t.factor)"))
+    end
+    return nothing
+end
+
+"""
+    `_circuity_factor_at(tiers::Vector{CircuityTier}, distance::Float64)::Float64`
+---
+
+# Description
+- Return the circuity factor for `distance` from `tiers`
+- Tiers must be pre-validated (ascending `max_distance`)
+- Falls back to the last tier's factor when `distance` exceeds every threshold
+
+# Arguments
+1. `tiers::Vector{CircuityTier}`: tier list (pre-validated, ascending)
+2. `distance::Float64`: route or leg distance in miles
+
+# Returns
+- `::Float64`: the applicable circuity factor
+"""
+@inline function _circuity_factor_at(tiers::Vector{CircuityTier}, distance::Float64)::Float64
+    for t in tiers
+        distance <= t.max_distance && return t.factor
+    end
+    return last(tiers).factor
+end
+
+"""
     struct ParameterSet
 ---
 
@@ -17,7 +109,8 @@
 - `max_mct_override::Minutes` — maximum connection time allowed (minutes)
 - `min_connection_time::Minutes` — minimum connection time; `NO_MINUTES` means no minimum enforced
 - `max_connection_time::Minutes` — maximum connection time (minutes)
-- `circuity_factor::Float64` — maximum ratio of flown distance to market distance per leg
+- `circuity_tiers::Vector{CircuityTier}` — distance-tiered circuity factors;
+  default is `DEFAULT_CIRCUITY_TIERS`. See `_effective_circuity_factor`.
 - `domestic_circuity_extra_miles::Float64` — flat mileage tolerance for domestic legs
 - `international_circuity_extra_miles::Float64` — flat mileage tolerance for international legs
 - `valid_codeshare_partners::Set{Tuple{AirlineCode,AirlineCode}}` — allowed marketing/operating pairs; empty = allow all
@@ -55,8 +148,8 @@
 - `max_layover_time::Int32` — maximum total layover time across all connections (minutes)
 - `min_total_distance::Distance` — minimum total flown distance (miles)
 - `max_total_distance::Distance` — maximum total flown distance (miles); `Inf32` = unlimited
-- `min_circuity::Float64` — minimum ratio of total flown distance to market distance
-- `max_circuity::Float64` — maximum ratio of total flown distance to market distance
+- `min_circuity::Float64` — global floor on actual/market distance ratio (rejects too-direct itineraries when > 0)
+- `max_circuity::Float64` — global ceiling on the effective factor; `Inf` = no ceiling
 - `max_results::Int32` — stop search after this many results per O-D; `0` = unlimited
 
 ## Itinerary-level carrier filters
@@ -71,7 +164,7 @@
     max_mct_override::Minutes = Minutes(480)
     min_connection_time::Minutes = NO_MINUTES        # NO_MINUTES = no minimum
     max_connection_time::Minutes = Minutes(480)
-    circuity_factor::Float64 = 2.0
+    circuity_tiers::Vector{CircuityTier} = DEFAULT_CIRCUITY_TIERS
     domestic_circuity_extra_miles::Float64 = 500.0
     international_circuity_extra_miles::Float64 = 1000.0
 
@@ -112,7 +205,7 @@
     min_total_distance::Distance = Distance(0.0)
     max_total_distance::Distance = Distance(Inf32)
     min_circuity::Float64 = 0.0
-    max_circuity::Float64 = 2.5
+    max_circuity::Float64 = Inf   # global ceiling on effective factor; Inf = no ceiling
     max_results::Int32 = Int32(0)           # 0 = unlimited
 
     # ── Itinerary-level carrier filters ──────────────────────────────────
@@ -264,6 +357,72 @@ function SearchConstraints(d::AbstractDict)::SearchConstraints
         ]
     end
     return SearchConstraints(; kw...)
+end
+
+# ── Circuity lookup helpers ───────────────────────────────────────────────────
+
+"""
+    `_effective_circuity_factor(p::ParameterSet, distance::Float64)::Float64`
+---
+
+# Description
+- The circuity factor to use in the rule check: `min(tier_factor, p.max_circuity)`
+- `min` with `Inf` is a no-op, so the default-case overhead is a single comparison
+- Combines the tiered lookup from `p.circuity_tiers` with the scalar ceiling
+  from `p.max_circuity`
+
+# Arguments
+1. `p::ParameterSet`: the effective parameter set for the market
+2. `distance::Float64`: route or leg distance in miles
+
+# Returns
+- `::Float64`: the effective circuity factor (tier value capped by scalar ceiling)
+"""
+@inline function _effective_circuity_factor(p::ParameterSet, distance::Float64)::Float64
+    tier_factor = _circuity_factor_at(p.circuity_tiers, distance)
+    return min(tier_factor, p.max_circuity)
+end
+
+"""
+    `function _resolve_circuity_params(constraints::SearchConstraints, origin::StationCode, dest::StationCode)::ParameterSet`
+---
+
+# Description
+- Market-only override resolver for circuity checks
+- Iterates `constraints.overrides` (pre-sorted by descending specificity) and
+  returns the first override whose origin and destination wildcards/equality match
+- **Carrier is ignored** — circuity is a geographic property and should not vary
+  by marketing carrier
+- Returns `constraints.defaults` when no override matches
+
+# Arguments
+1. `constraints::SearchConstraints`: the global constraints holder
+2. `origin::StationCode`: origin airport code of the query
+3. `dest::StationCode`: destination airport code of the query
+
+# Returns
+- `::ParameterSet`: the effective parameter set for circuity evaluation
+
+# Examples
+```julia
+julia> sc = SearchConstraints();
+julia> p = _resolve_circuity_params(sc, StationCode("ORD"), StationCode("LHR"));
+julia> p === sc.defaults
+true
+```
+"""
+function _resolve_circuity_params(
+    constraints::SearchConstraints,
+    origin::StationCode,
+    dest::StationCode,
+)::ParameterSet
+    isempty(constraints.overrides) && return constraints.defaults
+    for override in constraints.overrides
+        (override.origin == WILDCARD_STATION || override.origin == origin) || continue
+        (override.destination == WILDCARD_STATION || override.destination == dest) || continue
+        return override.params
+    end
+    return constraints.defaults
 end
 
 # ── Override matching ─────────────────────────────────────────────────────────
