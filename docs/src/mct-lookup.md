@@ -148,12 +148,14 @@ Records are indexed by **station pair** `(arr_stn, dep_stn)`, then subdivided in
 
 When both stations in the key are the same, it is an **intra-station** connection (the normal case — passenger connects within one airport). When they differ, it is an **inter-station** connection (multi-airport city, e.g., arriving at JFK and departing from EWR in the New York metro area).
 
-The global defaults correspond to SSIM Ch. 8's opening section values:
-- DD (Domestic-Domestic): 60 min
-- DI (Domestic-International): 90 min
+The global defaults baked into `MCTLookup` are:
+- DD (Domestic-Domestic): 30 min
+- DI (Domestic-International): 60 min
 - ID (International-Domestic): 90 min
-- II (International-International): 120 min
+- II (International-International): 90 min
 - Inter-station (all types): 240 min (4 hours)
+
+These are the values used when no MCT record matches and no station-standard applies — the last line of the cascade. Exception records and station-standards in the `mct` table override these per-station / per-market.
 
 ### The MCTRecord Struct
 
@@ -492,8 +494,8 @@ If no exception, suppression, or station standard matched, the IATA global defau
                            │ no match
                   ┌────────▼──────────────────┐
                   │  Pass 3: Global Default   │
-                  │  (DD=60, DI=90,           │
-                  │   ID=90, II=120,          │
+                  │  (DD=30, DI=60,           │
+                  │   ID=90, II=90,           │
                   │   inter-station=240)      │
                   └───────────────────────────┘
 ```
@@ -728,7 +730,7 @@ All MCT-related configuration lives on `SearchConfig`. These settings control th
 | Parameter | Default | Description |
 |---|---|---|
 | `mct_cache_enabled` | `true` | Cache MCT lookup results during connection build (~77% hit rate) |
-| `mct_serial_ascending` | `true` | Tiebreaker at equal specificity: `true` = lower serial (earlier record) wins; `false` = higher serial (later record) wins |
+| `mct_serial_ascending` | `false` | Tiebreaker at equal specificity: `false` = higher serial (later record, matches production) wins; `true` = lower serial (earlier record) wins |
 | `mct_codeshare_mode` | `:both` | Codeshare carrier resolution: `:both` = all applicable partitions (YY, YN, NY, NN) with operating time floor; `:marketing` = marketing carrier only; `:operating` = operating carrier only |
 | `mct_schengen_mode` | `:sch_then_eur` | Schengen/Europe region priority: `:sch_then_eur` = SCH first, EUR fallback; `:eur_then_sch` = EUR first, SCH fallback; `:sch_only` = SCH or wildcard only; `:eur_only` = EUR or wildcard only |
 | `mct_suppressions_enabled` | `true` | Include suppression records in MCT lookup; `false` = ignore all suppressions |

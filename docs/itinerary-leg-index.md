@@ -1,5 +1,10 @@
 # Itinerary Leg Index — Quick Reference
 
+> **Note:** this is the quick-reference version. The canonical Documenter-served
+> page is [`docs/src/leg-index.md`](src/leg-index.md). If you're editing content,
+> prefer the src/ copy; this file is kept as a top-of-tree landing doc for the
+> common "what's the output format" question.
+
 ## What It Does
 
 The itinerary leg index functions search all valid itineraries between origins and destinations on given dates, returning a compact index of the legs in each itinerary. The output is:

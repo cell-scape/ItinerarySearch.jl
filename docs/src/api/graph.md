@@ -66,6 +66,7 @@ MCTRule
 MAFTRule
 CircuityRule
 check_cnx_roundtrip
+check_cnx_backtrack
 check_cnx_scope
 check_cnx_interline
 check_cnx_opdays
@@ -81,9 +82,17 @@ Itinerary rules are `Function` values with signature `(itn, ctx) -> Int`.
 build_itn_rules
 check_itn_scope
 check_itn_opdays
-check_itn_circuity
+check_itn_circuity_range
 check_itn_suppcodes
 check_itn_maft
+check_itn_elapsed_range
+check_itn_distance_range
+check_itn_stops_range
+check_itn_flight_time
+check_itn_layover_time
+check_itn_carriers
+check_itn_interline_dcnx
+check_itn_crs_cnx
 ```
 
 ## DFS Search

@@ -35,6 +35,26 @@ load_schedule!(store, config)
 
 The store is now ready to serve graph-build queries.
 
+### Alternative: Load from a JSON Config
+
+For deployment-style setups, keep the config in `config/defaults.json` and load it:
+
+```julia
+config = load_config("config/defaults.json")
+```
+
+The tracked `config/defaults.json` is an exhaustive exemplar listing every `SearchConfig` field at its compiled-in default — copy it, delete the sections you don't need, and tweak only the fields you want to override. Missing keys fall back to the struct defaults. See [`config/README.md`](../../config/README.md) for a grouped field reference (store, data, schedule, search, `mct_behaviour`, graph, output, `mct_audit`) and JSON schema.
+
+### Alternative: Build from a Dictionary
+
+If your config arrives as a Julia `Dict` (e.g., from YAML, environment variables, or a caller-built map), pass it straight to the constructor:
+
+```julia
+config = SearchConfig(Dict(:max_stops => 3, :interline => "all"))
+```
+
+Both `String` and `Symbol` keys work. Enum-valued fields (`scope`, `interline`) accept either the canonical enum (`SCOPE_INTL`) or its string form (`"intl"`). Unknown keys throw `ArgumentError`. The same pattern works for `SearchConstraints`, `ParameterSet`, `MarketOverride`, and `MCTAuditConfig`.
+
 ### Alternative: NewSSIM CSV Ingest
 
 For denormalized CSV schedule files (comma, pipe, or tab-delimited; .gz supported), use the NewSSIM ingest path:
@@ -264,7 +284,42 @@ all_legs = resolve_legs(ref, graph)   # Vector{Union{GraphLeg, Nothing}}
 all_records = resolve_legs(ref, store) # Vector{Union{LegRecord, Nothing}}
 ```
 
-## Step 6: Write CSV Files
+## Step 6: DataFrame and Tabular Output
+
+Before dropping to hand-rolled CSV, you probably want the `DataFrame` wrappers — they go straight to any Tables.jl sink (DataFrames, CSV.jl, Arrow.jl, Parquet) and preserve the full schedule-level detail plus the MCT audit trail.
+
+```julia
+using DataFrames
+
+itineraries = copy(search_itineraries(
+    graph.stations,
+    StationCode("ORD"),
+    StationCode("LHR"),
+    target_date,
+    ctx,
+))
+
+# One row per leg per itinerary — tidy / long format.  Contains the MCT
+# audit columns (`mct_matched_id`, `mct_matched_fields`) for connecting legs.
+legs_df = itinerary_legs_df(itineraries)
+# 2×N DataFrame with schedule + audit columns
+
+# One row per itinerary — summary format with joined flight-id and
+# record-serial strings, plus itinerary-level totals and geo counts.
+summary_df = itinerary_summary_df(itineraries)
+
+# One row per itinerary with legN_* / cnxN_* column blocks — wide pivot
+# useful for side-by-side comparison in spreadsheets or BI tools.  The
+# `max_legs` keyword pins the schema; itineraries with more legs than
+# this throw ArgumentError rather than silently truncating.
+pivot_df = itinerary_pivot_df(itineraries; max_legs=3)
+```
+
+The underlying `itinerary_long_format` and `itinerary_wide_format` functions return `Vector{NamedTuple}` — if you don't want the DataFrame dependency, these still satisfy the Tables.jl protocol and work with CSV.jl, Arrow.jl, and friends directly. See [API: Output](api/output.md) for the full column reference including the MCT audit fields.
+
+## Step 6b: Write CSV Files (traditional path)
+
+When you want the canonical CSV format with every schedule-level field or when you need passthrough columns from the original ingested data:
 
 ```julia
 outdir = "data/output/legs_index"
@@ -319,6 +374,8 @@ open("data/output/itineraries_ord_lhr.csv", "w") do io
     println("Wrote $n rows")
 end
 ```
+
+**Passthrough columns**: `write_itineraries` (and `write_legs`, `write_trips`) accept `store::DuckDBStore` and `passthrough_columns::Vector{String}` keyword arguments that append arbitrary columns from the original ingested schedule table — `prbd`, `DEI_127`, anything in the source CSV that isn't among the canonical columns. One batched SQL query; empty vector (default) takes a fast path with no store access. See [API: Output — Passthrough Columns](api/output.md) for details.
 
 ## Step 7: Trip Search
 

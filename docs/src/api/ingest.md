@@ -60,4 +60,14 @@ table_stats
 
 ```@docs
 load_config
+load_constraints
 ```
+
+`load_config` reads the top-level file structure (`store`, `data`, `schedule`,
+`search`, `mct_behaviour`, `graph`, `output`, `mct_audit`) and returns a
+`SearchConfig`. `load_constraints` reads the `constraints` section of the
+same file and returns a `SearchConstraints`. The two are orthogonal —
+a caller that needs both typically passes the same JSON path to each.
+
+See [`config/README.md`](../../../config/README.md) for the exhaustive
+field reference and JSON schema.

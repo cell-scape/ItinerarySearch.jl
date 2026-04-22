@@ -39,6 +39,7 @@ graph TD
 
     LegIndex --> JSON[JSON Output]
     LegIndex --> CSV[CSV Files]
+    Itineraries --> Tables[DataFrame / Tables.jl]
     Trips --> TripOut[Trip Output / Scoring]
     Itineraries --> Viz[HTML Visualizations]
 ```
@@ -106,7 +107,11 @@ When a complete path reaches the destination, `_validate_and_commit!` runs the i
 
 The `itinerary_legs` / `itinerary_legs_multi` / `itinerary_legs_json` functions post-process `Vector{Itinerary}` results into the compact `ItineraryRef` index format: deduplicated (by leg-sequence fingerprint), sorted by stops → elapsed → distance (nonstops first), and wrapped with summary fields.
 
-CSV output (`write_legs`, `write_itineraries`, `write_trips`) flattens graph objects into comma-delimited rows with canonical column names. Visualizations serialize graph and itinerary data to JSON embedded in self-contained HTML pages.
+CSV output (`write_legs`, `write_itineraries`, `write_trips`) flattens graph objects into comma-delimited rows with canonical column names, with optional passthrough of arbitrary columns from the original ingested schedule table (`store` + `passthrough_columns` kwargs; one batched SQL query).
+
+Tabular output flows through `itinerary_long_format` / `itinerary_wide_format` (returning `Vector{NamedTuple}` — satisfies the Tables.jl protocol) and the `DataFrame`-returning wrappers `itinerary_legs_df` / `itinerary_summary_df` / `itinerary_pivot_df`. Any consumer that accepts a Tables.jl source (DataFrames, CSV.jl, Arrow.jl, Parquet.jl, Query.jl) can ingest these directly. The long format includes MCT audit columns (`mct_matched_id`, `mct_matched_fields`) for connecting legs, tracing back to the matched MCT table rule.
+
+Visualizations serialize graph and itinerary data to JSON embedded in self-contained HTML pages.
 
 ### Observability
 
