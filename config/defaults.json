@@ -25,7 +25,6 @@
     "max_stops": 2,
     "max_connection_minutes": 480,
     "max_elapsed_minutes": 1440,
-    "circuity_extra_miles": 500.0,
     "circuity_check_scope": "both",
     "scope": "all",
     "interline": "codeshare",

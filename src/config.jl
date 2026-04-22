@@ -118,8 +118,8 @@ The README's *Configuration* table documents each field's default and purpose;
 see also `docs/src/getting-started.md`. Fields fall into five groups:
 
 - **Search shape**: `max_stops`, `max_connection_minutes`, `max_elapsed_minutes`,
-  `scope`, `interline`, `circuity_extra_miles`, `circuity_check_scope`,
-  `allow_roundtrips`, `distance_formula`.
+  `scope`, `interline`, `circuity_check_scope`, `allow_roundtrips`,
+  `distance_formula`.
 - **Scheduling window**: `leading_days`, `trailing_days`, `max_days` — how many
   days before/after `target_date` the schedule expansion includes.
 - **Input paths**: `ssim_path`, `mct_path`, `airports_path`, `regions_path`,
@@ -151,7 +151,6 @@ see also `docs/src/getting-started.md`. Fields fall into five groups:
     max_stops::Int = 2
     max_connection_minutes::Int = 480
     max_elapsed_minutes::Int = 1440
-    circuity_extra_miles::Float64 = 500.0
     scope::ScopeMode = SCOPE_ALL
     interline::InterlineMode = INTERLINE_CODESHARE
     max_days::Int = 1
@@ -565,8 +564,6 @@ function load_config(path::String)::SearchConfig
         v !== nothing && (kwargs[:max_connection_minutes] = v)
         v = _json_int(search, :max_elapsed_minutes)
         v !== nothing && (kwargs[:max_elapsed_minutes] = v)
-        f = _json_float(search, :circuity_extra_miles)
-        f !== nothing && (kwargs[:circuity_extra_miles] = f)
         s = _json_str(search, :scope)
         s !== nothing && (kwargs[:scope] = _parse_scope(s))
         s = _json_str(search, :interline)

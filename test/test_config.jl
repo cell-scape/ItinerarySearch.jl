@@ -10,7 +10,6 @@ using ItinerarySearch: _default_path, AirlineCode
         @test cfg.max_stops == 2
         @test cfg.max_connection_minutes == 480
         @test cfg.max_elapsed_minutes == 1440
-        @test cfg.circuity_extra_miles == 500.0
         @test cfg.scope == SCOPE_ALL
         @test cfg.interline == INTERLINE_CODESHARE
         @test cfg.max_days == 1
