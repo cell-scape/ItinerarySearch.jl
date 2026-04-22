@@ -136,4 +136,31 @@ using ItinerarySearch: _validate_circuity_tiers, circuity_factor_at, _effective_
         @test_throws ArgumentError load_circuity_tiers(p3)
         rm(p3; force=true)
     end
+
+    @testset "load_circuity_overrides — sample file" begin
+        path = joinpath(@__DIR__, "..", "data", "demo", "cirOvrd.dat")
+        ovrs = load_circuity_overrides(path)
+        @test length(ovrs) == 7  # match the known row count in the sample
+
+        # Spot-check a row
+        atl_yyz = first(o for o in ovrs if o.origin == StationCode("ATL") &&
+                                              o.destination == StationCode("YYZ"))
+        @test atl_yyz.carrier == WILDCARD_AIRLINE
+        @test atl_yyz.params.circuity_tiers == [CircuityTier(Inf, 2.7)]
+        @test atl_yyz.specificity == UInt32(1000)
+    end
+
+    @testset "load_circuity_overrides — validation" begin
+        # Missing ENTNM
+        p1 = tempname() * ".csv"
+        write(p1, "ORG,DEST,ENTNM,CRTY\nATL,YYZ,,2.7\n")
+        @test_throws ArgumentError load_circuity_overrides(p1)
+        rm(p1; force=true)
+
+        # Non-positive CRTY
+        p2 = tempname() * ".csv"
+        write(p2, "ORG,DEST,ENTNM,CRTY\nATL,YYZ,*,0\n")
+        @test_throws ArgumentError load_circuity_overrides(p2)
+        rm(p2; force=true)
+    end
 end
