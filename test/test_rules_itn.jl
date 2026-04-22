@@ -123,6 +123,34 @@ using Dates
         )
     end
 
+    # Build a 2-stop Itinerary (3 connections).
+    function _twoStop_itn(;
+        status=StatusBits(DOW_MON | DOW_WED | DOW_FRI),
+        total_distance=Distance(2000.0f0),
+        market_distance=Distance(1000.0f0),
+        num_stops=Int16(2),
+        origin_code="DEN",
+        destination_code="SFO",
+    )
+        org_stn = GraphStation(_itn_station_record(origin_code, "US", "NAM"))
+        cnx1_stn = GraphStation(_itn_station_record("ORD", "US", "NAM"))
+        cnx2_stn = GraphStation(_itn_station_record("LAX", "US", "NAM"))
+        dst_stn = GraphStation(_itn_station_record(destination_code, "US", "NAM"))
+        leg1 = GraphLeg(_itn_leg_record(departure_station=origin_code, arrival_station="ORD", distance=700.0f0), org_stn, cnx1_stn)
+        leg2 = GraphLeg(_itn_leg_record(departure_station="ORD", arrival_station="LAX", distance=800.0f0), cnx1_stn, cnx2_stn)
+        leg3 = GraphLeg(_itn_leg_record(departure_station="LAX", arrival_station=destination_code, distance=500.0f0), cnx2_stn, dst_stn)
+        cp1 = nonstop_connection(leg1, org_stn)
+        cp2 = nonstop_connection(leg2, cnx1_stn)
+        cp3 = nonstop_connection(leg3, cnx2_stn)
+        Itinerary(
+            connections=GraphConnection[cp1, cp2, cp3],
+            status=status,
+            total_distance=total_distance,
+            market_distance=market_distance,
+            num_stops=num_stops,
+        )
+    end
+
     # Minimal mock context; rules access only the fields they need.
     function _mock_ctx(;
         scope=SCOPE_ALL,
@@ -231,54 +259,149 @@ using Dates
             @test check_itn_circuity_range(itn, ctx) == PASS
         end
 
-        @testset "passes when market_distance is zero" begin
-            itn = _nonstop_itn(total_distance=Distance(999.0f0), market_distance=Distance(0.0f0))
+        @testset "nonstop (num_stops=0) skipped — connection-level rule handles it" begin
+            # After T5 rewire, nonstop itineraries bypass the itinerary-level check.
+            # A nonstop that would otherwise exceed the ratio still returns PASS here.
+            itn = _nonstop_itn(total_distance=Distance(10000.0f0), market_distance=Distance(500.0f0))
             @test check_itn_circuity_range(itn, ctx) == PASS
         end
 
-        @testset "passes when total_distance <= factor * market_distance + extra" begin
-            # ParameterSet defaults: max_circuity=2.5, domestic_circuity_extra_miles=500
-            # 1000 <= 2.5 * 1000 + 500 = 3000 => PASS
-            itn = _nonstop_itn(total_distance=Distance(1000.0f0), market_distance=Distance(1000.0f0))
+        @testset "1-stop (num_stops=1) also skipped" begin
+            itn = _oneStop_itn(total_distance=Distance(10000.0f0), market_distance=Distance(500.0f0))
             @test check_itn_circuity_range(itn, ctx) == PASS
         end
 
-        @testset "fails when total_distance >> market_distance" begin
-            # 10000 > 2.5 * 500 + 500 = 1750 => FAIL
-            itn = _nonstop_itn(
+        @testset "2-stop passes when market_distance is zero" begin
+            itn = _twoStop_itn(total_distance=Distance(999.0f0), market_distance=Distance(0.0f0))
+            @test check_itn_circuity_range(itn, ctx) == PASS
+        end
+
+        @testset "2-stop passes when total_distance <= tier_factor * market_distance + extra" begin
+            # DEFAULT_CIRCUITY_TIERS: market=1000mi → tier [800,2000] → factor=1.5
+            # max_dist = 1.5*1000 + 500 (domestic extra) = 2000; 1800 <= 2000 => PASS
+            itn = _twoStop_itn(total_distance=Distance(1800.0f0), market_distance=Distance(1000.0f0))
+            @test check_itn_circuity_range(itn, ctx) == PASS
+        end
+
+        @testset "2-stop fails when total_distance >> market_distance" begin
+            # DEFAULT_CIRCUITY_TIERS: market=500mi → tier [250,800] → factor=1.9
+            # max_dist = 1.9*500 + 500 = 1450; 10000 > 1450 => FAIL
+            itn = _twoStop_itn(
                 total_distance=Distance(10000.0f0),
                 market_distance=Distance(500.0f0),
             )
             @test check_itn_circuity_range(itn, ctx) == FAIL_ITN_CIRCUITY
         end
 
-        @testset "uses constraints.defaults.max_circuity" begin
-            # Use a tight factor of 1.0 with no extra miles
+        @testset "max_circuity ceiling caps tier factor" begin
+            # Tight max_circuity=1.0 overrides tier factor; no extra miles.
+            # 2-stop: total=2000, market=1000 => 2000 > min(1.5, 1.0)*1000+0 = 1000 => FAIL
             tight = SearchConstraints(defaults=ParameterSet(max_circuity=1.0, domestic_circuity_extra_miles=0.0))
             ctx_tight = _mock_ctx(constraints=tight)
-            # total=2000, market=1000 => 2000 > 1.0 * 1000 + 0 => FAIL
-            itn = _nonstop_itn(total_distance=Distance(2000.0f0), market_distance=Distance(1000.0f0))
+            itn = _twoStop_itn(total_distance=Distance(2000.0f0), market_distance=Distance(1000.0f0))
             @test check_itn_circuity_range(itn, ctx_tight) == FAIL_ITN_CIRCUITY
         end
 
-        @testset "international route uses international_circuity_extra_miles" begin
-            # ParameterSet defaults: max_circuity=2.5, international_circuity_extra_miles=1000
-            # total=3400, market=1000 => 3400 <= 2.5*1000+1000=3500 => PASS
-            # total=3600, market=1000 => 3600 > 3500 => FAIL
-            ctx_intl = _mock_ctx()
+        @testset "international 2-stop uses international_circuity_extra_miles" begin
+            # DEFAULT_CIRCUITY_TIERS: market=1000mi → factor=1.5; international extra=1000
+            # max_dist = 1.5*1000+1000 = 2500; 2400 <= 2500 => PASS; 2600 > 2500 => FAIL
             intl_status = StatusBits(DOW_MON | STATUS_INTERNATIONAL)
-            itn_pass = _nonstop_itn(
+            itn_pass = _twoStop_itn(
                 status=intl_status,
-                total_distance=Distance(3400.0f0),
+                total_distance=Distance(2400.0f0),
                 market_distance=Distance(1000.0f0),
             )
-            @test check_itn_circuity_range(itn_pass, ctx_intl) == PASS
-            itn_fail = _nonstop_itn(
+            @test check_itn_circuity_range(itn_pass, ctx) == PASS
+            itn_fail = _twoStop_itn(
                 status=intl_status,
-                total_distance=Distance(3600.0f0),
+                total_distance=Distance(2600.0f0),
                 market_distance=Distance(1000.0f0),
             )
-            @test check_itn_circuity_range(itn_fail, ctx_intl) == FAIL_ITN_CIRCUITY
+            @test check_itn_circuity_range(itn_fail, ctx) == FAIL_ITN_CIRCUITY
+        end
+    end
+
+    # ── Rule 3b: check_itn_circuity_range — tier-based ───────────────────────────
+
+    @testset "check_itn_circuity_range — tier-based" begin
+        ctx = _mock_ctx()
+
+        @testset "nonstop always PASS (covered by connection-level)" begin
+            itn = _nonstop_itn(total_distance=Distance(1000.0f0), market_distance=Distance(1000.0f0))
+            @test check_itn_circuity_range(itn, ctx) == PASS
+        end
+
+        @testset "1-stop still skipped" begin
+            itn = _oneStop_itn(total_distance=Distance(1000.0f0), market_distance=Distance(500.0f0))
+            @test check_itn_circuity_range(itn, ctx) == PASS
+        end
+
+        @testset "2-stop accepted when flown <= tier_factor * market_dist + extra" begin
+            # DEFAULT_CIRCUITY_TIERS: 1000mi → factor 1.5; domestic extra 500
+            # max_dist = 1.5*1000+500 = 2000; 1800 <= 2000 => PASS
+            itn = _twoStop_itn(
+                total_distance=Distance(1800.0f0),
+                market_distance=Distance(1000.0f0),
+                origin_code="DEN",
+                destination_code="SFO",
+            )
+            @test check_itn_circuity_range(itn, ctx) == PASS
+        end
+
+        @testset "2-stop rejected when flown exceeds tier factor" begin
+            # DEFAULT_CIRCUITY_TIERS: 1000mi → factor 1.5; domestic extra 500
+            # max_dist = 1.5*1000+500 = 2000; 3500 > 2000 => FAIL
+            itn = _twoStop_itn(
+                total_distance=Distance(3500.0f0),
+                market_distance=Distance(1000.0f0),
+            )
+            @test check_itn_circuity_range(itn, ctx) == FAIL_ITN_CIRCUITY
+        end
+
+        @testset "max_circuity ceiling kicks in when less than tier factor" begin
+            # max_circuity=1.1 caps factor (tier gives 1.5); no extra miles
+            # max_dist = 1.1*1000+0 = 1100; 1200 > 1100 => FAIL
+            ctx_cap = _mock_ctx(constraints=SearchConstraints(
+                defaults=ParameterSet(max_circuity=1.1, domestic_circuity_extra_miles=0.0),
+            ))
+            itn = _twoStop_itn(
+                total_distance=Distance(1200.0f0),
+                market_distance=Distance(1000.0f0),
+            )
+            @test check_itn_circuity_range(itn, ctx_cap) == FAIL_ITN_CIRCUITY
+        end
+
+        @testset "min_circuity floor rejects overly-direct itineraries" begin
+            # min_circuity=1.3; ratio=1100/1000=1.1 < 1.3 => FAIL
+            ctx_floor = _mock_ctx(constraints=SearchConstraints(
+                defaults=ParameterSet(min_circuity=1.3),
+            ))
+            itn = _twoStop_itn(
+                total_distance=Distance(1100.0f0),
+                market_distance=Distance(1000.0f0),
+            )
+            @test check_itn_circuity_range(itn, ctx_floor) == FAIL_ITN_CIRCUITY
+        end
+
+        @testset "market override changes the effective factor" begin
+            # Override DEN->SFO: single tier at factor=3.5 (Inf threshold)
+            # max_dist = 3.5*1000+500 = 4000; 3000 <= 4000 => PASS (default factor 1.5 would reject it)
+            override_ctx = _mock_ctx(constraints=SearchConstraints(
+                overrides=[MarketOverride(
+                    origin=StationCode("DEN"),
+                    destination=StationCode("SFO"),
+                    carrier=WILDCARD_AIRLINE,
+                    params=ParameterSet(circuity_tiers=[CircuityTier(Inf, 3.5)]),
+                    specificity=UInt32(1000),
+                )],
+            ))
+            itn = _twoStop_itn(
+                total_distance=Distance(3000.0f0),
+                market_distance=Distance(1000.0f0),
+                origin_code="DEN",
+                destination_code="SFO",
+            )
+            @test check_itn_circuity_range(itn, override_ctx) == PASS
         end
     end
 
