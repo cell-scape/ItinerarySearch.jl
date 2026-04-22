@@ -535,10 +535,11 @@ using Dates
 
     @testset "CircuityRule" begin
 
-        @testset "default constructor" begin
-            rule = CircuityRule()
-            @test rule.domestic_extra_miles == 500.0
-            @test rule.international_extra_miles == 1000.0
+        @testset "fieldless marker struct" begin
+            # CircuityRule carries no state; factor + extra_miles resolve live
+            # from ctx.constraints via _resolve_circuity_params.
+            @test fieldcount(CircuityRule) == 0
+            @test CircuityRule() isa CircuityRule
         end
 
         @testset "round-trip always passes" begin
@@ -610,7 +611,7 @@ using Dates
                 station=cnx_stn,
                 status=StatusBits(DOW_MON),
             )
-            rule = CircuityRule(0.0, 0.0)   # extra_miles captured; factor from ctx.constraints
+            rule = CircuityRule()   # factor + extra_miles both from ctx.constraints
             @test rule(cp, ctx) == FAIL_CIRCUITY
         end
 
@@ -643,18 +644,30 @@ using Dates
             # Build ctx with a market override for (ORD, LHR) that loosens the factor to 3.0.
             # DEFAULT_CIRCUITY_TIERS at ~5000 NM would give factor=1.3, which would fail
             # for a 2500-NM route on a 1000-NM GC. The override unlocks it to 3.0 => PASS.
+            # Both the override params and the global defaults zero out extra_miles so
+            # the factor is the only thing driving PASS/FAIL in this test.
             override = MarketOverride(
                 origin=StationCode("ORD"),
                 destination=StationCode("LHR"),
                 carrier=WILDCARD_AIRLINE,
-                params=ParameterSet(circuity_tiers=[CircuityTier(Inf, 3.0)]),
+                params=ParameterSet(
+                    circuity_tiers=[CircuityTier(Inf, 3.0)],
+                    domestic_circuity_extra_miles=0.0,
+                    international_circuity_extra_miles=0.0,
+                ),
                 specificity=UInt32(1000),
             )
-            constraints = SearchConstraints(overrides=[override])
+            constraints = SearchConstraints(
+                defaults=ParameterSet(
+                    domestic_circuity_extra_miles=0.0,
+                    international_circuity_extra_miles=0.0,
+                ),
+                overrides=[override],
+            )
             gc_cache = Dict{Tuple{StationCode,StationCode}, Float64}()
             ctx = _mock_ctx(constraints=constraints, gc_cache=gc_cache)
 
-            rule = CircuityRule(0.0, 0.0)  # extra_miles both 0 to isolate factor behaviour
+            rule = CircuityRule()  # extra_miles flow through ctx.constraints
 
             # ORD→LHR: inject gc_dist=1000.0 directly so we don't depend on haversine.
             # route_dist=2500 vs factor=3.0 => 2500 <= 3.0*1000 => PASS
@@ -692,6 +705,74 @@ using Dates
                 status=StatusBits(DOW_MON),   # domestic (no STATUS_INTERNATIONAL)
             )
             @test rule(cp_fail, ctx) == FAIL_CIRCUITY  # 2500 > 1.5*1000+0=1500
+        end
+
+        @testset "CircuityRule honors per-market extra_miles overrides" begin
+            # Build a tight global default (factor 1.0, extras 0) that would fail a
+            # ORD→LHR route where route_dist=2500 vs gc_dist=1000.  Then add a
+            # market override for (ORD, LHR) that leaves the factor at 1.0 but
+            # grants 2000 extra international miles — enough to flip the result
+            # to PASS.  This exercises the symmetry fix: the connection-level
+            # rule now resolves extra_miles live from the effective ParameterSet
+            # exactly like `check_itn_circuity_range` does.
+            override = MarketOverride(
+                origin=StationCode("ORD"),
+                destination=StationCode("LHR"),
+                carrier=WILDCARD_AIRLINE,
+                params=ParameterSet(
+                    circuity_tiers=[CircuityTier(Inf, 1.0)],
+                    domestic_circuity_extra_miles=0.0,
+                    international_circuity_extra_miles=2000.0,  # generous per-market
+                ),
+                specificity=UInt32(1000),
+            )
+            tight_defaults = ParameterSet(
+                circuity_tiers=[CircuityTier(Inf, 1.0)],
+                domestic_circuity_extra_miles=0.0,
+                international_circuity_extra_miles=0.0,  # strict fallback
+            )
+            constraints = SearchConstraints(defaults=tight_defaults, overrides=[override])
+            gc_cache = Dict{Tuple{StationCode,StationCode}, Float64}()
+            ctx = _mock_ctx(constraints=constraints, gc_cache=gc_cache)
+            rule = CircuityRule()
+
+            # ORD→FRA→LHR, international, route=2500, gc(ORD,LHR)=1000.
+            # Without the override: 2500 > 1.0*1000+0 => FAIL.
+            # With the override:    2500 <= 1.0*1000+2000 => PASS.
+            org_stn  = GraphStation(_test_station_record("ORD", "US", "NAM"; latitude=41.97, longitude=-87.91))
+            cnx_stn  = GraphStation(_test_station_record("FRA", "DE", "EUR"; latitude=50.03, longitude=8.57))
+            dst_stn  = GraphStation(_test_station_record("LHR", "GB", "EUR"; latitude=51.47, longitude=-0.45))
+            from_rec = _test_leg_record(departure_station="ORD", arrival_station="FRA", distance=1500.0f0)
+            to_rec   = _test_leg_record(departure_station="FRA", arrival_station="LHR", distance=1000.0f0)
+            from_leg = GraphLeg(from_rec, org_stn, cnx_stn)
+            to_leg   = GraphLeg(to_rec,   cnx_stn, dst_stn)
+            gc_cache[(StationCode("ORD"), StationCode("LHR"))] = 1000.0
+            cp = GraphConnection(
+                from_leg=from_leg,
+                to_leg=to_leg,
+                station=cnx_stn,
+                status=StatusBits(DOW_MON | STATUS_INTERNATIONAL),
+            )
+            @test rule(cp, ctx) == PASS
+
+            # Sanity: a different market (DEN→SFO, no override) falls through to
+            # the tight defaults and fails.  Confirms the override is the only
+            # thing flipping the outcome on the ORD→LHR market.
+            org2_stn = GraphStation(_test_station_record("DEN", "US", "NAM"; latitude=39.86, longitude=-104.67))
+            cnx2_stn = GraphStation(_test_station_record("PHX", "US", "NAM"; latitude=33.44, longitude=-112.01))
+            dst2_stn = GraphStation(_test_station_record("SFO", "US", "NAM"; latitude=37.62, longitude=-122.38))
+            from2_rec = _test_leg_record(departure_station="DEN", arrival_station="PHX", distance=600.0f0)
+            to2_rec   = _test_leg_record(departure_station="PHX", arrival_station="SFO", distance=1900.0f0)
+            from2_leg = GraphLeg(from2_rec, org2_stn, cnx2_stn)
+            to2_leg   = GraphLeg(to2_rec,   cnx2_stn, dst2_stn)
+            gc_cache[(StationCode("DEN"), StationCode("SFO"))] = 1000.0
+            cp_fail = GraphConnection(
+                from_leg=from2_leg,
+                to_leg=to2_leg,
+                station=cnx2_stn,
+                status=StatusBits(DOW_MON),
+            )
+            @test rule(cp_fail, ctx) == FAIL_CIRCUITY
         end
     end
 
@@ -832,11 +913,10 @@ using Dates
         # All elements are callable
         @test all(r -> applicable(r, GraphConnection(), (config=config, constraints=constraints, gc_cache=Dict{Tuple{StationCode,StationCode},Float64}(), mct_cache=Dict{UInt64,MCTResult}(), build_stats=BuildStats(), mct_selections=MCTSelectionRow[])), rules)
 
-        # Verify CircuityRule captures the extra-miles defaults from constraints;
-        # factor is now resolved per-eval from ctx.constraints, not stored on the struct.
+        # CircuityRule is a fieldless marker; both factor and extra_miles
+        # are resolved per-eval from ctx.constraints (matching the itinerary rule).
         rule9 = rules[9]::CircuityRule
-        @test rule9.domestic_extra_miles == constraints.defaults.domestic_circuity_extra_miles
-        @test rule9.international_extra_miles == constraints.defaults.international_circuity_extra_miles
+        @test fieldcount(typeof(rule9)) == 0
     end
 
     @testset "build_cnx_rules with maft_enabled=false omits MAFTRule" begin
