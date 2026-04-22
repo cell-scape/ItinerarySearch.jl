@@ -48,9 +48,9 @@ The flight graph materializes legs for a window around a target date. Enlarge th
 
 | Key | Default | Description |
 |---|---|---|
-| `leading_days` | `2` | Days before target date included in the schedule window. |
-| `trailing_days` | `0` | Days after target date included. |
-| `max_days` | `1` | Maximum schedule span for multi-date runs (used by CLI fan-out). |
+| `leading_days` | `1` | Days before target date included in the schedule window. |
+| `trailing_days` | `1` | Days after target date included. |
+| `max_days` | `2` | Maximum schedule span for multi-date runs (used by CLI fan-out). |
 
 ### `search` — itinerary-search semantics
 

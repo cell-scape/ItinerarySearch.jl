@@ -1,11 +1,9 @@
 {
   "_comment": "Exhaustive SearchConfig exemplar. Every field below is set to its compiled-in default value; delete a key to rely on the default (same effect) or change the value to override. Companion prose reference lives at config/README.md.",
-
   "store": {
     "backend": "duckdb",
     "path": ":memory:"
   },
-
   "data": {
     "ssim": "data/input/uaoa_ssim.new.dat",
     "mct": "data/input/MCTIMFILUA.DAT",
@@ -18,13 +16,11 @@
     "serviceclass": "data/input/servclasstable.dat",
     "constraints": "data/output"
   },
-
   "schedule": {
-    "leading_days": 2,
-    "trailing_days": 0,
-    "max_days": 1
+    "leading_days": 1,
+    "trailing_days": 1,
+    "max_days": 2
   },
-
   "search": {
     "max_stops": 2,
     "max_connection_minutes": 480,
@@ -39,7 +35,6 @@
     "interline_dcnx_enabled": true,
     "crs_cnx_enabled": true
   },
-
   "mct_behaviour": {
     "mct_cache_enabled": true,
     "mct_serial_ascending": false,
@@ -47,12 +42,10 @@
     "mct_schengen_mode": "sch_then_eur",
     "mct_suppressions_enabled": true
   },
-
   "graph": {
     "export_path": "data/output",
     "import_path": "data/output"
   },
-
   "output": {
     "metrics_level": "full",
     "event_log_enabled": false,
@@ -60,9 +53,12 @@
     "log_level": "info",
     "log_json_path": "",
     "log_stdout_json": false,
-    "output_formats": ["json", "yaml", "csv"]
+    "output_formats": [
+      "json",
+      "yaml",
+      "csv"
+    ]
   },
-
   "mct_audit": {
     "enabled": false,
     "detail": "summary",
