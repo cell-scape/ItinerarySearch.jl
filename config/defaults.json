@@ -22,12 +22,12 @@
     "max_days": 1
   },
   "search": {
-    "max_stops": 3,
+    "max_stops": 2,
     "max_connection_minutes": 480,
     "max_elapsed_minutes": 1440,
     "circuity_check_scope": "both",
     "scope": "all",
-    "interline": "all",
+    "interline": "codeshare",
     "allow_roundtrips": false,
     "distance_formula": "haversine",
     "maft_enabled": true,
@@ -47,11 +47,11 @@
   },
   "output": {
     "metrics_level": "full",
-    "event_log_enabled": true,
+    "event_log_enabled": false,
     "event_log_path": "data/output/events.jsonl",
     "log_level": "info",
     "log_json_path": "data/output/info_log.jsonl",
-    "log_stdout_json": true,
+    "log_stdout_json": false,
     "output_formats": [
       "json",
       "yaml",
