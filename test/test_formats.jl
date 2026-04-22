@@ -43,6 +43,7 @@ using DataFrames
         leg_sequence_number=UInt8(1),
         departure_terminal="1",
         arrival_terminal="1",
+        traffic_restriction_for_leg="",
     )
         LegRecord(
             carrier=AirlineCode(carrier),
@@ -74,7 +75,7 @@ using DataFrames
             frequency=frequency,
             dep_intl_dom=dep_intl_dom,
             arr_intl_dom=arr_intl_dom,
-            traffic_restriction_for_leg=InlineString15(""),
+            traffic_restriction_for_leg=InlineString15(traffic_restriction_for_leg),
             traffic_restriction_overflow=' ',
             record_serial=record_serial,
             row_number=UInt64(1),
@@ -773,6 +774,76 @@ using DataFrames
         e4 = _itinref_entry_rich(_two_leg_itin(leg1, leg2), 1)
         @test e4["is_codeshare"] == true
         @test e4["is_interline"] == true
+    end
+
+    @testset "_itinref_entry_rich per-leg flags: IL boundary, INTL crossing" begin
+        # Build a 1-stop where leg 1 is domestic UA, leg 2 is intl LH.
+        # Expected per-leg flags:
+        #   leg 1 (UA, US→US): is_intl_leg=false, is_interline_leg=false (first)
+        #   leg 2 (LH, US→DE): is_intl_leg=true,  is_interline_leg=true  (boundary)
+        # Itinerary-level: is_codeshare=false (both host), is_interline=true,
+        # is_international=true.
+        using ItinerarySearch: _itinref_entry_rich
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        fra = GraphStation(_stn_rec("FRA", "DE", "EUR"))
+        rec1 = _leg_rec(carrier="UA", flight_number=100,
+                        departure_station="ORD", arrival_station="JFK",
+                        record_serial=UInt32(1))
+        rec2 = _leg_rec(carrier="LH", flight_number=431,
+                        departure_station="JFK", arrival_station="FRA",
+                        arr_intl_dom='I', record_serial=UInt32(2))
+        leg1 = GraphLeg(rec1, ord, jfk)
+        leg2 = GraphLeg(rec2, jfk, fra)
+        cp1 = nonstop_connection(leg1, ord)
+        cp2 = GraphConnection(from_leg=leg1, to_leg=leg2, station=jfk,
+                              mct=Minutes(60), mxct=Minutes(240),
+                              cnx_time=Minutes(120))
+        itn = Itinerary(connections=GraphConnection[cp1, cp2], num_stops=Int16(1))
+        e = _itinref_entry_rich(itn, 1)
+
+        # Per-leg flags
+        @test e["legs"][1]["is_intl_leg"] == false
+        @test e["legs"][1]["is_interline_leg"] == false   # first leg, no predecessor
+        @test e["legs"][2]["is_intl_leg"] == true         # US → DE
+        @test e["legs"][2]["is_interline_leg"] == true    # UA → LH boundary
+
+        # Itinerary-level rollup unchanged
+        @test e["is_interline"] == true
+        @test e["is_codeshare"] == false                  # both legs host
+    end
+
+    @testset "_itinref_entry_rich has_trc rollup is true if any leg has a TRC" begin
+        using ItinerarySearch: _itinref_entry_rich
+        # Construct a 1-stop where leg 2 carries a TRC code.  has_trc must
+        # be true on the itinerary, with the actual code preserved per-leg.
+        jfk = GraphStation(_stn_rec("JFK", "US", "NAM"))
+        ord = GraphStation(_stn_rec("ORD", "US", "NAM"))
+        lhr = GraphStation(_stn_rec("LHR", "GB", "EUR"))
+        rec1 = _leg_rec(carrier="UA", flight_number=200,
+                        departure_station="JFK", arrival_station="ORD",
+                        record_serial=UInt32(1))
+        rec2 = _leg_rec(carrier="UA", flight_number=916,
+                        departure_station="ORD", arrival_station="LHR",
+                        arr_intl_dom='I', record_serial=UInt32(2),
+                        traffic_restriction_for_leg="A")  # TRC 'A'
+        leg1 = GraphLeg(rec1, jfk, ord)
+        leg2 = GraphLeg(rec2, ord, lhr)
+        cp1 = nonstop_connection(leg1, jfk)
+        cp2 = GraphConnection(from_leg=leg1, to_leg=leg2, station=ord,
+                              mct=Minutes(60), mxct=Minutes(240),
+                              cnx_time=Minutes(120))
+        itn = Itinerary(connections=GraphConnection[cp1, cp2], num_stops=Int16(1))
+        e = _itinref_entry_rich(itn, 1)
+        @test e["has_trc"] == true
+        @test e["legs"][1]["trc"] == ""
+        @test e["legs"][2]["trc"] == "A"
+    end
+
+    @testset "_itinref_entry_rich has_trc=false when no leg carries a TRC" begin
+        using ItinerarySearch: _itinref_entry_rich
+        e = _itinref_entry_rich(_nonstop_itinerary(), 1)
+        @test e["has_trc"] == false
     end
 
     @testset "_itinref_entry_rich flights string: arrows, no repeats on through" begin

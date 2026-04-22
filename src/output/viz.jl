@@ -1196,6 +1196,7 @@ function _itinref_entry_rich(itn::Itinerary, idx::Int;
     # marketing values here so downstream consumers (JS template, callers
     # of the rich entry) don't need to know about the SSIM convention.
     leg_dicts = Dict{String,Any}[]
+    prev_carrier = ""
     for (k, leg) in enumerate(legs)
         rec = leg.record
         trc = _leg_trc_char(rec)
@@ -1206,6 +1207,17 @@ function _itinref_entry_rich(itn::Itinerary, idx::Int;
         op_carrier = isempty(op_carrier_raw) ? mkt_carrier : op_carrier_raw
         op_flight  = op_flight_raw == 0      ? mkt_flight  : op_flight_raw
         is_codeshare_leg = (mkt_carrier != op_carrier) || (mkt_flight != op_flight)
+        # Per-leg INTL: this single leg crosses an international border.
+        org_country = (leg.org::GraphStation).country
+        dst_country = (leg.dst::GraphStation).country
+        is_intl_leg = org_country != InlineString3("") &&
+                      dst_country != InlineString3("") &&
+                      org_country != dst_country
+        # Per-leg IL: this leg is the boundary of an interline transition —
+        # marketing carrier differs from the previous leg's marketing carrier.
+        # First leg is never an interline boundary.
+        is_interline_leg = k > 1 && mkt_carrier != prev_carrier
+        prev_carrier = mkt_carrier
         push!(leg_dicts, Dict{String,Any}(
             "leg_pos"                 => k,
             "carrier"                 => mkt_carrier,
@@ -1215,6 +1227,8 @@ function _itinref_entry_rich(itn::Itinerary, idx::Int;
             "operating_carrier"       => op_carrier,
             "operating_flight_number" => op_flight,
             "is_codeshare_leg"        => is_codeshare_leg,
+            "is_intl_leg"             => is_intl_leg,
+            "is_interline_leg"        => is_interline_leg,
             "dei_10"                  => _filter_dei10(strip(String(rec.dei_10)), dei10_filter),
             "row_number"              => Int(rec.row_number),
             "record_serial"           => Int(rec.record_serial),
@@ -1300,6 +1314,10 @@ function _itinref_entry_rich(itn::Itinerary, idx::Int;
         end
     end
 
+    # Itinerary-level "any leg has a TRC code" rollup, for a generic TRC
+    # badge in the Flags column.  The actual TRC characters stay per-leg.
+    has_trc = any(d -> !isempty(d["trc"]::String), leg_dicts)
+
     Dict{String,Any}(
         "date"             => date,
         "idx"              => idx,
@@ -1318,6 +1336,7 @@ function _itinref_entry_rich(itn::Itinerary, idx::Int;
         "is_codeshare"     => is_codeshare_itn,
         "is_interline"     => is_interline_itn,
         "has_through"      => is_through(itn.status),
+        "has_trc"          => has_trc,
         "legs"             => leg_dicts,
         "cnxs"             => cnx_dicts,
     )
@@ -1484,7 +1503,8 @@ function _write_itinref_html(path::String, json_data::String, title::String)
     "        const flagsHtml = (d.is_international?'<span class=\"badge badge-intl\">INTL</span>':'')+\n",
     "                          (d.is_codeshare?'<span class=\"badge badge-cs\">CS</span>':'')+\n",
     "                          (d.is_interline?'<span class=\"badge badge-il\">IL</span>':'')+\n",
-    "                          (d.has_through?'<span class=\"badge badge-thr\">THR</span>':'');\n",
+    "                          (d.has_through?'<span class=\"badge badge-thr\">THR</span>':'')+\n",
+    "                          (d.has_trc?'<span class=\"trc-badge\">TRC</span>':'');\n",
     "        tr.innerHTML = '<td><span class=\"expand-icon\">'+(expanded.has(key)?'&#9660;':'&#9654;')+'</span> '+(fi+1)+'</td>'+\n",
     "          '<td>'+d.origin+'</td><td>'+d.destination+'</td>'+\n",
     "          '<td class=\"flights\">'+d.flights+'</td><td class=\"route\">'+d.route+'</td>'+\n",
@@ -1510,7 +1530,13 @@ function _write_itinref_html(path::String, json_data::String, title::String)
     "            const fltCell = addCell(lr, leg.carrier+' '+leg.flight_number);\n",
     "            if (isCS) appendBadgeText(fltCell, '(op '+leg.operating_carrier+' '+leg.operating_flight_number+')', '#8b949e');\n",
     "            if (leg.dei_10) appendBadgeText(fltCell, 'also: '+leg.dei_10, '#79c0ff');\n",
-    "            if (leg.trc) appendBadgeText(fltCell, 'TRC '+leg.trc, '#ff7b8b', 'trc-badge');\n",
+    "            // Per-leg flag badges (IL on the boundary leg of an interline\n",
+    "            // transition, INTL when the leg crosses a border, CS when the\n",
+    "            // leg itself is a codeshare).  Visually parallel to the TRC badge.\n",
+    "            if (leg.is_interline_leg) appendBadgeText(fltCell, 'IL', '', 'badge badge-il');\n",
+    "            if (leg.is_intl_leg)      appendBadgeText(fltCell, 'INTL', '', 'badge badge-intl');\n",
+    "            if (isCS)                 appendBadgeText(fltCell, 'CS', '', 'badge badge-cs');\n",
+    "            if (leg.trc)              appendBadgeText(fltCell, 'TRC '+leg.trc, '#ff7b8b', 'trc-badge');\n",
     "            if (leg.dep_dt) {\n",
     "              const tsCell = addCell(lr, fmtDt(leg.dep_dt)+' \\u2192 '+fmtDt(leg.arr_dt), 'ts');\n",
     "              tsCell.colSpan = 2;\n",
