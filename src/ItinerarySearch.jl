@@ -98,7 +98,7 @@ export DuckDBStore, table_stats, load_schedule!
 # Ingest
 export ingest_ssim!, ingest_mct!, ingest_newssim!
 export load_airports!, load_regions!, load_aircrafts!, load_oa_control!
-export load_circuity_tiers, load_circuity_overrides
+export load_circuity_tiers, load_circuity_overrides, apply_circuity_files!
 
 # Build & search
 export build_graph!, search, search_markets

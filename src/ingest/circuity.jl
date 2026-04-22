@@ -109,3 +109,65 @@ function load_circuity_overrides(
     end
     return overrides
 end
+
+"""
+    `apply_circuity_files!(constraints::SearchConstraints; defaults_path=nothing, overrides_path=nothing)::SearchConstraints`
+---
+
+# Description
+- Compose CSV-loaded tiers and overrides into a `SearchConstraints`
+- Returns a new `SearchConstraints` with:
+  - `defaults.circuity_tiers` replaced by the parsed tiers (if `defaults_path`
+    is supplied and the file exists)
+  - `overrides` appended with the parsed market overrides (if `overrides_path`
+    is supplied and the file exists)
+  - `overrides` re-sorted by descending specificity to preserve the invariant
+    required by `resolve_params` and `_resolve_circuity_params`
+- The `!` in the name is aspirational — the function returns a new constraints
+  object rather than mutating; Julia's `@kwdef` immutable `ParameterSet` forces
+  reconstruction. The name preserves the conventional "this modifies
+  constraints conceptually" signal.
+
+# Arguments
+1. `constraints::SearchConstraints`: starting constraints object
+
+# Keyword Arguments
+- `defaults_path::Union{String,Nothing}=nothing`: path to a tier CSV
+  (cirOvrdDflt.dat format); if nothing or file missing, defaults stay unchanged
+- `overrides_path::Union{String,Nothing}=nothing`: path to a market override CSV
+  (cirOvrd.dat format); if nothing or file missing, overrides stay unchanged
+
+# Returns
+- `::SearchConstraints`: new constraints with CSV-loaded circuity config folded in
+"""
+function apply_circuity_files!(
+    constraints::SearchConstraints;
+    defaults_path::Union{String,Nothing} = nothing,
+    overrides_path::Union{String,Nothing} = nothing,
+)::SearchConstraints
+    new_defaults = constraints.defaults
+    if defaults_path !== nothing && isfile(defaults_path)
+        tiers = load_circuity_tiers(defaults_path)
+        # Reconstruct ParameterSet with new tiers, preserving all other fields.
+        # @kwdef immutable structs cannot be mutated; we splat a Dict of existing
+        # field values and override only circuity_tiers.
+        kws = Dict(k => getfield(constraints.defaults, k)
+                   for k in fieldnames(ParameterSet) if k != :circuity_tiers)
+        new_defaults = ParameterSet(; kws..., circuity_tiers = tiers)
+    end
+
+    new_overrides = copy(constraints.overrides)
+    if overrides_path !== nothing && isfile(overrides_path)
+        append!(new_overrides, load_circuity_overrides(overrides_path))
+        sort!(new_overrides, by = o -> -Int64(o.specificity))
+    end
+
+    return SearchConstraints(
+        defaults         = new_defaults,
+        overrides        = new_overrides,
+        closed_stations  = constraints.closed_stations,
+        closed_markets   = constraints.closed_markets,
+        delays           = constraints.delays,
+        flight_delays    = constraints.flight_delays,
+    )
+end

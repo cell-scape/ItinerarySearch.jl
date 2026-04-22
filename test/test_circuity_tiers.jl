@@ -163,4 +163,23 @@ using ItinerarySearch: _validate_circuity_tiers, circuity_factor_at, _effective_
         @test_throws ArgumentError load_circuity_overrides(p2)
         rm(p2; force=true)
     end
+
+    @testset "apply_circuity_files!" begin
+        demo = joinpath(@__DIR__, "..", "data", "demo")
+        sc = SearchConstraints()
+
+        sc = apply_circuity_files!(sc;
+            defaults_path  = joinpath(demo, "cirOvrdDflt.dat"),
+            overrides_path = joinpath(demo, "cirOvrd.dat"),
+        )
+
+        # Defaults now come from the CSV
+        @test sc.defaults.circuity_tiers[1] == CircuityTier(250.0, 2.4)
+        @test length(sc.defaults.circuity_tiers) == 4
+
+        # Overrides appended, sorted by descending specificity (all specificity=1000 here)
+        @test length(sc.overrides) == 7
+        @test all(o -> o.carrier == WILDCARD_AIRLINE, sc.overrides)
+        @test all(o -> o.specificity == UInt32(1000), sc.overrides)
+    end
 end
