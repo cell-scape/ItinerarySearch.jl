@@ -60,7 +60,7 @@ end
 
 # Description
 - Build a per-request `SearchConstraints` from JSON body overrides merged with server defaults
-- Extracts optional fields `max_stops`, `max_elapsed`, `max_connection`, and `circuity_factor`
+- Extracts optional fields `max_stops`, `max_elapsed`, and `max_connection`
 - Fields absent from the body use values from `defaults.defaults`
 
 # Arguments
@@ -97,17 +97,10 @@ function _parse_request_constraints(
         base.max_mct_override
     end
 
-    circuity_factor = if haskey(body, :circuity_factor)
-        v = body[:circuity_factor]
-        v isa Float64 ? v : (v isa Int64 ? Float64(v) : base.circuity_factor)
-    else
-        base.circuity_factor
-    end
-
     new_ps = ParameterSet(
         min_mct_override                   = base.min_mct_override,
         max_mct_override                   = max_mct_override,
-        circuity_factor                    = circuity_factor,
+        circuity_tiers                     = base.circuity_tiers,
         domestic_circuity_extra_miles      = base.domestic_circuity_extra_miles,
         international_circuity_extra_miles = base.international_circuity_extra_miles,
         valid_codeshare_partners           = base.valid_codeshare_partners,
@@ -209,7 +202,7 @@ end
 # Description
 - Handle `POST /search` — search itineraries for one or more O-D pairs on given dates
 - Required body fields: `origins` (array), `destinations` (array), `dates` (array of "YYYY-MM-DD")
-- Optional: `max_stops`, `max_elapsed`, `max_connection`, `circuity_factor`, `cross`, `compact`
+- Optional: `max_stops`, `max_elapsed`, `max_connection`, `cross`, `compact`
 
 # Arguments
 1. `req::HTTP.Request`: HTTP request
