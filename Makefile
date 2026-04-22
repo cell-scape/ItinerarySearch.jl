@@ -1,23 +1,23 @@
-.PHONY: test test-static test-all test-parallel demo demo-newssim bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve mct-inspect mct-inspect-styled mct-replay sysimage app juliac
+.PHONY: test test-serial test-static test-all demo demo-newssim bench viz json search all cli-search cli-trip cli-build cli-ingest cli-info serve mct-inspect mct-inspect-styled mct-replay sysimage app juliac
 
-# Fast dev test loop — skips JET + Aqua (~25s saved). Use `make test-all` for
-# full coverage locally; CI should run `make test-all` to get static checks.
+# Fast dev test loop — parallel runner (~47s), skips JET + Aqua. Override the
+# worker count with ITINSEARCH_TEST_WORKERS=N (default 4).
 test:
+	julia --project=. test/runtests_parallel.jl
+
+# Serial test runner — skips JET + Aqua but runs files one at a time.
+# Useful when debugging a worker-specific failure in the parallel runner,
+# or when running on a machine where spawning workers is undesirable.
+test-serial:
 	ITINSEARCH_SKIP_STATIC=1 julia --project=. -e 'using Pkg; Pkg.test()'
 
 # Static analysis only (JET + Aqua). Runs in ~25s against a warm precompile cache.
 test-static:
 	ITINSEARCH_ONLY_STATIC=1 julia --project=. -e 'using Pkg; Pkg.test()'
 
-# Full suite — everything, including JET + Aqua. Preserves the original behaviour.
+# Full suite — everything, serial, including JET + Aqua. Use for CI / pre-push.
 test-all:
 	julia --project=. -e 'using Pkg; Pkg.test()'
-
-# Parallel test runner — spawns worker processes (default 4, override with
-# ITINSEARCH_TEST_WORKERS=N) and distributes test files via `Distributed.pmap`.
-# Honours ITINSEARCH_SKIP_STATIC and ITINSEARCH_ONLY_STATIC like the serial runner.
-test-parallel:
-	julia --project=. test/runtests_parallel.jl
 
 # Full demo: load, search, CSV, JSON, visualizations (3 days)
 demo:
