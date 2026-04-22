@@ -65,6 +65,7 @@ const TEST_FILES_FULL = [
     "test_trace_context.jl",   # ~0.05s
     "test_market_failure.jl",  # ~0.05s
     "test_runtime_context_worker_slot.jl", # ~0.05s
+    "test_parallel_markets_functional.jl", # ~ivaries — full search_markets x2
 ]
 
 # Apply the static-analysis env filters.

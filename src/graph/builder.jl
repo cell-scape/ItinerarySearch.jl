@@ -625,7 +625,7 @@ function _build_runtime_context(config::SearchConfig)::RuntimeContext
 end
 
 """
-    `function _search_markets_sequential_all_dates(config, store, dates, markets, target_source)::Dict{Tuple{String,String,Date}, Vector{Itinerary}}`
+    `function _search_markets_sequential_all_dates(config, store, dates, markets, target_source)::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`
 ---
 
 # Description
@@ -635,8 +635,12 @@ end
 - The graph is rebuilt once per date (the schedule window shifts with the
   target day); the per-date `ctx.results` buffer is reused across markets,
   so each returned itinerary vector is `copy`-ed before being stored
-- In later tasks a sibling `_search_markets_parallel_all_dates` with the same
-  signature will be introduced so `search_markets` can dispatch between them
+- A sibling `_search_markets_parallel_all_dates` with the same signature is
+  used by `search_markets` when `config.parallel_markets && Threads.nthreads() > 1`
+- Return type is unified with the parallel path as a `Union` with
+  `MarketSearchFailure` for forward compatibility; this helper never
+  populates the `MarketSearchFailure` arm (failure handling lives on the
+  parallel worker body in a later task)
 
 # Arguments
 1. `config::SearchConfig`: shared search configuration
@@ -647,8 +651,8 @@ end
 5. `target_source::Symbol`: schedule source for `build_graph!` (e.g. `:newssim`)
 
 # Returns
-- `::Dict{Tuple{String,String,Date}, Vector{Itinerary}}`: results keyed by
-  `(origin_string, dest_string, date)`
+- `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`:
+  results keyed by `(origin_string, dest_string, date)`
 """
 function _search_markets_sequential_all_dates(
     config::SearchConfig,
@@ -656,8 +660,8 @@ function _search_markets_sequential_all_dates(
     dates::AbstractVector{Date},
     markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
     target_source::Symbol,
-)::Dict{Tuple{String,String,Date},Vector{Itinerary}}
-    results = Dict{Tuple{String,String,Date},Vector{Itinerary}}()
+)::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
+    results = Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}()
     ctx = _build_runtime_context(config)
 
     for target in dates
@@ -673,10 +677,138 @@ function _search_markets_sequential_all_dates(
     return results
 end
 
+"""
+    `function _search_markets_parallel_all_dates(config, store, dates, markets, target_source)::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`
+---
+
+# Description
+- Parallel counterpart to `_search_markets_sequential_all_dates`. Builds a
+  `Channel`-backed pool of `N = Threads.nthreads()` `RuntimeContext` instances
+  (one per worker slot, 1..N), rebuilds the graph once per target date, and
+  spawns a `Threads.@spawn` task per market that takes a context from the
+  pool, runs `search_itineraries`, and returns the context to the pool.
+- The shared `results` dict is protected by a `ReentrantLock`. Each worker's
+  context preserves cache warmth across the many markets it picks up — no
+  cache reset between markets on the same worker.
+- Thread-safety invariants:
+    1. `worker_slot` is the pool index (assigned at construction), never
+       `Threads.threadid()` — stable under Julia task migration.
+    2. No shared mutable state between workers except `results` + its lock;
+       each worker holds its own `RuntimeContext` while running.
+    3. `put!` happens in a `finally` block so a throwing market still
+       returns its context to the channel (no deadlock on subsequent
+       `take!`).
+    4. The `graph` is built outside the task spawn and shared read-only
+       across workers for the remainder of the per-date phase.
+
+!!! note
+    Task 7 wires the pool. Task 8 will add try/catch failure handling inside
+    `_run_one_market!` — today an exception in `search_itineraries` propagates
+    out through `wait(task)`.
+
+# Arguments
+1. `config::SearchConfig`: shared search configuration
+2. `store::DuckDBStore`: already-ingested store (newssim + optional MCT)
+3. `dates::AbstractVector{Date}`: normalized vector of target travel dates
+4. `markets::AbstractVector{<:Tuple{AbstractString,AbstractString}}`:
+   `(origin, dest)` string pairs
+5. `target_source::Symbol`: schedule source for `build_graph!` (e.g. `:newssim`)
+
+# Returns
+- `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`:
+  results keyed by `(origin_string, dest_string, date)`; the `MarketSearchFailure`
+  arm of the Union is forward-compatible with Task 8 and not populated today.
+"""
+function _search_markets_parallel_all_dates(
+    config::SearchConfig,
+    store::DuckDBStore,
+    dates::AbstractVector{Date},
+    markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
+    target_source::Symbol,
+)::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
+    results = Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}()
+    results_lock = ReentrantLock()
+    n = Threads.nthreads()
+
+    for target in dates
+        # Build the graph for this date once; workers share it read-only.
+        graph = build_graph!(store, config, target; source = target_source)
+
+        # Fresh pool of RuntimeContexts per date — ties the caches to this
+        # date's graph validity. `worker_slot` = pool index (1..N).
+        ctx_pool = Channel{RuntimeContext}(n)
+        for slot in 1:n
+            ctx = _build_runtime_context(config)
+            ctx.worker_slot = slot
+            put!(ctx_pool, ctx)
+        end
+
+        tasks = map(markets) do (origin, dest)
+            Threads.@spawn _run_one_market!(
+                ctx_pool, graph, results, results_lock,
+                String(origin), String(dest), target,
+            )
+        end
+        foreach(wait, tasks)
+        close(ctx_pool)
+    end
+
+    return results
+end
+
+"""
+    `function _run_one_market!(ctx_pool, graph, results, results_lock, origin, dest, target)::Nothing`
+---
+
+# Description
+- Worker-pool task body: takes a `RuntimeContext` from `ctx_pool`, runs one
+  market's `search_itineraries`, writes the `copy`-ed result into the shared
+  `results` dict under `results_lock`, and returns the context to the pool
+  via a `finally` clause (so even a throwing market does not leak its slot).
+- The graph is accessed read-only; only `results` + its lock are shared.
+
+!!! note
+    Task 8 will add try/catch failure handling and `MarketSearchFailure`
+    sentinel creation here. For now, exceptions propagate out through the
+    task and are surfaced when `wait` is called on it.
+
+# Arguments
+1. `ctx_pool::Channel{RuntimeContext}`: bounded channel of worker contexts
+2. `graph::FlightGraph`: read-only network for the current target date
+3. `results::Dict`: shared results dict (Union-valued — see parallel helper)
+4. `results_lock::ReentrantLock`: guards the `results` write
+5. `origin::String`: IATA origin code (already string-coerced)
+6. `dest::String`: IATA destination code
+7. `target::Date`: target travel date
+
+# Returns
+- `::Nothing`
+"""
+function _run_one_market!(
+    ctx_pool::Channel{RuntimeContext},
+    graph::FlightGraph,
+    results::Dict,
+    results_lock::ReentrantLock,
+    origin::String, dest::String, target::Date,
+)
+    ctx = take!(ctx_pool)
+    try
+        itns = search_itineraries(graph.stations,
+                                  StationCode(origin), StationCode(dest),
+                                  target, ctx)
+        lock(results_lock) do
+            results[(origin, dest, target)] = copy(itns)
+        end
+    finally
+        put!(ctx_pool, ctx)   # MUST return context, even on exception
+    end
+    return nothing
+end
+
 # ── Multi-market convenience search ───────────────────────────────────────────
 
 """
-    `function search_markets(newssim_path::AbstractString; markets, dates, mct_path="", kwargs...)::Dict{Tuple{String,String,Date}, Vector{Itinerary}}`
+    `function search_markets(newssim_path::AbstractString; markets, dates, mct_path="", kwargs...)::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`
 ---
 
 # Description
@@ -684,10 +816,17 @@ end
 - Creates an in-memory `DuckDBStore`, ingests the NewSSIM CSV and optional MCT
   file, then iterates over every `(origin, dest, date)` combination
 - The graph is rebuilt once per date (schedule window shifts with the target day)
+- When `config.parallel_markets == true` (default) **and** `Threads.nthreads() > 1`,
+  markets for each date are run in parallel across a worker pool of size
+  `Threads.nthreads()` (each worker holds its own `RuntimeContext`). Otherwise
+  the sequential path is taken. Results are equivalent either way.
 - Returns itinerary vectors keyed by `(origin, dest, date)`. Each vector is
   a `copy` of the search context's result buffer; the inner `Itinerary`
   objects hold their own `connections` allocations, so retaining the
   returned vectors across subsequent searches is safe.
+- The returned dict's value type is a `Union` with `MarketSearchFailure` as
+  a forward-compatible sentinel for per-market failures (wired up in a
+  later task); today all values are `Vector{Itinerary}`.
 - The store is closed automatically on return (or on error)
 
 # When to use
@@ -708,8 +847,9 @@ end
 - All remaining keyword arguments are forwarded to `SearchConfig()`
 
 # Returns
-- `::Dict{Tuple{String,String,Date}, Vector{Itinerary}}`: results keyed by
-  `(origin_string, dest_string, date)` — index with `results["ORD","LHR",date]`
+- `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`:
+  results keyed by `(origin_string, dest_string, date)` — index with
+  `results["ORD","LHR",date]`. Use `is_failure` / `failed_markets` to triage.
 
 # Examples
 ```julia
@@ -728,7 +868,7 @@ function search_markets(
     dates::Union{Date,AbstractVector{Date}},
     mct_path::AbstractString = "",
     kwargs...,
-)::Dict{Tuple{String,String,Date},Vector{Itinerary}}
+)::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
     config = SearchConfig(; kwargs...)
     store = DuckDBStore()
 
@@ -741,9 +881,16 @@ function search_markets(
         date_vec = dates isa Date ? [dates] : collect(dates)
         target_source = :newssim
 
-        return _search_markets_sequential_all_dates(
-            config, store, date_vec, markets, target_source,
-        )
+        use_parallel = config.parallel_markets && Threads.nthreads() > 1
+        if use_parallel
+            return _search_markets_parallel_all_dates(
+                config, store, date_vec, markets, target_source,
+            )
+        else
+            return _search_markets_sequential_all_dates(
+                config, store, date_vec, markets, target_source,
+            )
+        end
     finally
         close(store)
     end
