@@ -507,8 +507,44 @@ function load_config(path::String)::SearchConfig
             val = search[:allow_roundtrips]
             val isa Bool && (kwargs[:allow_roundtrips] = val)
         end
+        # `mct_cache_enabled` in `search` is kept for backward compat — the
+        # canonical location is the `mct_behaviour` section handled below.
         b = _json_bool(search, :mct_cache_enabled)
         b !== nothing && (kwargs[:mct_cache_enabled] = b)
+        s = _json_str(search, :distance_formula)
+        if s !== nothing
+            sym = Symbol(lowercase(s))
+            sym in (:haversine, :vincenty) && (kwargs[:distance_formula] = sym)
+        end
+        b = _json_bool(search, :maft_enabled)
+        b !== nothing && (kwargs[:maft_enabled] = b)
+        b = _json_bool(search, :interline_dcnx_enabled)
+        b !== nothing && (kwargs[:interline_dcnx_enabled] = b)
+        b = _json_bool(search, :crs_cnx_enabled)
+        b !== nothing && (kwargs[:crs_cnx_enabled] = b)
+    end
+
+    # MCT behaviour toggles (canonical home — takes priority over the
+    # backward-compat `search.mct_cache_enabled` read above).
+    mct_behaviour = _json_obj(raw, :mct_behaviour)
+    if mct_behaviour !== nothing
+        b = _json_bool(mct_behaviour, :mct_cache_enabled)
+        b !== nothing && (kwargs[:mct_cache_enabled] = b)
+        b = _json_bool(mct_behaviour, :mct_serial_ascending)
+        b !== nothing && (kwargs[:mct_serial_ascending] = b)
+        s = _json_str(mct_behaviour, :mct_codeshare_mode)
+        if s !== nothing
+            sym = Symbol(lowercase(s))
+            sym in (:both, :marketing, :operating) && (kwargs[:mct_codeshare_mode] = sym)
+        end
+        s = _json_str(mct_behaviour, :mct_schengen_mode)
+        if s !== nothing
+            sym = Symbol(lowercase(s))
+            sym in (:sch_then_eur, :eur_then_sch, :sch_only, :eur_only) &&
+                (kwargs[:mct_schengen_mode] = sym)
+        end
+        b = _json_bool(mct_behaviour, :mct_suppressions_enabled)
+        b !== nothing && (kwargs[:mct_suppressions_enabled] = b)
     end
 
     data = _json_obj(raw, :data)

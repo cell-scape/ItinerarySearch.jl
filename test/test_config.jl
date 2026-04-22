@@ -118,6 +118,95 @@ using ItinerarySearch: _default_path, AirlineCode
     end
 end
 
+@testset "load_config — extended SearchConfig parsers" begin
+    @testset "search.distance_formula parses to Symbol" begin
+        path = tempname() * ".json"
+        write(path, """{"search": {"distance_formula": "vincenty"}}""")
+        cfg = load_config(path)
+        @test cfg.distance_formula === :vincenty
+        rm(path)
+    end
+
+    @testset "search.maft/interline_dcnx/crs_cnx enabled flags" begin
+        path = tempname() * ".json"
+        write(path, """
+        {"search": {"maft_enabled": false, "interline_dcnx_enabled": false,
+                    "crs_cnx_enabled": false}}
+        """)
+        cfg = load_config(path)
+        @test cfg.maft_enabled == false
+        @test cfg.interline_dcnx_enabled == false
+        @test cfg.crs_cnx_enabled == false
+        rm(path)
+    end
+
+    @testset "mct_behaviour section" begin
+        path = tempname() * ".json"
+        write(path, """
+        {"mct_behaviour": {
+            "mct_cache_enabled": false,
+            "mct_serial_ascending": true,
+            "mct_codeshare_mode": "marketing",
+            "mct_schengen_mode": "eur_only",
+            "mct_suppressions_enabled": false
+        }}
+        """)
+        cfg = load_config(path)
+        @test cfg.mct_cache_enabled == false
+        @test cfg.mct_serial_ascending == true
+        @test cfg.mct_codeshare_mode === :marketing
+        @test cfg.mct_schengen_mode === :eur_only
+        @test cfg.mct_suppressions_enabled == false
+        rm(path)
+    end
+
+    @testset "mct_behaviour overrides search.mct_cache_enabled" begin
+        # When both locations set the same key, `mct_behaviour` wins (canonical home).
+        path = tempname() * ".json"
+        write(path, """
+        {"search": {"mct_cache_enabled": true},
+         "mct_behaviour": {"mct_cache_enabled": false}}
+        """)
+        cfg = load_config(path)
+        @test cfg.mct_cache_enabled == false
+        rm(path)
+    end
+
+    @testset "exhaustive config/defaults.json round-trips to SearchConfig()" begin
+        # The tracked defaults.json lists every field at its compiled-in
+        # default; loading it must produce the same SearchConfig as no-arg
+        # construction.  Acts as a guardrail against drift between the
+        # struct defaults and the exemplar file.
+        default_cfg = SearchConfig()
+        file_cfg = load_config(joinpath(@__DIR__, "..", "config", "defaults.json"))
+
+        @test file_cfg.max_stops == default_cfg.max_stops
+        @test file_cfg.max_connection_minutes == default_cfg.max_connection_minutes
+        @test file_cfg.max_elapsed_minutes == default_cfg.max_elapsed_minutes
+        @test file_cfg.circuity_factor == default_cfg.circuity_factor
+        @test file_cfg.circuity_extra_miles == default_cfg.circuity_extra_miles
+        @test file_cfg.scope == default_cfg.scope
+        @test file_cfg.interline == default_cfg.interline
+        @test file_cfg.allow_roundtrips == default_cfg.allow_roundtrips
+        @test file_cfg.distance_formula === default_cfg.distance_formula
+        @test file_cfg.maft_enabled == default_cfg.maft_enabled
+        @test file_cfg.interline_dcnx_enabled == default_cfg.interline_dcnx_enabled
+        @test file_cfg.crs_cnx_enabled == default_cfg.crs_cnx_enabled
+        @test file_cfg.mct_cache_enabled == default_cfg.mct_cache_enabled
+        @test file_cfg.mct_serial_ascending == default_cfg.mct_serial_ascending
+        @test file_cfg.mct_codeshare_mode === default_cfg.mct_codeshare_mode
+        @test file_cfg.mct_schengen_mode === default_cfg.mct_schengen_mode
+        @test file_cfg.mct_suppressions_enabled == default_cfg.mct_suppressions_enabled
+        @test file_cfg.leading_days == default_cfg.leading_days
+        @test file_cfg.trailing_days == default_cfg.trailing_days
+        @test file_cfg.max_days == default_cfg.max_days
+        @test file_cfg.metrics_level === default_cfg.metrics_level
+        @test file_cfg.event_log_enabled == default_cfg.event_log_enabled
+        @test file_cfg.log_level === default_cfg.log_level
+        @test file_cfg.output_formats == default_cfg.output_formats
+    end
+end
+
 @testset "MCTAuditConfig(dict)" begin
     @testset "Symbol keys, canonical values" begin
         a = MCTAuditConfig(Dict(:enabled => true, :detail => :detailed))

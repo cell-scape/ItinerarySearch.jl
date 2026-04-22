@@ -1,36 +1,73 @@
 {
+  "_comment": "Exhaustive SearchConfig exemplar. Every field below is set to its compiled-in default value; delete a key to rely on the default (same effect) or change the value to override. Companion prose reference lives at config/README.md.",
+
   "store": {
     "backend": "duckdb",
     "path": ":memory:"
   },
+
   "data": {
     "ssim": "data/input/uaoa_ssim.new.dat",
     "mct": "data/input/MCTIMFILUA.DAT",
     "airports": "data/input/mdstua.txt",
     "regions": "data/input/REGIMFILUA.DAT",
     "aircrafts": "data/input/aircraft.txt",
+    "oa_control": "data/input/oa_control_table.csv",
     "seats": "data/input/seats_ua.txt.DAT",
     "classmap": "data/input/classmaptable.txt",
     "serviceclass": "data/input/servclasstable.dat",
-    "oa_control": "data/input/oa_control_table.csv"
+    "constraints": "data/output"
   },
+
+  "schedule": {
+    "leading_days": 2,
+    "trailing_days": 0,
+    "max_days": 1
+  },
+
   "search": {
-    "max_stops": 3,
+    "max_stops": 2,
     "max_connection_minutes": 480,
     "max_elapsed_minutes": 1440,
-    "circuity_factor": 2.0,
+    "circuity_factor": 2.5,
     "circuity_extra_miles": 500.0,
     "scope": "all",
-    "interline": "codeshare"
+    "interline": "codeshare",
+    "allow_roundtrips": false,
+    "distance_formula": "haversine",
+    "maft_enabled": true,
+    "interline_dcnx_enabled": true,
+    "crs_cnx_enabled": true
   },
-  "schedule": {
-    "max_days": 1,
-    "trailing_days": 0
+
+  "mct_behaviour": {
+    "mct_cache_enabled": true,
+    "mct_serial_ascending": false,
+    "mct_codeshare_mode": "both",
+    "mct_schengen_mode": "sch_then_eur",
+    "mct_suppressions_enabled": true
   },
+
+  "graph": {
+    "export_path": "data/output",
+    "import_path": "data/output"
+  },
+
   "output": {
-    "format": "json",
-    "compression": "zstd",
-    "include_flight_id": true,
-    "include_dei_fields": true
+    "metrics_level": "full",
+    "event_log_enabled": false,
+    "event_log_path": "data/output/events.jsonl",
+    "log_level": "info",
+    "log_json_path": "",
+    "log_stdout_json": false,
+    "output_formats": ["json", "yaml", "csv"]
+  },
+
+  "mct_audit": {
+    "enabled": false,
+    "detail": "summary",
+    "output_path": "",
+    "max_connections": 0,
+    "max_candidates": 10
   }
 }
