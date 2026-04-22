@@ -26,24 +26,37 @@ const DOW_SUN = StatusBits(1 << 6)    # 0x0040
 const DOW_MASK = StatusBits(0x007f)
 
 """
-    StatusBits constants — connection classification bitmasks
+    StatusBits constants — connection / leg classification bitmasks
 
-Six single-bit constants at positions 7–12.  Each bit independently marks a
+Single-bit constants at positions 7–13.  Each bit independently marks a
 property of a leg or connection; bits may be combined freely via `|`.
 
 - `STATUS_INTERNATIONAL = 0x0080` — At least one endpoint is outside the domestic zone
-- `STATUS_INTERLINE     = 0x0100` — Operated by a different carrier than the itinerary carrier
+- `STATUS_INTERLINE     = 0x0100` — Connection-level: marketing carriers differ
+  across the connection's two legs (online ↔ interline distinction).  An
+  itinerary-level `is_interline` rolls up "any cnx had a marketing change".
 - `STATUS_ROUNDTRIP     = 0x0200` — Part of a round-trip itinerary
-- `STATUS_CODESHARE     = 0x0400` — Marketing carrier differs from operating carrier
+- `STATUS_CODESHARE     = 0x0400` — Leg-level (rolled up): at least one leg
+  in scope has marketing carrier+flight ≠ operating carrier+flight on its
+  own record.  Independent of `STATUS_INTERLINE` — a leg can be a codeshare
+  inside an online itinerary, and an interline cnx can be made of host
+  flights with no codeshares.
 - `STATUS_THROUGH       = 0x0800` — Through-service / hidden stop (not a true connection)
 - `STATUS_WETLEASE      = 0x1000` — Aircraft and crew wet-leased from another operator
+- `STATUS_CNX_OP_THROUGH = 0x2000` — Connection-level qualifier on
+  STATUS_INTERLINE: this interline cnx is mediated by a single operator
+  carrying through despite the marketing brand change (the airline-industry
+  "codeshare connection" concept).  Used by the rule chain to distinguish
+  `INTERLINE_CODESHARE` (allow op-through interlines) from `INTERLINE_ALL`
+  (allow all interlines).
 """
-const STATUS_INTERNATIONAL = StatusBits(1 << 7)    # 0x0080
-const STATUS_INTERLINE     = StatusBits(1 << 8)    # 0x0100
-const STATUS_ROUNDTRIP     = StatusBits(1 << 9)    # 0x0200
-const STATUS_CODESHARE     = StatusBits(1 << 10)   # 0x0400
-const STATUS_THROUGH       = StatusBits(1 << 11)   # 0x0800
-const STATUS_WETLEASE      = StatusBits(1 << 12)   # 0x1000
+const STATUS_INTERNATIONAL  = StatusBits(1 << 7)    # 0x0080
+const STATUS_INTERLINE      = StatusBits(1 << 8)    # 0x0100
+const STATUS_ROUNDTRIP      = StatusBits(1 << 9)    # 0x0200
+const STATUS_CODESHARE      = StatusBits(1 << 10)   # 0x0400
+const STATUS_THROUGH        = StatusBits(1 << 11)   # 0x0800
+const STATUS_WETLEASE       = StatusBits(1 << 12)   # 0x1000
+const STATUS_CNX_OP_THROUGH = StatusBits(1 << 13)   # 0x2000
 
 """
     `is_international(s::StatusBits)::Bool`
@@ -65,13 +78,17 @@ const STATUS_WETLEASE      = StatusBits(1 << 12)   # 0x1000
 ---
 
 # Description
-- Returns `true` when the `STATUS_INTERLINE` bit is set in `s`
+- Connection-level: `true` when the marketing carriers differ across the
+  connection's two legs (regardless of whether operating carriers also
+  differ — for that distinction, see `is_cnx_op_through`).
+- Itinerary-level (rolled up): `true` when at least one connection had a
+  marketing-carrier change.
 
 # Arguments
 1. `s::StatusBits`: status bitmask to test
 
 # Returns
-- `::Bool`: `true` if the connection involves a different operating carrier
+- `::Bool`: `true` if marketing carrier changes at this connection (or anywhere in this itinerary)
 """
 @inline is_interline(s::StatusBits) = (s & STATUS_INTERLINE) != StatusBits(0)
 
@@ -80,15 +97,41 @@ const STATUS_WETLEASE      = StatusBits(1 << 12)   # 0x1000
 ---
 
 # Description
-- Returns `true` when the `STATUS_CODESHARE` bit is set in `s`
+- Leg-level (rolled up): `true` when at least one leg in this scope has
+  marketing carrier+flight differing from operating carrier+flight on its
+  own record (the per-leg codeshare property).
+- Independent of `is_interline`: a host-only itinerary (no marketing-carrier
+  change) can still be a codeshare itinerary (an individual leg is a
+  codeshare alias of another carrier's flight).
 
 # Arguments
 1. `s::StatusBits`: status bitmask to test
 
 # Returns
-- `::Bool`: `true` if the marketing carrier differs from the operating carrier
+- `::Bool`: `true` if any leg in scope is a codeshare
 """
 @inline is_codeshare(s::StatusBits) = (s & STATUS_CODESHARE) != StatusBits(0)
+
+"""
+    `is_cnx_op_through(s::StatusBits)::Bool`
+---
+
+# Description
+- Connection-level qualifier on `STATUS_INTERLINE`: `true` when this is an
+  interline connection mediated by a single operator carrying through
+  despite the marketing brand change (the airline-industry "codeshare
+  connection" concept — same physical aircraft, different marketed flights).
+- Used by the rule chain's `INTERLINE_CODESHARE` filter mode to admit these
+  while rejecting connections where the operating carrier also changes.
+- Always implies `is_interline(s) == true` (it's only set on interline cnxs).
+
+# Arguments
+1. `s::StatusBits`: status bitmask to test
+
+# Returns
+- `::Bool`: `true` if this interline cnx has the same operating carrier on both sides
+"""
+@inline is_cnx_op_through(s::StatusBits) = (s & STATUS_CNX_OP_THROUGH) != StatusBits(0)
 
 """
     `is_roundtrip(s::StatusBits)::Bool`

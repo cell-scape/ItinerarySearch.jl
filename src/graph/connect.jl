@@ -8,6 +8,17 @@
 
 # ── Internal helpers ──────────────────────────────────────────────────────────
 
+# Per-leg codeshare predicate used by `_set_connection_status!`.  Returns
+# true when this leg's marketing carrier+flight differs from its operating
+# carrier+flight on the same record (after host-flight resolution: an empty
+# operating_carrier or 0 operating_flight_number means "operating IS
+# marketing", per the SSIM convention).
+@inline function _leg_is_codeshare(rec)::Bool
+    op_c = rec.operating_carrier == NO_AIRLINE ? rec.carrier : rec.operating_carrier
+    op_f = rec.operating_flight_number == NO_FLIGHTNO ? rec.flight_number : rec.operating_flight_number
+    return rec.carrier != op_c || rec.flight_number != op_f
+end
+
 """
     `function _set_connection_status!(cp::GraphConnection, arr_leg::GraphLeg, dep_leg::GraphLeg)::Nothing`
 ---
@@ -17,8 +28,15 @@
   in-place before the rule chain is run
 - Sets `STATUS_INTERNATIONAL` when arrival and departure endpoints are in
   different non-empty countries
-- Sets `STATUS_CODESHARE` when marketing carriers differ but operating carriers
-  match; sets `STATUS_INTERLINE` when operating carriers also differ
+- Sets `STATUS_CODESHARE` when at least one of the connection's legs has
+  marketing carrier+flight ≠ operating carrier+flight on its own record
+  (per-leg codeshare property, rolled up).  Independent of `STATUS_INTERLINE`.
+- Sets `STATUS_INTERLINE` when marketing carriers differ across the
+  connection's two legs (the connection-level online↔interline distinction).
+- Sets `STATUS_CNX_OP_THROUGH` when `STATUS_INTERLINE` is set AND the
+  operating carriers match across the two legs (codeshare-mediated
+  interline connection — same operator carries through).  Used by the rule
+  chain to distinguish `INTERLINE_CODESHARE` from `INTERLINE_ALL`.
 - Sets `STATUS_THROUGH` (and `cp.is_through = true`) when both legs share the
   same parent `GraphSegment` (non-zero segment hash)
 - Sets `STATUS_WETLEASE` when either leg is a wet-lease operation
@@ -34,26 +52,41 @@ function _set_connection_status!(
     arr_leg::GraphLeg,
     dep_leg::GraphLeg,
 )::Nothing
-    # International: different non-empty countries at arrival origin and
-    # departure destination endpoints
-    arr_country = (arr_leg.org::GraphStation).country
-    dep_country = (dep_leg.dst::GraphStation).country
-    if arr_country != InlineString3("") && dep_country != InlineString3("") &&
-       arr_country != dep_country
+    # International connection = MCT status is anything but DD.  Equivalent
+    # to "either the arriving leg's arrival is international or the
+    # departing leg's departure is international" — the per-leg intl/dom
+    # flags written by the SSIM ingest carry exactly this distinction.
+    # Previously this checked country equality of the OD endpoints (arr.org
+    # vs dep.dst), which incorrectly classified itineraries like
+    # DFW → CDG → IAH (US→FR→US, both intl legs) as domestic because the
+    # outermost endpoints were in the same country.
+    if arr_leg.record.arr_intl_dom == 'I' || dep_leg.record.dep_intl_dom == 'I'
         cp.status |= STATUS_INTERNATIONAL
     end
 
-    # Interline vs codeshare: compare marketing carriers first
+    # Per-leg codeshare (rolled up onto the connection): set STATUS_CODESHARE
+    # when either of the connection's two legs has marketing carrier+flight
+    # differing from operating carrier+flight on its own record.  Independent
+    # of the interline check below — a leg can be a codeshare inside an
+    # online itinerary.
+    if _leg_is_codeshare(arr_leg.record) || _leg_is_codeshare(dep_leg.record)
+        cp.status |= STATUS_CODESHARE
+    end
+
+    # Connection-level interline: marketing carriers differ across the two
+    # legs.  This is the online-vs-interline distinction at the cnx level.
+    # When it's set, also check the operating carriers — if they're the same
+    # (codeshare-mediated transition), set STATUS_CNX_OP_THROUGH so the
+    # rule chain can distinguish `INTERLINE_CODESHARE` (allow op-through)
+    # from `INTERLINE_ALL` (allow op-different too).
     if arr_leg.record.carrier != dep_leg.record.carrier
-        # Resolve operating carriers (operating_carrier is non-empty when set)
+        cp.status |= STATUS_INTERLINE
         arr_op = arr_leg.record.operating_carrier != NO_AIRLINE ?
             arr_leg.record.operating_carrier : arr_leg.record.carrier
         dep_op = dep_leg.record.operating_carrier != NO_AIRLINE ?
             dep_leg.record.operating_carrier : dep_leg.record.carrier
         if arr_op == dep_op
-            cp.status |= STATUS_CODESHARE
-        else
-            cp.status |= STATUS_INTERLINE
+            cp.status |= STATUS_CNX_OP_THROUGH
         end
     end
 
