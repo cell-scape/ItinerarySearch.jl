@@ -51,6 +51,43 @@ function _parse_circuity_check_scope(s::AbstractString)::Symbol
 end
 
 """
+    `_parse_circuity_tiers(arr)::Vector{CircuityTier}`
+---
+
+# Description
+- Parse a JSON array of `{max_distance, factor}` objects into a `Vector{CircuityTier}`
+- `max_distance: null` → `Inf`
+- Validates via `_validate_circuity_tiers` before returning
+- Skips malformed entries (non-object, missing factor, non-numeric factor) silently;
+  fully empty or all-malformed input will still throw via the validator
+
+# Arguments
+1. `arr`: a JSON array (JSON3.Array) of tier objects
+
+# Returns
+- `::Vector{CircuityTier}`: validated tier list
+"""
+function _parse_circuity_tiers(arr)::Vector{CircuityTier}
+    tiers = CircuityTier[]
+    for obj in arr
+        obj isa JSON3.Object || continue
+        md_raw = get(obj, :max_distance, nothing)
+        max_distance = if md_raw === nothing
+            Inf
+        elseif md_raw isa Number
+            Float64(md_raw)
+        else
+            continue   # skip malformed entry (e.g. non-numeric, non-null)
+        end
+        factor_raw = get(obj, :factor, nothing)
+        factor_raw isa Number || continue
+        push!(tiers, CircuityTier(max_distance, Float64(factor_raw)))
+    end
+    _validate_circuity_tiers(tiers)
+    return tiers
+end
+
+"""
     `_parse_interline(s::AbstractString)::InterlineMode`
 
 Parse an interline string from JSON config to InterlineMode enum.
@@ -428,6 +465,26 @@ function _parse_constraints_params(cstr::JSON3.Object)::Union{ParameterSet,Nothi
     _parse_json_char_set!(ck, cstr, :allow_service_types, :allow_service_types)
     _parse_json_char_set!(ck, cstr, :deny_body_types, :deny_body_types)
     _parse_json_char_set!(ck, cstr, :allow_body_types, :allow_body_types)
+
+    # circuity_tiers — checked in a `defaults` sub-object first (canonical JSON
+    # schema uses constraints.defaults.circuity_tiers), then directly on `cstr`
+    # as a flat fallback for legacy / hand-written configs
+    let defaults_obj = _json_obj(cstr, :defaults)
+        tier_src =
+            if defaults_obj !== nothing && haskey(defaults_obj, :circuity_tiers)
+                defaults_obj
+            elseif haskey(cstr, :circuity_tiers)
+                cstr
+            else
+                nothing
+            end
+        if tier_src !== nothing
+            arr = tier_src[:circuity_tiers]
+            if arr isa JSON3.Array
+                ck[:circuity_tiers] = _parse_circuity_tiers(arr)
+            end
+        end
+    end
 
     isempty(ck) && return nothing
     return ParameterSet(; ck...)

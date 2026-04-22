@@ -352,4 +352,30 @@ end
         @test p.allow_body_types == Set(['W'])
         rm(path)
     end
+
+    @testset "circuity_tiers JSON round-trip" begin
+        raw = """
+        {
+          "constraints": {
+            "defaults": {
+              "circuity_tiers": [
+                {"max_distance": 200, "factor": 2.3},
+                {"max_distance": 900, "factor": 1.8},
+                {"max_distance": null, "factor": 1.2}
+              ]
+            }
+          }
+        }
+        """
+        path = tempname() * ".json"
+        write(path, raw)
+        try
+            sc = load_constraints(path)
+            @test length(sc.defaults.circuity_tiers) == 3
+            @test sc.defaults.circuity_tiers[1] == CircuityTier(200.0, 2.3)
+            @test sc.defaults.circuity_tiers[end] == CircuityTier(Inf, 1.2)
+        finally
+            rm(path; force=true)
+        end
+    end
 end
