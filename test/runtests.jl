@@ -47,6 +47,7 @@ end
     include("test_parallel_markets_pool_invariants.jl")
     include("test_logging.jl")
     include("test_cli.jl")
+    include("test_cli_parallel_flag.jl")
     include("test_server.jl")
     include("test_newssim_ingest.jl")
     include("test_ssim_parsing.jl")

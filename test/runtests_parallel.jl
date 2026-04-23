@@ -43,6 +43,7 @@ const TEST_FILES_FULL = [
     "test_logging.jl",          # ~ 4s — logging side-effects during builds
     "test_ingest.jl",           # ~ 3s — SSIM streaming parser
     "test_cli.jl",              # ~ 3s — CLI entry-point smoke tests
+    "test_cli_parallel_flag.jl", # ~0.1s — --no-parallel flag parsing + override
     "test_store.jl",            # ~1.6s
     "test_search.jl",           # ~1.6s
     "test_observe.jl",          # ~1.5s
