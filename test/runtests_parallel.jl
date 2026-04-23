@@ -74,6 +74,7 @@ const TEST_FILES_FULL = [
     "test_search_tuple_dispatch.jl",            # ~varies — tuple-dispatch overloads
     "test_schedule_carrier_queries.jl",         # ~varies — carrier + codeshare SQL helpers
     "test_universe_enumeration.jl",            # ~varies — MarketUniverse + :direct strategy
+    "test_search_schedule.jl",                  # ~varies — schedule-wide sweep + sink callback
 ]
 
 # Apply the static-analysis env filters.

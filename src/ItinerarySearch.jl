@@ -76,6 +76,7 @@ include("graph/rules_itn.jl")
 include("graph/connect.jl")
 include("graph/search.jl")
 include("graph/builder.jl")
+include("search/search_schedule.jl")
 include("output/dt_helpers.jl")
 include("output/formats.jl")
 include("output/viz.jl")
@@ -109,7 +110,7 @@ export load_airports!, load_regions!, load_aircrafts!, load_oa_control!
 export load_circuity_tiers, load_circuity_overrides, apply_circuity_files!
 
 # Build & search
-export build_graph!, search, search_markets
+export build_graph!, search, search_markets, search_schedule
 export search_itineraries, search_trip
 export RuntimeContext, SearchConstraints, build_itn_rules
 export CircuityTier, DEFAULT_CIRCUITY_TIERS
