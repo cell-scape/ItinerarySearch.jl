@@ -57,12 +57,8 @@ dominant carrier and the UA `:direct` filter happens to cover the same ~1,678
 markets as the no-filter case (the numbers differ because the UA run pays
 the carrier-filter SQL lookup + per-market filter check at search time).
 
-| Config                          | `search_schedule :direct, UA` | `search_schedule :direct, all` | `search_markets tuple (4 markets)` |
-|---------------------------------|-------------------------------|--------------------------------|------------------------------------|
-| `JULIA_NUM_THREADS=1`           | 16836.0 ms                    | 13590.3 ms                     | 2638.8 ms                           |
-| `JULIA_NUM_THREADS=2`           | 12332.7 ms                    | 8493.4 ms                      | 2432.9 ms                           |
-| `JULIA_NUM_THREADS=4`           | 9850.8 ms                     | 5889.2 ms                      | 2370.3 ms                           |
-| `JULIA_NUM_THREADS=auto` (4)    | 9985.5 ms                     | 7000.2 ms                      | 2457.6 ms                           |
+See `benchmark/RESULTS.md` for the rolling benchmark table (this entry's
+numbers are recorded there under commit 16b1a1f).
 
 Speedup 1→4 threads: **1.71×** on `:direct UA`, **2.31×** on `:direct all`.
 `auto` resolves to 4 on this machine (Julia's default picks performance

@@ -5,6 +5,13 @@
 # labelled timings so a driver can parse and collate results across thread
 # counts.
 #
+# Run this under multiple thread configurations and add a row to
+# `benchmark/RESULTS.md` so regressions are visible at a glance:
+#
+#   for t in 1 2 4 auto; do
+#     JULIA_NUM_THREADS=$t julia --project=. benchmark/bench_schedule.jl
+#   done
+#
 # NOTE: `:direct` universe is the default and representative. `:connected`
 # is NOT exercised here — on the demo dataset it produces ~88k markets for
 # UA, which would run for hours. Correctness of `:connected` is covered by
