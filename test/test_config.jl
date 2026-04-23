@@ -144,6 +144,14 @@ end
         rm(path)
     end
 
+    @testset "parallel_markets in JSON search section" begin
+        path = tempname() * ".json"
+        write(path, """{"search": {"parallel_markets": false}}""")
+        cfg = load_config(path)
+        @test cfg.parallel_markets === false
+        rm(path)
+    end
+
     @testset "mct_behaviour section" begin
         path = tempname() * ".json"
         write(

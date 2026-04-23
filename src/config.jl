@@ -590,6 +590,8 @@ function load_config(path::String)::SearchConfig
         b !== nothing && (kwargs[:interline_dcnx_enabled] = b)
         b = _json_bool(search, :crs_cnx_enabled)
         b !== nothing && (kwargs[:crs_cnx_enabled] = b)
+        b = _json_bool(search, :parallel_markets)
+        b !== nothing && (kwargs[:parallel_markets] = b)
     end
 
     # MCT behaviour toggles (canonical home — takes priority over the

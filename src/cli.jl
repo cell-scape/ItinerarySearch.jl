@@ -520,6 +520,7 @@ function _cmd_search(
         distance_formula     = config.distance_formula,
         allow_roundtrips     = config.allow_roundtrips,
         mct_cache_enabled    = config.mct_cache_enabled,
+        parallel_markets     = config.parallel_markets,
     )
 
     store = DuckDBStore()
@@ -639,6 +640,7 @@ function _cmd_trip(
         distance_formula     = config.distance_formula,
         allow_roundtrips     = config.allow_roundtrips,
         mct_cache_enabled    = config.mct_cache_enabled,
+        parallel_markets     = config.parallel_markets,
     )
 
     store = DuckDBStore()

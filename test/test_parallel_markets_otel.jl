@@ -66,3 +66,48 @@ include("_test_setup.jl")
     # Statuses are :ok or :error only.
     @test all(sp.status ∈ (:ok, :error) for sp in spans if sp.kind === :end)
 end
+
+@testset "parallel markets — OTel :error span on market failure" begin
+    newssim_path = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+
+    markets = [
+        ("ORD", "LHR"),        # real
+        ("TOOLONG", "LHR"),    # 7 chars — forces StationCode to throw
+    ]
+    target = Date(2026, 2, 25)
+
+    events = Vector{Any}()
+    events_lock = ReentrantLock()
+    collect_sink = ev -> begin
+        if ev isa SpanEvent
+            lock(events_lock) do
+                push!(events, ev)
+            end
+        end
+    end
+
+    _ = search_markets(
+        newssim_path;
+        markets, dates=target,
+        parallel_markets=true,
+        event_sinks=[collect_sink],
+    )
+
+    market_ends = filter(ev -> ev isa SpanEvent && ev.kind === :end && ev.name === :market_search, events)
+    @test length(market_ends) == length(markets)
+
+    error_spans = filter(sp -> sp.status === :error, market_ends)
+    @test length(error_spans) == 1
+
+    # The error span must carry an :exception_type attribute per Task 9 spec.
+    err = only(error_spans)
+    @test haskey(err.attributes, :exception_type)
+    @test err.attributes[:exception_type] isa AbstractString
+    @test !isempty(err.attributes[:exception_type])
+
+    # Root span ends with :error status when any market failed.
+    root_ends = filter(ev -> ev isa SpanEvent && ev.kind === :end && ev.name === :search_markets, events)
+    @test length(root_ends) == 1
+    @test root_ends[1].status === :error
+    @test root_ends[1].attributes[:failure_count] == 1
+end
