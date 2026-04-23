@@ -182,6 +182,14 @@ end
 # Returns
 - `::MarketUniverse`: distinct `(origin, destination, date)` tuples
 
+# Performance
+- With `carriers=nothing`, every leg in the graph anchors the BFS. On full
+  production schedules (thousands of legs) this is O(L²) and may produce
+  tens of thousands of markets. Prefer `carriers` filtering, or use
+  `universe=:direct` in `search_schedule` for performance-sensitive callers.
+- On the demo dataset with `carriers=["UA"]` and default `max_stops=2`, this
+  produces ~88,000 markets — 52× the `:direct` universe count.
+
 # Throws
 - `ArgumentError`: when `include_codeshare=true` is paired with non-nothing
   `carriers`

@@ -69,6 +69,21 @@ end
     @test dates_in_keys == Set([date1, date2])
 end
 
+@testset "search_schedule — :connected universe at max_stops=0 degenerates to :direct" begin
+    newssim_path = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+    target = Date(2026, 2, 25)
+
+    # At max_stops=0 only nonstops are valid, so :connected == :direct in terms
+    # of which markets appear. This exercises the :connected code path without
+    # paying the cost of a full connecting-itineraries enumeration.
+    direct = search_schedule(newssim_path; dates=target, carriers=["UA"],
+                              universe=:direct, max_stops=0)
+    connected = search_schedule(newssim_path; dates=target, carriers=["UA"],
+                                 universe=:connected, max_stops=0)
+
+    @test Set(keys(direct)) == Set(keys(connected))
+end
+
 @testset "search_schedule — invalid universe symbol throws" begin
     newssim_path = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
     target = Date(2026, 2, 25)

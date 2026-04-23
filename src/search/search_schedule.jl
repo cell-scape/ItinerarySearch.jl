@@ -1,5 +1,11 @@
 # src/search/search_schedule.jl — Schedule-wide sweeps of all valid itineraries.
 #
+# Known follow-on: `_search_schedule_sweep!` currently builds the graph once at
+# the top of its date loop and then delegates to a dispatcher that rebuilds the
+# same graph. For the :direct universe the first build is wasted; for :connected
+# the dispatcher's build is redundant. A refactor to pass the prebuilt graph
+# into the dispatcher is tracked as a future performance task.
+#
 # `search_schedule` is the headline entry point for "give me every itinerary in
 # the schedule that matches my carrier filter". It owns a root `:search_schedule`
 # span and delegates the per-date × per-market sweep to the existing dispatcher

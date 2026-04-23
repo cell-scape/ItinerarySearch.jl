@@ -1320,6 +1320,10 @@ end
 - CRITICAL: vector form is EXPLICIT per-tuple, NOT cartesian'd with a separate dates list
 - `[(ORD, LHR, June15), (EWR, LHR, June16)]` produces exactly 2 searches
 - Implementation groups tuples by date, calls the kwargs form once per date, merges results
+- **Re-ingest cost**: for multi-date inputs, the NewSSIM file is re-ingested once per
+  unique date (each date opens a fresh `DuckDBStore`, ingests the CSV, builds the graph,
+  then closes). For performance-sensitive multi-date sweeps prefer `search_schedule`,
+  which keeps a single store open and ingests the file only once.
 
 # Arguments
 1. `newssim_path::AbstractString`: path to NewSSIM CSV
@@ -1341,6 +1345,13 @@ function search_markets(
 
     # Group (origin, dest) pairs by date so the kwargs form can build each
     # date's graph once and search its markets in one call.
+    #
+    # NOTE: For multi-date inputs, the NewSSIM file is re-ingested once per
+    # unique date — each `search_markets(newssim_path; ...)` call creates a
+    # fresh `DuckDBStore`, ingests the CSV, builds the graph, and closes the
+    # store. For performance-sensitive multi-date sweeps, prefer
+    # `search_schedule` which keeps a single `DuckDBStore` open across all
+    # dates and re-ingests the CSV only once.
     date_groups = Dict{Date,Vector{Tuple{String,String}}}()
     for (o, d, date) in ts
         push!(get!(date_groups, date, Tuple{String,String}[]),

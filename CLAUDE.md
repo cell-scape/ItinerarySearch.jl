@@ -73,6 +73,10 @@ The main module `ItinerarySearch` (`src/ItinerarySearch.jl`) uses standard `incl
 - **audit/** — MCT audit tooling: misconnect replay, interactive inspector, audit logging.
 - **api/** — High-level search interface and `SearchConfig` (JSON-configurable parameters).
 - **ext/** — Package extensions. `TermExt.jl` provides Term.jl styled rendering for the MCT inspector (loaded automatically when Term.jl is available).
+- **search/** — Universe-enumeration strategies (e.g. `_universe_from_carriers_direct`,
+  `_universe_from_carriers_connected`) that feed `search_schedule` — a carrier-scoped
+  schedule-wide sweep with two universe modes (`:direct` and `:connected`) and an
+  optional `sink::Function` callback for streaming results.
 - **observe/** — Logging, metrics, and observability hooks.
 
 ### Key Design Principles
@@ -102,6 +106,8 @@ The main module `ItinerarySearch` (`src/ItinerarySearch.jl`) uses standard `incl
 - `ItineraryRef` — Serializable itinerary with `legs::Vector{LegKey}` and `connections::Vector{ConnectionRef}`
 - `ParameterSet` — Tunable parameters for connection/itinerary validation: numeric ranges (min/max connection time, elapsed, flight time, layover, distance, circuity, stops), categorical allow/deny sets (carriers, countries, regions, stations, aircraft, service types), and circuity extra miles (domestic/international)
 - `SearchConfig` — JSON-deserialized search parameters (includes `mct_codeshare_mode`, `mct_schengen_mode`, `mct_serial_ascending`, `mct_suppressions_enabled`, `maft_enabled`, `interline_dcnx_enabled`, `crs_cnx_enabled`)
+- `MarketUniverse` — Public struct wrapping a concrete `Vector{Tuple{String,String,Date}}`
+  of markets to search. Produced by enumeration strategies; consumed by `search_schedule`.
 
 ### Data Pipeline
 
