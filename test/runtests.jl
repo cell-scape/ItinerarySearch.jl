@@ -59,5 +59,6 @@ end
     include("test_search_schedule.jl")
     include("test_dispatcher_prebuilt_graph.jl")
     include("test_search_schedule_graph_form.jl")
+    include("test_build_graph_for_window.jl")
     end  # if !ITINSEARCH_ONLY_STATIC
 end

@@ -531,6 +531,74 @@ function build_graph!(
     end  # Logging.with_logger
 end
 
+# ── build_graph_for_window ───────────────────────────────────────────────────
+
+"""
+    `build_graph_for_window(store::DuckDBStore, config::SearchConfig, dates::AbstractVector{Date}; source::Symbol = :newssim)::FlightGraph`
+---
+
+# Description
+- Build a single `FlightGraph` whose schedule window covers every target
+  date in `dates`
+- Computes `leading_days = 0` and `trailing_days = (T_max - T_min) + (config.max_days - 1)`
+  so that the window spans from `T_min` through `T_max + max_days - 1` inclusive
+- Useful for amortizing graph-build cost across multi-date sweeps — a single
+  call replaces N per-date `build_graph!` calls when the caller later passes the
+  resulting graph to `search_schedule(graph, universe)`
+- Uses fieldnames reflection to forward all other `SearchConfig` fields
+  automatically, so new fields added to `SearchConfig` are picked up without
+  touching this function
+
+# Arguments
+1. `store::DuckDBStore`: data store (already ingested)
+2. `config::SearchConfig`: base configuration (`leading_days`/`trailing_days` are overridden)
+3. `dates::AbstractVector{Date}`: target dates the graph must cover
+
+# Keyword Arguments
+- `source::Symbol = :newssim`: ingest source (`:newssim` or `:ssim`)
+
+# Returns
+- `::FlightGraph`: graph covering all dates in the range, suitable for
+  `search_schedule(graph, universe)` where universe tuples may fall on any
+  date in `[T_min, T_max]`
+
+# Throws
+- `ArgumentError` if `dates` is empty
+
+# Examples
+```julia
+julia> store = DuckDBStore();
+julia> ingest_newssim!(store, "schedule.csv.gz");
+julia> dates = Date(2026, 2, 25):Day(1):Date(2026, 2, 27);
+julia> graph = build_graph_for_window(store, SearchConfig(), dates);
+julia> graph.window_start == Date(2026, 2, 25)
+true
+```
+"""
+function build_graph_for_window(
+    store::DuckDBStore,
+    config::SearchConfig,
+    dates::AbstractVector{Date};
+    source::Symbol = :newssim,
+)::FlightGraph
+    isempty(dates) && throw(ArgumentError("dates must not be empty"))
+    sorted = sort(collect(dates))
+    t_min, t_max = first(sorted), last(sorted)
+    span_days = Dates.value(t_max - t_min)
+
+    # Build a new SearchConfig with overridden leading/trailing days.
+    # Use field reflection so future SearchConfig fields are forwarded automatically.
+    kwargs = Dict{Symbol,Any}()
+    for f in fieldnames(SearchConfig)
+        kwargs[f] = getfield(config, f)
+    end
+    kwargs[:leading_days]  = 0
+    kwargs[:trailing_days] = span_days + (config.max_days - 1)
+    wide_config = SearchConfig(; kwargs...)
+
+    return build_graph!(store, wide_config, t_min; source)
+end
+
 # ── Convenience search ─────────────────────────────────────────────────────────
 
 """
