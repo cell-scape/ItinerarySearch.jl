@@ -57,5 +57,6 @@ end
     include("test_schedule_carrier_queries.jl")
     include("test_universe_enumeration.jl")
     include("test_search_schedule.jl")
+    include("test_dispatcher_prebuilt_graph.jl")
     end  # if !ITINSEARCH_ONLY_STATIC
 end
