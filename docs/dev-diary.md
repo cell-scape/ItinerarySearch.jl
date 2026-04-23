@@ -1,5 +1,53 @@
 # ItinerarySearch Development Diary
 
+## 2026-04-23 — Graph reuse + pure-search benchmarks
+
+Fixed the double-build flagged in the search-convenience final review.
+`_search_markets_parallel_all_dates` and `_search_markets_sequential_all_dates`
+now accept an optional `prebuilt_graph::Union{Nothing, FlightGraph}` parameter;
+`store` relaxed to `Union{Nothing, DuckDBStore}` with a guard that throws if
+both are nothing. `_search_schedule_sweep!` now builds once per date at its own
+level and passes the graph through, eliminating the wasted rebuild.
+
+Two public API additions for advanced callers:
+
+- `search_schedule(graph::FlightGraph, universe::MarketUniverse; ...)` — a third
+  entry form alongside the existing path and store forms. Validates all universe
+  dates fall within `[graph.window_start, graph.window_end]`; throws
+  `ArgumentError` otherwise. Skips ingest + graph build entirely — callers pay
+  those costs up front and reuse the graph across many calls. Root `SpanEvent`
+  has `universe_mode = :prebuilt` (distinguishes from `:direct` and `:connected`
+  which describe how the universe was enumerated).
+
+- `build_graph_for_window(store, config, dates)` — helper that builds a single
+  graph whose window covers every date in `dates`, computing the right
+  `trailing_days` automatically (`leading_days=0`, `trailing_days=span+max_days-1`).
+  Useful for amortizing graph-build cost across multi-date sweeps when the
+  search-phase wins outweigh the one-time wider-graph build cost.
+
+Benchmark overhaul: new `benchmark/bench_schedule_pure.jl` measures only the
+search phase (setup excluded). `RESULTS.md` is restructured with two sections —
+"Pure search (isolated)" and "End-to-end (whole call)" — so regressions in
+ingest vs. regressions in search are independently detectable.
+
+The pure-search benchmarks make the parallelism gain actually visible:
+
+| Scenario | 1→4 speedup (pure) | 1→4 speedup (end-to-end) |
+|---|---|---|
+| `:direct UA`, 1 date | **4.42×** | 1.71× |
+| `:direct all`, 1 date | **4.13×** | 2.31× |
+| `:direct UA × 3 dates` wide-window | 3.01× | (n/a — new scenario) |
+
+The super-linear scaling on UA (4.42× on 4 threads) is likely cache-friendly
+per-thread working sets — each worker's `RuntimeContext` caches fit in L2 and
+don't compete. At 4 threads vs 1 thread for UA: 2.4s pure-search vs 9.9s
+end-to-end → about 7.5s of serial ingest + build overhead per call that the
+pure-search number factors out. See `benchmark/RESULTS.md` for the full table.
+
+**Deferred:** DuckDB file persistence (separate plan). Production concerns
+(schema versioning, concurrent access, file lifecycle) deserve dedicated design
+rather than piggybacking on this benchmark work.
+
 ## 2026-04-23 — Search convenience features
 
 Added two convenience features layered on top of the existing search API.

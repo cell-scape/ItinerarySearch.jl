@@ -108,6 +108,9 @@ The main module `ItinerarySearch` (`src/ItinerarySearch.jl`) uses standard `incl
 - `SearchConfig` — JSON-deserialized search parameters (includes `mct_codeshare_mode`, `mct_schengen_mode`, `mct_serial_ascending`, `mct_suppressions_enabled`, `maft_enabled`, `interline_dcnx_enabled`, `crs_cnx_enabled`)
 - `MarketUniverse` — Public struct wrapping a concrete `Vector{Tuple{String,String,Date}}`
   of markets to search. Produced by enumeration strategies; consumed by `search_schedule`.
+- `build_graph_for_window(store, config, dates)` — Build a graph covering every
+  target date in a range. Used to amortize graph-build cost across multi-date
+  sweeps when the search phase dominates.
 
 ### Data Pipeline
 
