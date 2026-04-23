@@ -73,6 +73,7 @@ const TEST_FILES_FULL = [
     "test_parallel_markets_pool_invariants.jl", # ~varies — no context leaks on failures
     "test_search_tuple_dispatch.jl",            # ~varies — tuple-dispatch overloads
     "test_schedule_carrier_queries.jl",         # ~varies — carrier + codeshare SQL helpers
+    "test_universe_enumeration.jl",            # ~varies — MarketUniverse + :direct strategy
 ]
 
 # Apply the static-analysis env filters.

@@ -56,6 +56,7 @@ include("store/interface.jl")
 include("store/julia_store.jl")
 include("store/duckdb_store.jl")
 include("store/schedule_queries.jl")
+include("search/universe.jl")
 include("ingest/ssim.jl")
 include("ingest/mct.jl")
 include("ingest/reference.jl")
@@ -88,6 +89,7 @@ include("cli.jl")
 
 # Types
 export StationCode, Itinerary, Trip, TripLeg, FlightGraph, ConnectionRef
+export MarketUniverse
 
 # Failure types
 export MarketSearchFailure, is_failure, failed_markets

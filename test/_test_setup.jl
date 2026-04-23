@@ -111,4 +111,6 @@ import ItinerarySearch:
     # Output internals (now exported; kept here for historical test imports)
     resolve_leg, resolve_segment, resolve_legs,
     # Failure sentinel
-    MarketSearchFailure, is_failure, failed_markets
+    MarketSearchFailure, is_failure, failed_markets,
+    # Universe enumeration
+    MarketUniverse
