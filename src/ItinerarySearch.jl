@@ -99,6 +99,7 @@ export InterlineMode, INTERLINE_ONLINE, INTERLINE_CODESHARE, INTERLINE_ALL
 
 # Store
 export DuckDBStore, table_stats, load_schedule!
+export query_direct_markets_by_carriers, query_codeshare_partners
 
 # Ingest
 export ingest_ssim!, ingest_mct!, ingest_newssim!

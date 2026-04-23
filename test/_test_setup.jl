@@ -61,6 +61,7 @@ import ItinerarySearch:
     query_market_distance, query_segment, query_segment_stops,
     post_ingest_sql!,
     query_schedule_legs, query_schedule_segments,
+    query_direct_markets_by_carriers, query_codeshare_partners,
     # MCT lookup
     MCTRecord, MCTLookup, MCTCacheKey, lookup_mct, lookup_mct_traced, materialize_mct_lookup,
     MCT_BIT_ARR_CARRIER, MCT_BIT_DEP_CARRIER,

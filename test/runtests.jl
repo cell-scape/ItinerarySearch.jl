@@ -54,5 +54,6 @@ end
     include("test_audit_misconnect.jl")
     include("test_circuity_tiers.jl")
     include("test_search_tuple_dispatch.jl")
+    include("test_schedule_carrier_queries.jl")
     end  # if !ITINSEARCH_ONLY_STATIC
 end
