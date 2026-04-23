@@ -12,6 +12,7 @@ include("bench_ingest.jl")
 include("bench_graph.jl")
 include("bench_markets.jl")
 include("bench_schedule.jl")
+include("bench_schedule_pure.jl")
 
 using ItinerarySearch
 
@@ -81,8 +82,17 @@ if isfile(config.ssim_path)
         println("\nSkipping market search benchmark (sample_newssim.csv.gz not found).")
     end
 
-    # Phase 13: search_schedule + tuple-dispatch
+    # Phase 13: search_schedule + tuple-dispatch (end-to-end, includes setup)
     bench_schedule()
+
+    # Phase 14: pure-search (setup outside timing — parallelism signal without Amdahl)
+    newssim_path_pure = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+    if isfile(newssim_path_pure)
+        bench_schedule_pure()
+        bench_schedule_multidate_window()
+    else
+        println("\nSkipping pure-search benchmarks (sample_newssim.csv.gz not found).")
+    end
 else
     println("Demo data not found. Run extract_demo_data.jl first.")
     println("Skipping benchmarks.")

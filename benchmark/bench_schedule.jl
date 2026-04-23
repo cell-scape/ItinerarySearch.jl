@@ -12,6 +12,11 @@
 #     JULIA_NUM_THREADS=$t julia --project=. benchmark/bench_schedule.jl
 #   done
 #
+# See also `bench_schedule_pure.jl` for search-only benchmarks that exclude
+# ingest + graph build from timing. Those numbers show parallelism gains
+# without Amdahl pollution; these numbers show real-world wall time for
+# a one-shot invocation.
+#
 # NOTE: `:direct` universe is the default and representative. `:connected`
 # is NOT exercised here — on the demo dataset it produces ~88k markets for
 # UA, which would run for hours. Correctness of `:connected` is covered by
