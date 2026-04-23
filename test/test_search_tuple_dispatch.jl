@@ -66,10 +66,10 @@ end
         config = SearchConfig()
 
         @testset "single tuple form" begin
-            # Both calls use source=:newssim (the default for tuple dispatch).
+            # Both calls use source=:newssim — the test fixture is newssim-ingested.
             canonical = search(store, StationCode("ORD"), StationCode("LHR"), target;
                                config, source=:newssim)
-            tuple_form = search(store, ("ORD", "LHR", target); config)
+            tuple_form = search(store, ("ORD", "LHR", target); config, source=:newssim)
             @test length(tuple_form) == length(canonical)
         end
 
@@ -82,14 +82,14 @@ end
 
             # Snapshot expected lengths BEFORE the batch call to avoid aliasing
             # the ctx.results buffer the batch returns from.
-            # Use the single-tuple dispatch so the source (:newssim) matches the
-            # batch call below.
+            # Use the single-tuple dispatch with source=:newssim — test fixture
+            # is newssim-ingested, so pass explicitly now that the default is :ssim.
             expected_lengths = [
-                length(search(store, t; config))
+                length(search(store, t; config, source=:newssim))
                 for t in tuples
             ]
 
-            results = search(store, tuples; config)
+            results = search(store, tuples; config, source=:newssim)
             @test results isa Vector{Vector{Itinerary}}
             @test length(results) == 3
             for i in eachindex(tuples)
@@ -102,7 +102,7 @@ end
         end
 
         @testset "empty vector returns empty output" begin
-            results = search(store, Tuple{String,String,Date}[]; config)
+            results = search(store, Tuple{String,String,Date}[]; config, source=:newssim)
             @test results isa Vector{Vector{Itinerary}}
             @test isempty(results)
         end

@@ -598,14 +598,14 @@ function search(
 end
 
 """
-    `search(store::DuckDBStore, t::Tuple{<:AbstractString, <:AbstractString, Date}; config::SearchConfig=SearchConfig(), source::Symbol=:newssim)::Vector{Itinerary}`
+    `search(store::DuckDBStore, t::Tuple{<:AbstractString, <:AbstractString, Date}; config::SearchConfig=SearchConfig(), source::Symbol=:ssim)::Vector{Itinerary}`
 ---
 
 # Description
 - Convenience overload accepting a single `(origin, destination, date)` tuple
 - Builds the graph for the given date and returns itineraries for the O-D pair
-- Defaults to `source=:newssim` (consistent with the vector-of-tuples overload);
-  pass `source=:ssim` when the store was ingested via the SSIM fixed-width path
+- Defaults to `source=:ssim` (consistent with the canonical three-argument overload);
+  pass `source=:newssim` when the store was ingested via the NewSSIM CSV path
 
 # Arguments
 1. `store::DuckDBStore`: data store (already ingested)
@@ -613,7 +613,7 @@ end
 
 # Keyword Arguments
 - `config::SearchConfig=SearchConfig()`: search configuration
-- `source::Symbol=:newssim`: ingest source — `:newssim` or `:ssim`
+- `source::Symbol=:ssim`: ingest source — `:ssim` (default) or `:newssim`
 
 # Returns
 - `::Vector{Itinerary}`: all valid itineraries found
@@ -622,7 +622,7 @@ function search(
     store::DuckDBStore,
     t::Tuple{<:AbstractString,<:AbstractString,Date};
     config::SearchConfig = SearchConfig(),
-    source::Symbol = :newssim,
+    source::Symbol = :ssim,
 )::Vector{Itinerary}
     graph = build_graph!(store, config, t[3]; source)
     ctx = _build_runtime_context(config)
@@ -630,7 +630,7 @@ function search(
 end
 
 """
-    `search(store::DuckDBStore, ts::AbstractVector{<:Tuple{<:AbstractString, <:AbstractString, Date}}; config::SearchConfig=SearchConfig())::Vector{Vector{Itinerary}}`
+    `search(store::DuckDBStore, ts::AbstractVector{<:Tuple{<:AbstractString, <:AbstractString, Date}}; config::SearchConfig=SearchConfig(), source::Symbol=:ssim)::Vector{Vector{Itinerary}}`
 ---
 
 # Description
@@ -646,6 +646,7 @@ end
 
 # Keyword Arguments
 - `config::SearchConfig=SearchConfig()`: search configuration
+- `source::Symbol=:ssim`: ingest source — `:ssim` (default) or `:newssim`
 
 # Returns
 - `::Vector{Vector{Itinerary}}`: one itinerary vector per input tuple, in input order
@@ -654,6 +655,7 @@ function search(
     store::DuckDBStore,
     ts::AbstractVector{<:Tuple{<:AbstractString,<:AbstractString,Date}};
     config::SearchConfig = SearchConfig(),
+    source::Symbol = :ssim,
 )::Vector{Vector{Itinerary}}
     isempty(ts) && return Vector{Itinerary}[]
 
@@ -665,7 +667,7 @@ function search(
 
     results = Vector{Vector{Itinerary}}(undef, length(ts))
     for (date, indices) in date_groups
-        graph = build_graph!(store, config, date; source = :newssim)
+        graph = build_graph!(store, config, date; source)
         ctx = _build_runtime_context(config)
         for i in indices
             t = ts[i]
