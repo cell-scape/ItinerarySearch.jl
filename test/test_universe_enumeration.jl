@@ -43,3 +43,42 @@ end
         close(store)
     end
 end
+
+@testset "_universe_from_carriers_connected" begin
+    newssim_path = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+    target = Date(2026, 2, 25)
+    store = DuckDBStore()
+    try
+        ingest_newssim!(store, newssim_path)
+        config = SearchConfig()  # default max_stops = 2
+        graph = build_graph!(store, config, target; source=:newssim)
+
+        @testset "returns a MarketUniverse with the target date" begin
+            u = ItinerarySearch._universe_from_carriers_connected(graph, target, ["UA"], false)
+            @test u isa MarketUniverse
+            @test all(t -> t[3] == target, u.tuples)
+        end
+
+        @testset "strict superset of :direct for same filter" begin
+            u_direct = ItinerarySearch._universe_from_carriers_direct(store, target, ["UA"], false)
+            u_connected = ItinerarySearch._universe_from_carriers_connected(graph, target, ["UA"], false)
+            @test Set(u_direct.tuples) ⊆ Set(u_connected.tuples)
+        end
+
+        @testset "deduplication — no duplicate tuples" begin
+            u = ItinerarySearch._universe_from_carriers_connected(graph, target, ["UA"], false)
+            @test length(u.tuples) == length(Set(u.tuples))
+        end
+
+        @testset "carriers=nothing returns all connected markets" begin
+            u = ItinerarySearch._universe_from_carriers_connected(graph, target, nothing, false)
+            @test !isempty(u.tuples)
+        end
+
+        @testset "include_codeshare=true with carriers supplied throws ArgumentError" begin
+            @test_throws ArgumentError ItinerarySearch._universe_from_carriers_connected(graph, target, ["UA"], true)
+        end
+    finally
+        close(store)
+    end
+end
