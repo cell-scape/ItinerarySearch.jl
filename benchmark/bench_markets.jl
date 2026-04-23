@@ -1,5 +1,12 @@
 # benchmark/bench_markets.jl — Parallel market search benchmarks
 #
+# Run this under multiple thread configurations and add a row to
+# `benchmark/RESULTS.md` so regressions are visible at a glance:
+#
+#   for t in 1 2 4 auto; do
+#     JULIA_NUM_THREADS=$t julia --project=. benchmark/bench_markets.jl
+#   done
+#
 # NOTE: search_markets() includes ingest + graph build + DFS search in one call.
 # The ingest/build phase (~93% of wall time) is serial in both modes; only the
 # per-market DFS search phase parallelizes. Speedup at this scale is therefore

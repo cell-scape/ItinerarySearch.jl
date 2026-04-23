@@ -11,6 +11,7 @@ println("="^60)
 include("bench_ingest.jl")
 include("bench_graph.jl")
 include("bench_markets.jl")
+include("bench_schedule.jl")
 
 using ItinerarySearch
 
@@ -79,6 +80,9 @@ if isfile(config.ssim_path)
     else
         println("\nSkipping market search benchmark (sample_newssim.csv.gz not found).")
     end
+
+    # Phase 13: search_schedule + tuple-dispatch
+    bench_schedule()
 else
     println("Demo data not found. Run extract_demo_data.jl first.")
     println("Skipping benchmarks.")

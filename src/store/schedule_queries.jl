@@ -216,3 +216,204 @@ function query_schedule_segments(
     end
     records
 end
+
+# ── Carrier-level market and codeshare queries ─────────────────────────────────
+
+"""
+    `_has_newssim_table(store::DuckDBStore)::Bool`
+
+Return `true` if the `newssim` table exists in the store (i.e. the NewSSIM CSV
+ingest path was used). Used by carrier-query helpers to select the correct table
+and column mapping without requiring the caller to track the ingest source.
+"""
+function _has_newssim_table(store::DuckDBStore)::Bool
+    result = DBInterface.execute(
+        store.db,
+        "SELECT COUNT(*) AS n FROM information_schema.tables WHERE table_name = 'newssim'",
+    )
+    Int(first(result).n) > 0
+end
+
+"""
+    `query_direct_markets_by_carriers(store::DuckDBStore, date::Date, carriers::Union{Nothing, AbstractVector{<:AbstractString}})::Vector{Tuple{String,String}}`
+---
+
+# Description
+- Return distinct `(departure_station, arrival_station)` pairs with at least one
+  direct flight on `date`, optionally filtered by marketing OR operating carrier
+- `carriers === nothing` means no filter (all direct markets on the date)
+- `carriers` is an explicit list; empty list returns empty result immediately
+- Works with both the NewSSIM CSV ingest path (queries the `newssim` table) and
+  the SSIM fixed-width ingest path (queries the `legs_with_operating` view);
+  the source is detected automatically
+
+# Arguments
+1. `store::DuckDBStore`: data store (NewSSIM or SSIM ingested)
+2. `date::Date`: target operating date
+3. `carriers::Union{Nothing, AbstractVector{<:AbstractString}}`: marketing/operating
+   carrier filter set, or `nothing` for no filter
+
+# Returns
+- `::Vector{Tuple{String,String}}`: distinct (origin, destination) pairs
+
+# Examples
+```julia
+julia> markets = query_direct_markets_by_carriers(store, Date(2026, 2, 25), ["UA"]);
+julia> markets = query_direct_markets_by_carriers(store, Date(2026, 2, 25), nothing);
+```
+"""
+function query_direct_markets_by_carriers(
+    store::DuckDBStore,
+    date::Date,
+    carriers::Union{Nothing, AbstractVector{<:AbstractString}},
+)::Vector{Tuple{String,String}}
+    carriers !== nothing && isempty(carriers) && return Tuple{String,String}[]
+
+    if _has_newssim_table(store)
+        # NewSSIM path: table `newssim`, date column = `date` (as DATE),
+        # marketing carrier = `carrier`, operating carrier = `administrating_carrier`
+        sql = if carriers === nothing
+            """
+            SELECT DISTINCT departure_station, arrival_station
+            FROM newssim
+            WHERE leg_or_seg = 'L'
+              AND (CAST(num_of_legs_in_seg AS INT) = 0 OR num_of_legs_in_seg IS NULL)
+              AND CAST(date AS DATE) = ?
+            """
+        else
+            carrier_list = _sql_in_list(carriers)
+            """
+            SELECT DISTINCT departure_station, arrival_station
+            FROM newssim
+            WHERE leg_or_seg = 'L'
+              AND (CAST(num_of_legs_in_seg AS INT) = 0 OR num_of_legs_in_seg IS NULL)
+              AND CAST(date AS DATE) = ?
+              AND (carrier IN $carrier_list OR administrating_carrier IN $carrier_list)
+            """
+        end
+    else
+        # SSIM path: view `legs_with_operating`, date column = `operating_date`,
+        # marketing carrier = `carrier`, operating carrier = `operating_carrier`
+        sql = if carriers === nothing
+            """
+            SELECT DISTINCT departure_station, arrival_station
+            FROM legs_with_operating
+            WHERE operating_date = ?
+            """
+        else
+            carrier_list = _sql_in_list(carriers)
+            """
+            SELECT DISTINCT departure_station, arrival_station
+            FROM legs_with_operating
+            WHERE operating_date = ?
+              AND (carrier IN $carrier_list OR operating_carrier IN $carrier_list)
+            """
+        end
+    end
+
+    result = DBInterface.execute(store.db, sql, [date])
+    [(String(r.departure_station), String(r.arrival_station)) for r in result]
+end
+
+"""
+    `query_codeshare_partners(store::DuckDBStore, date::Date, carriers::AbstractVector{<:AbstractString})::Vector{String}`
+---
+
+# Description
+- Return distinct carriers who appear on the opposite side of a codeshare
+  involving any of `carriers` on `date`
+- "Opposite side" means: operators of flights marketed by `carriers`,
+  plus marketers of flights operated by `carriers`
+- Deduplicated; the input `carriers` themselves are excluded from the result
+- Empty `carriers` returns empty result
+- Works with both the NewSSIM CSV ingest path and the SSIM fixed-width ingest
+  path; the source is detected automatically
+
+# Arguments
+1. `store::DuckDBStore`: data store (NewSSIM or SSIM ingested)
+2. `date::Date`: target operating date
+3. `carriers::AbstractVector{<:AbstractString}`: source carrier list
+
+# Returns
+- `::Vector{String}`: distinct partner carrier codes
+
+# Examples
+```julia
+julia> partners = query_codeshare_partners(store, Date(2026, 2, 25), ["UA"]);
+```
+"""
+function query_codeshare_partners(
+    store::DuckDBStore,
+    date::Date,
+    carriers::AbstractVector{<:AbstractString},
+)::Vector{String}
+    isempty(carriers) && return String[]
+
+    carrier_list = _sql_in_list(carriers)
+
+    sql = if _has_newssim_table(store)
+        # NewSSIM path: marketing = `carrier`, operating = `administrating_carrier`
+        """
+        SELECT DISTINCT opposite_carrier FROM (
+            SELECT administrating_carrier AS opposite_carrier
+            FROM newssim
+            WHERE leg_or_seg = 'L'
+              AND (CAST(num_of_legs_in_seg AS INT) = 0 OR num_of_legs_in_seg IS NULL)
+              AND CAST(date AS DATE) = ?
+              AND carrier IN $carrier_list
+              AND administrating_carrier IS NOT NULL
+              AND administrating_carrier <> carrier
+            UNION
+            SELECT carrier AS opposite_carrier
+            FROM newssim
+            WHERE leg_or_seg = 'L'
+              AND (CAST(num_of_legs_in_seg AS INT) = 0 OR num_of_legs_in_seg IS NULL)
+              AND CAST(date AS DATE) = ?
+              AND administrating_carrier IN $carrier_list
+              AND administrating_carrier <> carrier
+        ) sub
+        WHERE opposite_carrier NOT IN $carrier_list
+        """
+    else
+        # SSIM path: marketing = `carrier`, operating = `operating_carrier`
+        """
+        SELECT DISTINCT opposite_carrier FROM (
+            SELECT operating_carrier AS opposite_carrier
+            FROM legs_with_operating
+            WHERE operating_date = ?
+              AND carrier IN $carrier_list
+              AND operating_carrier IS NOT NULL
+              AND operating_carrier <> carrier
+            UNION
+            SELECT carrier AS opposite_carrier
+            FROM legs_with_operating
+            WHERE operating_date = ?
+              AND operating_carrier IN $carrier_list
+              AND operating_carrier <> carrier
+        ) sub
+        WHERE opposite_carrier NOT IN $carrier_list
+        """
+    end
+
+    result = DBInterface.execute(store.db, sql, [date, date])
+    [String(r.opposite_carrier) for r in result]
+end
+
+"""
+    `_sql_in_list(values::AbstractVector{<:AbstractString})::String`
+
+Build a SQL `IN (...)` literal from a vector of string values.
+
+Single-quote-escapes each value (replacing `'` with `''`) and wraps the
+comma-separated list in parentheses. Callers are responsible for ensuring
+`values` is non-empty before calling this helper.
+
+# Examples
+```julia
+julia> _sql_in_list(["UA", "AA"]) == "('UA','AA')"
+true
+```
+"""
+function _sql_in_list(values::AbstractVector{<:AbstractString})::String
+    "(" * join(("'" * replace(String(v), "'" => "''") * "'" for v in values), ",") * ")"
+end

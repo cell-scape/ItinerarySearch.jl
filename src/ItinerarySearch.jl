@@ -56,6 +56,7 @@ include("store/interface.jl")
 include("store/julia_store.jl")
 include("store/duckdb_store.jl")
 include("store/schedule_queries.jl")
+include("search/universe.jl")
 include("ingest/ssim.jl")
 include("ingest/mct.jl")
 include("ingest/reference.jl")
@@ -75,6 +76,7 @@ include("graph/rules_itn.jl")
 include("graph/connect.jl")
 include("graph/search.jl")
 include("graph/builder.jl")
+include("search/search_schedule.jl")
 include("output/dt_helpers.jl")
 include("output/formats.jl")
 include("output/viz.jl")
@@ -88,6 +90,7 @@ include("cli.jl")
 
 # Types
 export StationCode, Itinerary, Trip, TripLeg, FlightGraph, ConnectionRef
+export MarketUniverse
 
 # Failure types
 export MarketSearchFailure, is_failure, failed_markets
@@ -99,6 +102,7 @@ export InterlineMode, INTERLINE_ONLINE, INTERLINE_CODESHARE, INTERLINE_ALL
 
 # Store
 export DuckDBStore, table_stats, load_schedule!
+export query_direct_markets_by_carriers, query_codeshare_partners
 
 # Ingest
 export ingest_ssim!, ingest_mct!, ingest_newssim!
@@ -106,7 +110,7 @@ export load_airports!, load_regions!, load_aircrafts!, load_oa_control!
 export load_circuity_tiers, load_circuity_overrides, apply_circuity_files!
 
 # Build & search
-export build_graph!, search, search_markets
+export build_graph!, search, search_markets, search_schedule
 export search_itineraries, search_trip
 export RuntimeContext, SearchConstraints, build_itn_rules
 export CircuityTier, DEFAULT_CIRCUITY_TIERS

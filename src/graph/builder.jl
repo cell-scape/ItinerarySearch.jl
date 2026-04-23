@@ -560,6 +560,8 @@ end
 
 # Keyword Arguments
 - `config::SearchConfig=SearchConfig()`: search configuration
+- `source::Symbol=:ssim`: ingest source — `:ssim` (default, SSIM fixed-width pipeline)
+  or `:newssim` (denormalized CSV pipeline)
 
 # Returns
 - `::Vector{Itinerary}`: all valid itineraries found (deep-copied from the
@@ -580,8 +582,9 @@ function search(
     dest::StationCode,
     target_date::Date;
     config::SearchConfig = SearchConfig(),
+    source::Symbol = :ssim,
 )::Vector{Itinerary}
-    graph = build_graph!(store, config, target_date)
+    graph = build_graph!(store, config, target_date; source)
 
     ctx = RuntimeContext(
         config = config,
@@ -592,6 +595,93 @@ function search(
     results = search_itineraries(graph.stations, origin, dest, target_date, ctx)
     # Return a copy — ctx.results is reused on subsequent searches
     return copy(results)
+end
+
+"""
+    `search(store::DuckDBStore, t::Tuple{<:AbstractString, <:AbstractString, Date}; config::SearchConfig=SearchConfig(), source::Symbol=:ssim)::Vector{Itinerary}`
+---
+
+# Description
+- Convenience overload accepting a single `(origin, destination, date)` tuple
+- Builds the graph for the given date and returns itineraries for the O-D pair
+- Defaults to `source=:ssim` (consistent with the canonical three-argument overload);
+  pass `source=:newssim` when the store was ingested via the NewSSIM CSV path
+
+# Arguments
+1. `store::DuckDBStore`: data store (already ingested)
+2. `t::Tuple{<:AbstractString, <:AbstractString, Date}`: `(origin, destination, date)` triple
+
+# Keyword Arguments
+- `config::SearchConfig=SearchConfig()`: search configuration
+- `source::Symbol=:ssim`: ingest source — `:ssim` (default) or `:newssim`
+
+# Returns
+- `::Vector{Itinerary}`: all valid itineraries found
+"""
+function search(
+    store::DuckDBStore,
+    t::Tuple{<:AbstractString,<:AbstractString,Date};
+    config::SearchConfig = SearchConfig(),
+    source::Symbol = :ssim,
+)::Vector{Itinerary}
+    graph = build_graph!(store, config, t[3]; source)
+    ctx = _build_runtime_context(config)
+    return copy(search_itineraries(graph.stations, StationCode(t[1]), StationCode(t[2]), t[3], ctx))
+end
+
+"""
+    `search(store::DuckDBStore, ts::AbstractVector{<:Tuple{<:AbstractString, <:AbstractString, Date}}; config::SearchConfig=SearchConfig(), source::Symbol=:ssim)::Vector{Vector{Itinerary}}`
+---
+
+# Description
+- Convenience overload accepting a vector of `(origin, destination, date)` tuples
+- Groups tuples by date so the graph is built once per unique date, not once per tuple
+- Returns a vector of itinerary vectors in input order
+- Each inner vector is copied so the result survives subsequent searches
+  (important — `search_itineraries` returns `ctx.results` by reference)
+
+# Arguments
+1. `store::DuckDBStore`: data store (already ingested)
+2. `ts::AbstractVector{<:Tuple{<:AbstractString, <:AbstractString, Date}}`: tuple list
+
+# Keyword Arguments
+- `config::SearchConfig=SearchConfig()`: search configuration
+- `source::Symbol=:ssim`: ingest source — `:ssim` (default) or `:newssim`
+
+# Returns
+- `::Vector{Vector{Itinerary}}`: one itinerary vector per input tuple, in input order
+"""
+function search(
+    store::DuckDBStore,
+    ts::AbstractVector{<:Tuple{<:AbstractString,<:AbstractString,Date}};
+    config::SearchConfig = SearchConfig(),
+    source::Symbol = :ssim,
+)::Vector{Vector{Itinerary}}
+    isempty(ts) && return Vector{Itinerary}[]
+
+    # Group input indices by date — enables one graph build per unique date.
+    date_groups = Dict{Date,Vector{Int}}()
+    for (i, t) in enumerate(ts)
+        push!(get!(date_groups, t[3], Int[]), i)
+    end
+
+    results = Vector{Vector{Itinerary}}(undef, length(ts))
+    for (date, indices) in date_groups
+        graph = build_graph!(store, config, date; source)
+        ctx = _build_runtime_context(config)
+        for i in indices
+            t = ts[i]
+            # CRITICAL: copy() — search_itineraries returns ctx.results by
+            # reference, and the next iteration's empty!(ctx.results) would
+            # mutate our stored result. Aliasing bug: without copy(), every
+            # element of results ends up aliasing ctx.results and holding only
+            # the final search's results.
+            results[i] = copy(
+                search_itineraries(graph.stations, StationCode(t[1]), StationCode(t[2]), date, ctx),
+            )
+        end
+    end
+    return results
 end
 
 # ── Runtime-context / sequential helpers (shared with parallel path) ──────────
@@ -662,32 +752,49 @@ function _search_markets_sequential_all_dates(
     dates::AbstractVector{Date},
     markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
     target_source::Symbol,
-    event_sinks::Vector{<:Function},
+    event_sinks::Vector{<:Function} = Function[],
+    sink::Union{Nothing,Function} = nothing,
+    external_results::Union{Nothing,Dict} = nothing,
+    external_lock::Union{Nothing,ReentrantLock} = nothing,
+    external_trace_id::Union{Nothing,UInt128} = nothing,
+    external_root_span_id::Union{Nothing,UInt64} = nothing,
 )::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
-    results = Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}()
+    # When external_results is supplied, write into it; otherwise create a
+    # fresh dict. The external_lock is unused in the sequential path (no
+    # concurrent writers) but accepted for signature parity with the parallel
+    # helper and for a hypothetical caller that shares results across calls.
+    results = external_results === nothing ?
+        Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}() :
+        external_results
     ctx = _build_runtime_context(config)
 
     # ── Root SpanEvent emission (OTel-ready) ──────────────────────────────
-    trace_id = _new_trace_id()
-    root_span_id = _new_span_id()
+    # When the caller supplies external_trace_id + external_root_span_id, nest
+    # per-market spans under that root and DO NOT emit our own :search_markets
+    # start/end pair — the caller (e.g. `search_schedule`) owns that root.
+    owns_root = external_trace_id === nothing || external_root_span_id === nothing
+    trace_id = external_trace_id === nothing ? _new_trace_id() : external_trace_id
+    root_span_id = external_root_span_id === nothing ? _new_span_id() : external_root_span_id
     root_start_ns = _unix_nano_now()
 
     emit_to_sinks = function(ev::SpanEvent)
-        for sink in event_sinks
-            sink(ev)
+        for esink in event_sinks
+            esink(ev)
         end
         return nothing
     end
 
-    emit_to_sinks(SpanEvent(
-        kind=:start, name=:search_markets,
-        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
-        unix_nano=root_start_ns,
-        attributes=Dict{Symbol,Any}(
-            :market_count => length(markets),
-            :date_count   => length(dates),
-        ),
-    ))
+    if owns_root
+        emit_to_sinks(SpanEvent(
+            kind=:start, name=:search_markets,
+            trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+            unix_nano=root_start_ns,
+            attributes=Dict{Symbol,Any}(
+                :market_count => length(markets),
+                :date_count   => length(dates),
+            ),
+        ))
+    end
 
     for target in dates
         graph = build_graph!(store, config, target; source = target_source)
@@ -695,8 +802,8 @@ function _search_markets_sequential_all_dates(
             # Per-market span :start
             market_span_id = _new_span_id()
             market_start_ns = _unix_nano_now()
-            for sink in event_sinks
-                sink(SpanEvent(
+            for esink in event_sinks
+                esink(SpanEvent(
                     kind=:start, name=:market_search,
                     trace_id=trace_id, span_id=market_span_id,
                     parent_span_id=root_span_id,
@@ -714,11 +821,17 @@ function _search_markets_sequential_all_dates(
                 origin = StationCode(org)
                 dest = StationCode(dst)
                 itns = search_itineraries(graph.stations, origin, dest, target, ctx)
-                results[(String(org), String(dst), target)] = copy(itns)
+                value = copy(itns)
+                key = (String(org), String(dst), target)
+                if sink !== nothing
+                    sink(key, value)
+                else
+                    results[key] = value
+                end
 
                 market_end_ns = _unix_nano_now()
-                for sink in event_sinks
-                    sink(SpanEvent(
+                for esink in event_sinks
+                    esink(SpanEvent(
                         kind=:end, name=:market_search,
                         trace_id=trace_id, span_id=market_span_id,
                         parent_span_id=root_span_id,
@@ -740,11 +853,16 @@ function _search_markets_sequential_all_dates(
                     (String(org), String(dst), target), e, bt,
                     ctx.worker_slot, elapsed_ms,
                 )
-                results[(String(org), String(dst), target)] = fail
+                key = (String(org), String(dst), target)
+                if sink !== nothing
+                    sink(key, fail)
+                else
+                    results[key] = fail
+                end
 
                 market_end_ns = _unix_nano_now()
-                for sink in event_sinks
-                    sink(SpanEvent(
+                for esink in event_sinks
+                    esink(SpanEvent(
                         kind=:end, name=:market_search,
                         trace_id=trace_id, span_id=market_span_id,
                         parent_span_id=root_span_id,
@@ -761,20 +879,22 @@ function _search_markets_sequential_all_dates(
     end
 
     # ── Root SpanEvent :end ───────────────────────────────────────────────
-    success_count = count(v -> v isa Vector{Itinerary}, values(results))
-    failure_count = count(v -> v isa MarketSearchFailure, values(results))
-    root_end_ns = _unix_nano_now()
-    emit_to_sinks(SpanEvent(
-        kind=:end, name=:search_markets,
-        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
-        unix_nano=root_end_ns,
-        status = failure_count == 0 ? :ok : :error,
-        attributes=Dict{Symbol,Any}(
-            :success_count => success_count,
-            :failure_count => failure_count,
-            :elapsed_ms    => (root_end_ns - root_start_ns) / 1e6,
-        ),
-    ))
+    if owns_root
+        success_count = count(v -> v isa Vector{Itinerary}, values(results))
+        failure_count = count(v -> v isa MarketSearchFailure, values(results))
+        root_end_ns = _unix_nano_now()
+        emit_to_sinks(SpanEvent(
+            kind=:end, name=:search_markets,
+            trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+            unix_nano=root_end_ns,
+            status = failure_count == 0 ? :ok : :error,
+            attributes=Dict{Symbol,Any}(
+                :success_count => success_count,
+                :failure_count => failure_count,
+                :elapsed_ms    => (root_end_ns - root_start_ns) / 1e6,
+            ),
+        ))
+    end
 
     return results
 end
@@ -830,33 +950,49 @@ function _search_markets_parallel_all_dates(
     dates::AbstractVector{Date},
     markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
     target_source::Symbol,
-    event_sinks::Vector{<:Function},
+    event_sinks::Vector{<:Function} = Function[],
+    sink::Union{Nothing,Function} = nothing,
+    external_results::Union{Nothing,Dict} = nothing,
+    external_lock::Union{Nothing,ReentrantLock} = nothing,
+    external_trace_id::Union{Nothing,UInt128} = nothing,
+    external_root_span_id::Union{Nothing,UInt64} = nothing,
 )::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
-    results = Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}()
-    results_lock = ReentrantLock()
+    # When external_results + external_lock are supplied, share them across the
+    # call (caller owns lifecycle; e.g. `search_schedule` collects results
+    # across many dates). Otherwise create fresh locals.
+    results = external_results === nothing ?
+        Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}() :
+        external_results
+    results_lock = external_lock === nothing ? ReentrantLock() : external_lock
     n = Threads.nthreads()
 
     # ── Root SpanEvent emission (OTel-ready) ──────────────────────────────
-    trace_id = _new_trace_id()
-    root_span_id = _new_span_id()
+    # When the caller supplies external_trace_id + external_root_span_id, nest
+    # per-market spans under that root and DO NOT emit our own :search_markets
+    # start/end pair — the caller owns that root.
+    owns_root = external_trace_id === nothing || external_root_span_id === nothing
+    trace_id = external_trace_id === nothing ? _new_trace_id() : external_trace_id
+    root_span_id = external_root_span_id === nothing ? _new_span_id() : external_root_span_id
     root_start_ns = _unix_nano_now()
 
     emit_to_sinks = function(ev::SpanEvent)
-        for sink in event_sinks
-            sink(ev)
+        for esink in event_sinks
+            esink(ev)
         end
         return nothing
     end
 
-    emit_to_sinks(SpanEvent(
-        kind=:start, name=:search_markets,
-        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
-        unix_nano=root_start_ns,
-        attributes=Dict{Symbol,Any}(
-            :market_count => length(markets),
-            :date_count   => length(dates),
-        ),
-    ))
+    if owns_root
+        emit_to_sinks(SpanEvent(
+            kind=:start, name=:search_markets,
+            trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+            unix_nano=root_start_ns,
+            attributes=Dict{Symbol,Any}(
+                :market_count => length(markets),
+                :date_count   => length(dates),
+            ),
+        ))
+    end
 
     for target in dates
         # Build the graph for this date once; workers share it read-only.
@@ -875,7 +1011,7 @@ function _search_markets_parallel_all_dates(
             Threads.@spawn _run_one_market!(
                 ctx_pool, graph, results, results_lock,
                 String(origin), String(dest), target,
-                trace_id, root_span_id, event_sinks,
+                trace_id, root_span_id, event_sinks, sink,
             )
         end
         foreach(wait, tasks)
@@ -883,42 +1019,49 @@ function _search_markets_parallel_all_dates(
     end
 
     # ── Root SpanEvent :end ───────────────────────────────────────────────
-    success_count = count(v -> v isa Vector{Itinerary}, values(results))
-    failure_count = count(v -> v isa MarketSearchFailure, values(results))
-    root_end_ns = _unix_nano_now()
-    emit_to_sinks(SpanEvent(
-        kind=:end, name=:search_markets,
-        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
-        unix_nano=root_end_ns,
-        status = failure_count == 0 ? :ok : :error,
-        attributes=Dict{Symbol,Any}(
-            :success_count => success_count,
-            :failure_count => failure_count,
-            :elapsed_ms    => (root_end_ns - root_start_ns) / 1e6,
-        ),
-    ))
+    if owns_root
+        success_count = count(v -> v isa Vector{Itinerary}, values(results))
+        failure_count = count(v -> v isa MarketSearchFailure, values(results))
+        root_end_ns = _unix_nano_now()
+        emit_to_sinks(SpanEvent(
+            kind=:end, name=:search_markets,
+            trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+            unix_nano=root_end_ns,
+            status = failure_count == 0 ? :ok : :error,
+            attributes=Dict{Symbol,Any}(
+                :success_count => success_count,
+                :failure_count => failure_count,
+                :elapsed_ms    => (root_end_ns - root_start_ns) / 1e6,
+            ),
+        ))
+    end
 
     return results
 end
 
 """
-    `function _run_one_market!(ctx_pool, graph, results, results_lock, origin, dest, target, trace_id, parent_span_id, event_sinks)::Nothing`
+    `function _run_one_market!(ctx_pool, graph, results, results_lock, origin, dest, target, trace_id, parent_span_id, event_sinks, sink=nothing)::Nothing`
 ---
 
 # Description
 - Worker-pool task body: takes a `RuntimeContext` from `ctx_pool`, runs one
   market's `search_itineraries`, writes the `copy`-ed result into the shared
-  `results` dict under `results_lock`, and returns the context to the pool
-  via a `finally` clause (so even a throwing market does not leak its slot).
+  `results` dict under `results_lock` (OR calls `sink((origin, dest, target), value)`
+  when a sink is supplied), and returns the context to the pool via a `finally`
+  clause (so even a throwing market does not leak its slot).
+- When `sink::Function` is supplied, each completion calls `sink((origin, dest,
+  target), value)` and DOES NOT write to `results`. `sink` and the dict-write
+  path are mutually exclusive. Sinks may be invoked concurrently from multiple
+  workers — sinks are responsible for their own thread safety.
 - The graph is accessed read-only; only `results` + its lock are shared.
 
 # Failure isolation
 - Two nested try blocks:
   1. Inner try/catch turns any exception raised by `StationCode(…)` /
      `search_itineraries` into a `MarketSearchFailure` sentinel written into
-     `results[(origin, dest, target)]`. The catch site captures the exception
-     object, a `Vector{Base.StackTraces.StackFrame}` (via
-     `stacktrace(catch_backtrace())`), the worker's pool slot, and the
+     `results[(origin, dest, target)]` (or passed to `sink`).  The catch site
+     captures the exception object, a `Vector{Base.StackTraces.StackFrame}`
+     (via `stacktrace(catch_backtrace())`), the worker's pool slot, and the
      elapsed wall time so callers can triage without replaying the search.
   2. Outer `finally` always returns the context to `ctx_pool`, so even an
      exception path does not leak a slot and deadlock the next `take!`.
@@ -939,6 +1082,8 @@ end
 9. `parent_span_id::UInt64`: span id of the root `:search_markets` span
 10. `event_sinks::Vector{<:Function}`: zero or more SpanEvent sink callables (see
     `search_markets` for the contract)
+11. `sink::Union{Nothing, Function}=nothing`: optional per-market result callback;
+    when supplied, receives `(market_tuple, value)` instead of the dict write
 
 # Returns
 - `::Nothing`
@@ -951,6 +1096,7 @@ function _run_one_market!(
     origin::String, dest::String, target::Date,
     trace_id::UInt128, parent_span_id::UInt64,
     event_sinks::Vector{<:Function},
+    sink::Union{Nothing,Function} = nothing,
 )
     ctx = take!(ctx_pool)
     span_id = _new_span_id()
@@ -958,8 +1104,8 @@ function _run_one_market!(
 
     # Per-market :start span — workers call sinks concurrently; sinks are
     # responsible for their own thread safety.
-    for sink in event_sinks
-        sink(SpanEvent(
+    for esink in event_sinks
+        esink(SpanEvent(
             kind=:start, name=:market_search,
             trace_id=trace_id, span_id=span_id, parent_span_id=parent_span_id,
             unix_nano=start_ns, worker_slot=ctx.worker_slot,
@@ -977,13 +1123,18 @@ function _run_one_market!(
             itns = search_itineraries(graph.stations,
                                       StationCode(origin), StationCode(dest),
                                       target, ctx)
-            lock(results_lock) do
-                results[(origin, dest, target)] = copy(itns)
+            value = copy(itns)
+            if sink !== nothing
+                sink((origin, dest, target), value)
+            else
+                lock(results_lock) do
+                    results[(origin, dest, target)] = value
+                end
             end
 
             end_ns = _unix_nano_now()
-            for sink in event_sinks
-                sink(SpanEvent(
+            for esink in event_sinks
+                esink(SpanEvent(
                     kind=:end, name=:market_search,
                     trace_id=trace_id, span_id=span_id,
                     parent_span_id=parent_span_id,
@@ -1004,13 +1155,17 @@ function _run_one_market!(
                 (origin, dest, target), e, bt,
                 ctx.worker_slot, elapsed_ms,
             )
-            lock(results_lock) do
-                results[(origin, dest, target)] = fail
+            if sink !== nothing
+                sink((origin, dest, target), fail)
+            else
+                lock(results_lock) do
+                    results[(origin, dest, target)] = fail
+                end
             end
 
             end_ns = _unix_nano_now()
-            for sink in event_sinks
-                sink(SpanEvent(
+            for esink in event_sinks
+                esink(SpanEvent(
                     kind=:end, name=:market_search,
                     trace_id=trace_id, span_id=span_id,
                     parent_span_id=parent_span_id,
@@ -1124,4 +1279,92 @@ function search_markets(
     finally
         close(store)
     end
+end
+
+"""
+    `search_markets(newssim_path::AbstractString, t::Tuple{<:AbstractString, <:AbstractString, Date}; kwargs...)::Dict`
+---
+
+# Description
+- Convenience overload accepting a single `(origin, destination, date)` tuple
+- Delegates to the kwargs form with a single-market list and the tuple's date
+
+# Arguments
+1. `newssim_path::AbstractString`: path to NewSSIM CSV
+2. `t::Tuple{<:AbstractString, <:AbstractString, Date}`: `(origin, destination, date)` triple
+
+# Keyword Arguments
+- All kwargs of `search_markets(path; markets, dates, ...)` are forwarded
+
+# Returns
+- `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`: same shape as canonical form
+"""
+function search_markets(
+    newssim_path::AbstractString,
+    t::Tuple{<:AbstractString,<:AbstractString,Date};
+    kwargs...,
+)::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
+    return search_markets(newssim_path;
+        markets = [(String(t[1]), String(t[2]))],
+        dates = t[3],
+        kwargs...,
+    )
+end
+
+"""
+    `search_markets(newssim_path::AbstractString, ts::AbstractVector{<:Tuple{<:AbstractString, <:AbstractString, Date}}; kwargs...)::Dict`
+---
+
+# Description
+- Convenience overload accepting a vector of `(origin, destination, date)` tuples
+- CRITICAL: vector form is EXPLICIT per-tuple, NOT cartesian'd with a separate dates list
+- `[(ORD, LHR, June15), (EWR, LHR, June16)]` produces exactly 2 searches
+- Implementation groups tuples by date, calls the kwargs form once per date, merges results
+- **Re-ingest cost**: for multi-date inputs, the NewSSIM file is re-ingested once per
+  unique date (each date opens a fresh `DuckDBStore`, ingests the CSV, builds the graph,
+  then closes). For performance-sensitive multi-date sweeps prefer `search_schedule`,
+  which keeps a single store open and ingests the file only once.
+
+# Arguments
+1. `newssim_path::AbstractString`: path to NewSSIM CSV
+2. `ts::AbstractVector{<:Tuple{<:AbstractString, <:AbstractString, Date}}`: tuple list
+
+# Keyword Arguments
+- All kwargs of `search_markets(path; markets, dates, ...)` are forwarded
+
+# Returns
+- `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`: keyed dict with exactly one entry per input tuple
+"""
+function search_markets(
+    newssim_path::AbstractString,
+    ts::AbstractVector{<:Tuple{<:AbstractString,<:AbstractString,Date}};
+    kwargs...,
+)::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
+    merged = Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}()
+    isempty(ts) && return merged
+
+    # Group (origin, dest) pairs by date so the kwargs form can build each
+    # date's graph once and search its markets in one call.
+    #
+    # NOTE: For multi-date inputs, the NewSSIM file is re-ingested once per
+    # unique date — each `search_markets(newssim_path; ...)` call creates a
+    # fresh `DuckDBStore`, ingests the CSV, builds the graph, and closes the
+    # store. For performance-sensitive multi-date sweeps, prefer
+    # `search_schedule` which keeps a single `DuckDBStore` open across all
+    # dates and re-ingests the CSV only once.
+    date_groups = Dict{Date,Vector{Tuple{String,String}}}()
+    for (o, d, date) in ts
+        push!(get!(date_groups, date, Tuple{String,String}[]),
+              (String(o), String(d)))
+    end
+
+    for (date, markets) in date_groups
+        partial = search_markets(newssim_path;
+            markets = markets,
+            dates = date,
+            kwargs...,
+        )
+        merge!(merged, partial)
+    end
+    return merged
 end
