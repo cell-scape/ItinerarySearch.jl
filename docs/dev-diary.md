@@ -1,5 +1,104 @@
 # ItinerarySearch Development Diary
 
+## 2026-04-23 — Search convenience features
+
+Added two convenience features layered on top of the existing search API.
+
+**Feature A — tuple-dispatch overloads.** `search_itineraries`, `search`, and
+`search_markets` now accept either a single `Tuple{String,String,Date}` or a
+`Vector` of such tuples as an alternative to their kwargs/positional forms.
+
+For `search_markets`, the vector form is **explicit per-tuple, NOT cartesian**:
+`[(ORD, LHR, June15), (EWR, LHR, June16)]` is exactly two searches, not four.
+
+Aliasing caveat caught during review: the canonical `search_itineraries`
+returns `ctx.results` by reference (no copy). The vector-form overloads on
+`search_itineraries` and `search` now `copy()` each result to avoid having
+every element alias the same mutable buffer. `search_markets` was already
+safe because the existing parallel-market-search worker copies at the store
+site.
+
+**Feature B — `search_schedule`.** New function for carrier-scoped
+schedule-wide sweeps. Two entry forms:
+- Self-contained: `search_schedule(newssim_path; dates, carriers, ...)`
+- Store-reuse: `search_schedule(store; dates, carriers, ...)`
+
+Two universe-enumeration strategies:
+- `:direct` (default) — markets with direct flights by filtered carriers,
+  enumerated via a SQL query. Fast; produced ~1,700 markets for UA on the
+  demo dataset.
+- `:connected` — markets where a filtered carrier's legs appear in some valid
+  itinerary up to `max_stops` deep, enumerated via BFS on the already-built
+  connection graph. Wider net; produced ~88,000 markets for UA on the demo
+  dataset (52× the :direct count). Useful for network connectivity analysis
+  but slow to search the full universe.
+
+Carrier filter semantics:
+- Matches marketing OR operating carrier (union of both)
+- `include_codeshare::Bool=false` — opt-in expansion to codeshare partners
+  derived from the schedule itself (not from an alliance table)
+- `carriers=nothing` means no filter (every market on the date)
+
+Output shape:
+- Default: `Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`
+- Optional `sink::Function` callback receives `(market, result)` per completion;
+  returned dict is empty when sink is supplied (caller owns streaming policy)
+
+**`MarketUniverse` extension hook.** The enumeration strategies are pluggable.
+`MarketUniverse` is a public struct that wraps a concrete list of
+`(origin, destination, date)` triples. Future follow-ons (station-anywhere,
+flight-anywhere, geographic zones) add new `_universe_from_*` strategies
+without touching the sweep machinery.
+
+**Thread-scaling benchmark.** All times are minimum of ~3-second Chairmarks
+runs on Apple Silicon (M-series, 4 performance + 4 efficiency cores). Demo
+dataset, single target date 2026-02-25. Note: on this dataset UA is the
+dominant carrier and the UA `:direct` filter happens to cover the same ~1,678
+markets as the no-filter case (the numbers differ because the UA run pays
+the carrier-filter SQL lookup + per-market filter check at search time).
+
+| Config                          | `search_schedule :direct, UA` | `search_schedule :direct, all` | `search_markets tuple (4 markets)` |
+|---------------------------------|-------------------------------|--------------------------------|------------------------------------|
+| `JULIA_NUM_THREADS=1`           | 16836.0 ms                    | 13590.3 ms                     | 2638.8 ms                           |
+| `JULIA_NUM_THREADS=2`           | 12332.7 ms                    | 8493.4 ms                      | 2432.9 ms                           |
+| `JULIA_NUM_THREADS=4`           | 9850.8 ms                     | 5889.2 ms                      | 2370.3 ms                           |
+| `JULIA_NUM_THREADS=auto` (4)    | 9985.5 ms                     | 7000.2 ms                      | 2457.6 ms                           |
+
+Speedup 1→4 threads: **1.71×** on `:direct UA`, **2.31×** on `:direct all`.
+`auto` resolves to 4 on this machine (Julia's default picks performance
+cores only); the `auto` row is effectively a second sample of the 4-thread
+row, and variance between them (especially on `:direct UA`: 9850 vs 9985 ms,
+and a noisier first run that hit 12733 ms before I re-ran it) reflects GC /
+thermal noise rather than a real trend.
+
+The speedup is modest and matches the parallel-market-search pattern —
+Amdahl bounds us: `search_schedule` bundles CSV ingest + DuckDB graph build
++ DFS search in a single call. The first two phases are strictly serial and
+account for a large fraction of wall time on the single-day demo dataset.
+Only the per-market DFS sweep parallelises, so the best case is the ratio
+of search time to total time. The 4-market tuple benchmark shows this
+ceiling clearly: only 4 markets means 4 threads is already over-provisioned,
+and ingest/build dominates entirely (2.64 s → 2.37 s, ~1.11×).
+
+Parallel gain shows up when the search phase is dominant — multi-date
+sweeps, or scenarios with pre-ingested stores (`search_schedule(store; ...)`
+form avoids ingest each call). The `:direct all` 1→4 speedup of 2.31×
+roughly matches the proportion of wall time spent in DFS for that workload.
+
+**Deferred:**
+- Alliance ingestion (parse `data/demo/alliance.dat`, add DuckDB tables, wire
+  `include_alliance::Bool` switch). Separate plan.
+- Feature C — station-anywhere queries. Slots into `MarketUniverse` via a new
+  `_universe_from_station` strategy.
+- Feature D — flight-pair connection queries (`find_connections(a, b, date)`).
+  Different return type than search family, own entry point.
+- Feature E — flight-anywhere queries. Similar to C, for flight numbers.
+- Feature F — geographic zone queries (metro/state/country/region). Adds an
+  `expand_zone` helper + wrappers delegating to A/B/C/E with the expanded
+  station set.
+- CLI subcommand for `search_schedule`. The flag `--no-parallel` is already
+  respected globally.
+
 ## 2026-04-22 — Parallel market search
 
 Wired a Channel-backed worker pool into `search_markets()` so per-market
