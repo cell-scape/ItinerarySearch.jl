@@ -43,6 +43,8 @@ end
     include("test_parallel_markets_functional.jl")
     include("test_parallel_markets_failures.jl")
     include("test_parallel_markets_otel.jl")
+    include("test_parallel_markets_cache_warmth.jl")
+    include("test_parallel_markets_pool_invariants.jl")
     include("test_logging.jl")
     include("test_cli.jl")
     include("test_server.jl")
