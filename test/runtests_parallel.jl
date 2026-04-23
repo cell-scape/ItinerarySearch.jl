@@ -75,6 +75,9 @@ const TEST_FILES_FULL = [
     "test_schedule_carrier_queries.jl",         # ~varies — carrier + codeshare SQL helpers
     "test_universe_enumeration.jl",            # ~varies — MarketUniverse + :direct strategy
     "test_search_schedule.jl",                  # ~varies — schedule-wide sweep + sink callback
+    "test_dispatcher_prebuilt_graph.jl",        # ~varies — prebuilt_graph param + store=nothing path
+    "test_search_schedule_graph_form.jl",       # ~varies — search_schedule(graph, universe) overload
+    "test_build_graph_for_window.jl",           # ~varies — build_graph_for_window helper
 ]
 
 # Apply the static-analysis env filters.

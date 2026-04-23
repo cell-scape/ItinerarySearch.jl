@@ -531,6 +531,74 @@ function build_graph!(
     end  # Logging.with_logger
 end
 
+# ── build_graph_for_window ───────────────────────────────────────────────────
+
+"""
+    `build_graph_for_window(store::DuckDBStore, config::SearchConfig, dates::AbstractVector{Date}; source::Symbol = :newssim)::FlightGraph`
+---
+
+# Description
+- Build a single `FlightGraph` whose schedule window covers every target
+  date in `dates`
+- Computes `leading_days = 0` and `trailing_days = (T_max - T_min) + (config.max_days - 1)`
+  so that the window spans from `T_min` through `T_max + max_days - 1` inclusive
+- Useful for amortizing graph-build cost across multi-date sweeps — a single
+  call replaces N per-date `build_graph!` calls when the caller later passes the
+  resulting graph to `search_schedule(graph, universe)`
+- Uses fieldnames reflection to forward all other `SearchConfig` fields
+  automatically, so new fields added to `SearchConfig` are picked up without
+  touching this function
+
+# Arguments
+1. `store::DuckDBStore`: data store (already ingested)
+2. `config::SearchConfig`: base configuration (`leading_days`/`trailing_days` are overridden)
+3. `dates::AbstractVector{Date}`: target dates the graph must cover
+
+# Keyword Arguments
+- `source::Symbol = :newssim`: ingest source (`:newssim` or `:ssim`)
+
+# Returns
+- `::FlightGraph`: graph covering all dates in the range, suitable for
+  `search_schedule(graph, universe)` where universe tuples may fall on any
+  date in `[T_min, T_max]`
+
+# Throws
+- `ArgumentError` if `dates` is empty
+
+# Examples
+```julia
+julia> store = DuckDBStore();
+julia> ingest_newssim!(store, "schedule.csv.gz");
+julia> dates = Date(2026, 2, 25):Day(1):Date(2026, 2, 27);
+julia> graph = build_graph_for_window(store, SearchConfig(), dates);
+julia> graph.window_start == Date(2026, 2, 25)
+true
+```
+"""
+function build_graph_for_window(
+    store::DuckDBStore,
+    config::SearchConfig,
+    dates::AbstractVector{Date};
+    source::Symbol = :newssim,
+)::FlightGraph
+    isempty(dates) && throw(ArgumentError("dates must not be empty"))
+    sorted = sort(collect(dates))
+    t_min, t_max = first(sorted), last(sorted)
+    span_days = Dates.value(t_max - t_min)
+
+    # Build a new SearchConfig with overridden leading/trailing days.
+    # Use field reflection so future SearchConfig fields are forwarded automatically.
+    kwargs = Dict{Symbol,Any}()
+    for f in fieldnames(SearchConfig)
+        kwargs[f] = getfield(config, f)
+    end
+    kwargs[:leading_days]  = 0
+    kwargs[:trailing_days] = span_days + (config.max_days - 1)
+    wide_config = SearchConfig(; kwargs...)
+
+    return build_graph!(store, wide_config, t_min; source)
+end
+
 # ── Convenience search ─────────────────────────────────────────────────────────
 
 """
@@ -731,24 +799,45 @@ end
   throwing market becomes a `MarketSearchFailure` sentinel written into
   `results` (worker_slot `0` here — the sequential context has no pool slot).
   Without this the whole date's iteration would abort on the first bad market.
+- When `prebuilt_graph` is supplied, the per-date `build_graph!` call is
+  skipped entirely (the caller guarantees the graph was built for every date
+  in `dates`; only makes sense for a single-date `dates` in practice). In that
+  case `store` may also be `nothing` — but at least one of `store` or
+  `prebuilt_graph` must be supplied, otherwise there is no way to obtain a
+  graph.
 
 # Arguments
 1. `config::SearchConfig`: shared search configuration
-2. `store::DuckDBStore`: already-ingested store (newssim + optional MCT)
+2. `store::Union{Nothing, DuckDBStore}`: already-ingested store (newssim +
+   optional MCT); may be `nothing` when `prebuilt_graph` is supplied
 3. `dates::AbstractVector{Date}`: normalized vector of target travel dates
 4. `markets::AbstractVector{<:Tuple{AbstractString,AbstractString}}`:
    `(origin, dest)` string pairs
 5. `target_source::Symbol`: schedule source for `build_graph!` (e.g. `:newssim`)
 6. `event_sinks::Vector{<:Function}`: zero or more SpanEvent sink callables (see
    `search_markets` for the contract)
+7. `sink::Union{Nothing, Function}`: per-market result callback or `nothing`
+8. `external_results::Union{Nothing, Dict}`: caller-owned results dict or `nothing`
+9. `external_lock::Union{Nothing, ReentrantLock}`: caller-owned lock or `nothing`
+10. `external_trace_id::Union{Nothing, UInt128}`: caller-supplied trace id for
+    nested spans, or `nothing` to own a fresh root span
+11. `external_root_span_id::Union{Nothing, UInt64}`: caller-supplied root span
+    id, or `nothing`
+12. `prebuilt_graph::Union{Nothing, FlightGraph}`: when supplied, reused for
+    every date in `dates` instead of calling `build_graph!` — eliminates the
+    double-build when callers (e.g. `_search_schedule_sweep!`) already built
+    the graph at their level
 
 # Returns
 - `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`:
   results keyed by `(origin_string, dest_string, date)`
+
+# Throws
+- `ArgumentError`: when both `store` and `prebuilt_graph` are `nothing`
 """
 function _search_markets_sequential_all_dates(
     config::SearchConfig,
-    store::DuckDBStore,
+    store::Union{Nothing,DuckDBStore},
     dates::AbstractVector{Date},
     markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
     target_source::Symbol,
@@ -758,7 +847,10 @@ function _search_markets_sequential_all_dates(
     external_lock::Union{Nothing,ReentrantLock} = nothing,
     external_trace_id::Union{Nothing,UInt128} = nothing,
     external_root_span_id::Union{Nothing,UInt64} = nothing,
+    prebuilt_graph::Union{Nothing,FlightGraph} = nothing,
 )::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
+    prebuilt_graph === nothing && store === nothing &&
+        throw(ArgumentError("either store or prebuilt_graph must be supplied"))
     # When external_results is supplied, write into it; otherwise create a
     # fresh dict. The external_lock is unused in the sequential path (no
     # concurrent writers) but accepted for signature parity with the parallel
@@ -797,7 +889,16 @@ function _search_markets_sequential_all_dates(
     end
 
     for target in dates
-        graph = build_graph!(store, config, target; source = target_source)
+        graph = if prebuilt_graph !== nothing
+            prebuilt_graph
+        else
+            # `store === nothing` case is ruled out by the guard at the top of
+            # this function (one of `store` / `prebuilt_graph` must be
+            # non-nothing). The typed local narrows `store` from
+            # `Union{Nothing, DuckDBStore}` to `DuckDBStore` for JET.
+            s = store::DuckDBStore
+            build_graph!(s, config, target; source = target_source)
+        end
         for (org, dst) in markets
             # Per-market span :start
             market_span_id = _new_span_id()
@@ -930,23 +1031,38 @@ end
 
 # Arguments
 1. `config::SearchConfig`: shared search configuration
-2. `store::DuckDBStore`: already-ingested store (newssim + optional MCT)
+2. `store::Union{Nothing, DuckDBStore}`: already-ingested store (newssim +
+   optional MCT); may be `nothing` when `prebuilt_graph` is supplied
 3. `dates::AbstractVector{Date}`: normalized vector of target travel dates
 4. `markets::AbstractVector{<:Tuple{AbstractString,AbstractString}}`:
    `(origin, dest)` string pairs
 5. `target_source::Symbol`: schedule source for `build_graph!` (e.g. `:newssim`)
 6. `event_sinks::Vector{<:Function}`: zero or more SpanEvent sink callables (see
    `search_markets` for the contract)
+7. `sink::Union{Nothing, Function}`: per-market result callback or `nothing`
+8. `external_results::Union{Nothing, Dict}`: caller-owned results dict or `nothing`
+9. `external_lock::Union{Nothing, ReentrantLock}`: caller-owned lock or `nothing`
+10. `external_trace_id::Union{Nothing, UInt128}`: caller-supplied trace id for
+    nested spans, or `nothing` to own a fresh root span
+11. `external_root_span_id::Union{Nothing, UInt64}`: caller-supplied root span
+    id, or `nothing`
+12. `prebuilt_graph::Union{Nothing, FlightGraph}`: when supplied, reused for
+    every date in `dates` instead of calling `build_graph!` — eliminates the
+    double-build when callers (e.g. `_search_schedule_sweep!`) already built
+    the graph at their level
 
 # Returns
 - `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`:
   results keyed by `(origin_string, dest_string, date)`; a bad market's cell
   holds a `MarketSearchFailure` sentinel (wrapping the exception, backtrace,
   worker slot, and elapsed time) rather than aborting the batch.
+
+# Throws
+- `ArgumentError`: when both `store` and `prebuilt_graph` are `nothing`
 """
 function _search_markets_parallel_all_dates(
     config::SearchConfig,
-    store::DuckDBStore,
+    store::Union{Nothing,DuckDBStore},
     dates::AbstractVector{Date},
     markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
     target_source::Symbol,
@@ -956,7 +1072,10 @@ function _search_markets_parallel_all_dates(
     external_lock::Union{Nothing,ReentrantLock} = nothing,
     external_trace_id::Union{Nothing,UInt128} = nothing,
     external_root_span_id::Union{Nothing,UInt64} = nothing,
+    prebuilt_graph::Union{Nothing,FlightGraph} = nothing,
 )::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
+    prebuilt_graph === nothing && store === nothing &&
+        throw(ArgumentError("either store or prebuilt_graph must be supplied"))
     # When external_results + external_lock are supplied, share them across the
     # call (caller owns lifecycle; e.g. `search_schedule` collects results
     # across many dates). Otherwise create fresh locals.
@@ -996,7 +1115,17 @@ function _search_markets_parallel_all_dates(
 
     for target in dates
         # Build the graph for this date once; workers share it read-only.
-        graph = build_graph!(store, config, target; source = target_source)
+        # When `prebuilt_graph` is supplied, reuse it and skip the build.
+        graph = if prebuilt_graph !== nothing
+            prebuilt_graph
+        else
+            # `store === nothing` case is ruled out by the guard at the top of
+            # this function (one of `store` / `prebuilt_graph` must be
+            # non-nothing). The typed local narrows `store` from
+            # `Union{Nothing, DuckDBStore}` to `DuckDBStore` for JET.
+            s = store::DuckDBStore
+            build_graph!(s, config, target; source = target_source)
+        end
 
         # Fresh pool of RuntimeContexts per date — ties the caches to this
         # date's graph validity. `worker_slot` = pool index (1..N).

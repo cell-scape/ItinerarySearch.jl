@@ -1,11 +1,5 @@
 # src/search/search_schedule.jl — Schedule-wide sweeps of all valid itineraries.
 #
-# Known follow-on: `_search_schedule_sweep!` currently builds the graph once at
-# the top of its date loop and then delegates to a dispatcher that rebuilds the
-# same graph. For the :direct universe the first build is wasted; for :connected
-# the dispatcher's build is redundant. A refactor to pass the prebuilt graph
-# into the dispatcher is tracked as a future performance task.
-#
 # `search_schedule` is the headline entry point for "give me every itinerary in
 # the schedule that matches my carrier filter". It owns a root `:search_schedule`
 # span and delegates the per-date × per-market sweep to the existing dispatcher
@@ -231,12 +225,14 @@ function _search_schedule_sweep!(
                 config, store, [target], markets_for_date, :newssim,
                 event_sinks, sink,
                 results, results_lock, trace_id, root_span_id,
+                graph,
             )
         else
             _search_markets_sequential_all_dates(
                 config, store, [target], markets_for_date, :newssim,
                 event_sinks, sink,
                 results, results_lock, trace_id, root_span_id,
+                graph,
             )
         end
     end
@@ -260,6 +256,127 @@ function _search_schedule_sweep!(
             :success_count => success_count,
             :failure_count => failure_count,
             :market_count  => total_markets,
+            :elapsed_ms    => (root_end_ns - root_start_ns) / 1e6,
+        ),
+    ))
+
+    return results
+end
+
+"""
+    `search_schedule(graph::FlightGraph, universe::MarketUniverse; config::SearchConfig=graph.config, sink::Union{Nothing,Function}=nothing, event_sinks::Vector{<:Function}=Function[])::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`
+---
+
+# Description
+- Search a pre-built graph against a pre-computed `MarketUniverse`
+- Ingest and graph build are paid up front by the caller; this call measures
+  only the search phase. Intended for benchmarks and advanced callers.
+- Validates every tuple in `universe.tuples` has a date within
+  `[graph.window_start, graph.window_end]`. Throws `ArgumentError` with a
+  descriptive message if any tuple falls outside the window.
+- Defaults `config` to `graph.config` — the graph already carries the config
+  it was built with.
+- When `sink` is supplied, results stream to the sink and the returned dict
+  is empty.
+
+# Arguments
+1. `graph::FlightGraph`: pre-built graph
+2. `universe::MarketUniverse`: tuples to search
+
+# Keyword Arguments
+- `config::SearchConfig = graph.config`: search configuration override
+- `sink::Union{Nothing, Function} = nothing`: per-market result callback
+- `event_sinks::Vector{<:Function} = Function[]`: `SpanEvent` sinks
+
+# Returns
+- `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`:
+  empty when `sink` supplied, otherwise keyed results
+
+# Throws
+- `ArgumentError` if any universe tuple's date falls outside the graph's window
+"""
+function search_schedule(
+    graph::FlightGraph,
+    universe::MarketUniverse;
+    config::SearchConfig = graph.config,
+    sink::Union{Nothing,Function} = nothing,
+    event_sinks::Vector{<:Function} = Function[],
+)::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
+    # Window validation
+    out_of_window = filter(
+        t -> !(graph.window_start <= t[3] <= graph.window_end),
+        universe.tuples,
+    )
+    if !isempty(out_of_window)
+        sample = first(out_of_window, 3)
+        throw(ArgumentError(
+            "universe contains $(length(out_of_window)) tuples with dates outside graph's window [$(graph.window_start), $(graph.window_end)]. First few: $sample"
+        ))
+    end
+
+    # Group tuples by date for per-date dispatcher calls
+    date_groups = Dict{Date,Vector{Tuple{String,String}}}()
+    for (o, d, date) in universe.tuples
+        push!(get!(date_groups, date, Tuple{String,String}[]), (o, d))
+    end
+
+    # Root :search_schedule span
+    trace_id = _new_trace_id()
+    root_span_id = _new_span_id()
+    root_start_ns = _unix_nano_now()
+    emit_root = function(ev::SpanEvent)
+        for snk in event_sinks
+            snk(ev)
+        end
+        return nothing
+    end
+
+    emit_root(SpanEvent(
+        kind=:start, name=:search_schedule,
+        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+        unix_nano=root_start_ns,
+        attributes=Dict{Symbol,Any}(
+            :universe_mode => :prebuilt,
+            :market_count  => length(universe.tuples),
+            :date_count    => length(date_groups),
+        ),
+    ))
+
+    results = Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}()
+    results_lock = ReentrantLock()
+
+    for (date, markets) in date_groups
+        use_parallel = config.parallel_markets && Threads.nthreads() > 1
+        if use_parallel
+            _search_markets_parallel_all_dates(
+                config, nothing, [date], markets, :newssim,
+                event_sinks, sink,
+                results, results_lock, trace_id, root_span_id,
+                graph,
+            )
+        else
+            _search_markets_sequential_all_dates(
+                config, nothing, [date], markets, :newssim,
+                event_sinks, sink,
+                results, results_lock, trace_id, root_span_id,
+                graph,
+            )
+        end
+    end
+
+    # Root :end
+    success_count = sink === nothing ? count(v -> v isa Vector{Itinerary}, values(results)) : -1
+    failure_count = sink === nothing ? count(v -> v isa MarketSearchFailure, values(results)) : -1
+    root_end_ns = _unix_nano_now()
+    emit_root(SpanEvent(
+        kind=:end, name=:search_schedule,
+        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+        unix_nano=root_end_ns,
+        status = (sink !== nothing || failure_count == 0) ? :ok : :error,
+        attributes=Dict{Symbol,Any}(
+            :success_count => success_count,
+            :failure_count => failure_count,
+            :market_count  => length(universe.tuples),
             :elapsed_ms    => (root_end_ns - root_start_ns) / 1e6,
         ),
     ))

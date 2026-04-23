@@ -110,7 +110,7 @@ export load_airports!, load_regions!, load_aircrafts!, load_oa_control!
 export load_circuity_tiers, load_circuity_overrides, apply_circuity_files!
 
 # Build & search
-export build_graph!, search, search_markets, search_schedule
+export build_graph!, build_graph_for_window, search, search_markets, search_schedule
 export search_itineraries, search_trip
 export RuntimeContext, SearchConstraints, build_itn_rules
 export CircuityTier, DEFAULT_CIRCUITY_TIERS
