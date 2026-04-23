@@ -865,7 +865,7 @@ function search_itineraries(
     ts::AbstractVector{<:Tuple{<:AbstractString,<:AbstractString,Date}},
     ctx::RuntimeContext,
 )::Vector{Vector{Itinerary}}
-    return [search_itineraries(stations, t, ctx) for t in ts]
+    return [copy(search_itineraries(stations, t, ctx)) for t in ts]
 end
 
 # ── UTC time helpers for pairing ─────────────────────────────────────────────
