@@ -71,6 +71,7 @@ const TEST_FILES_FULL = [
     "test_parallel_markets_otel.jl",       # ~varies — OTel span schema + event_sinks kwarg
     "test_parallel_markets_cache_warmth.jl",    # ~varies — cache warmth across markets on a worker
     "test_parallel_markets_pool_invariants.jl", # ~varies — no context leaks on failures
+    "test_search_tuple_dispatch.jl",            # ~varies — tuple-dispatch overloads
 ]
 
 # Apply the static-analysis env filters.

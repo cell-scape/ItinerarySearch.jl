@@ -820,6 +820,54 @@ function search_itineraries(
     return ctx.results
 end
 
+"""
+    `search_itineraries(stations, t::Tuple{<:AbstractString, <:AbstractString, Date}, ctx::RuntimeContext)::Vector{Itinerary}`
+---
+
+# Description
+- Convenience overload accepting a single `(origin, destination, date)` tuple
+- Delegates to the canonical positional form after `StationCode` conversion
+
+# Arguments
+1. `stations::Dict{StationCode, GraphStation}`: graph's station map
+2. `t::Tuple{<:AbstractString, <:AbstractString, Date}`: `(origin, destination, date)` triple
+3. `ctx::RuntimeContext`: search runtime context
+
+# Returns
+- `::Vector{Itinerary}`: same as the canonical form
+"""
+function search_itineraries(
+    stations::Dict{StationCode,GraphStation},
+    t::Tuple{<:AbstractString,<:AbstractString,Date},
+    ctx::RuntimeContext,
+)::Vector{Itinerary}
+    return search_itineraries(stations, StationCode(t[1]), StationCode(t[2]), t[3], ctx)
+end
+
+"""
+    `search_itineraries(stations, ts::AbstractVector{<:Tuple{<:AbstractString, <:AbstractString, Date}}, ctx::RuntimeContext)::Vector{Vector{Itinerary}}`
+---
+
+# Description
+- Convenience overload accepting a vector of `(origin, destination, date)` tuples
+- Runs one search per tuple in input order; returns a vector of itinerary vectors
+
+# Arguments
+1. `stations::Dict{StationCode, GraphStation}`: graph's station map
+2. `ts::AbstractVector{<:Tuple{<:AbstractString, <:AbstractString, Date}}`: tuple list
+3. `ctx::RuntimeContext`: search runtime context (reused across tuples for cache warmth)
+
+# Returns
+- `::Vector{Vector{Itinerary}}`: one itinerary vector per input tuple, in input order
+"""
+function search_itineraries(
+    stations::Dict{StationCode,GraphStation},
+    ts::AbstractVector{<:Tuple{<:AbstractString,<:AbstractString,Date}},
+    ctx::RuntimeContext,
+)::Vector{Vector{Itinerary}}
+    return [search_itineraries(stations, t, ctx) for t in ts]
+end
+
 # ── UTC time helpers for pairing ─────────────────────────────────────────────
 
 # UTC arrival of the last leg in an itinerary (minutes from midnight of dep date)
