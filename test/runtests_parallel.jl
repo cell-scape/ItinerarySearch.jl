@@ -43,6 +43,7 @@ const TEST_FILES_FULL = [
     "test_logging.jl",          # ~ 4s — logging side-effects during builds
     "test_ingest.jl",           # ~ 3s — SSIM streaming parser
     "test_cli.jl",              # ~ 3s — CLI entry-point smoke tests
+    "test_cli_parallel_flag.jl", # ~0.1s — --no-parallel flag parsing + override
     "test_store.jl",            # ~1.6s
     "test_search.jl",           # ~1.6s
     "test_observe.jl",          # ~1.5s
@@ -61,6 +62,15 @@ const TEST_FILES_FULL = [
     "test_module_surface.jl",   # ~0.05s — Module loads + type aliases + enum values
     "test_status.jl",           # ~0.05s
     "test_circuity_tiers.jl",   # ~0.1s
+    "test_span_event.jl",       # ~0.05s
+    "test_trace_context.jl",   # ~0.05s
+    "test_market_failure.jl",  # ~0.05s
+    "test_runtime_context_worker_slot.jl", # ~0.05s
+    "test_parallel_markets_functional.jl", # ~ivaries — full search_markets x2
+    "test_parallel_markets_failures.jl",   # ~varies — failure isolation via sentinel
+    "test_parallel_markets_otel.jl",       # ~varies — OTel span schema + event_sinks kwarg
+    "test_parallel_markets_cache_warmth.jl",    # ~varies — cache warmth across markets on a worker
+    "test_parallel_markets_pool_invariants.jl", # ~varies — no context leaks on failures
 ]
 
 # Apply the static-analysis env filters.

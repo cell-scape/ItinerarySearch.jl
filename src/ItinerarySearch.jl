@@ -42,8 +42,10 @@ include("types/constraints.jl")
 include("types/graph.jl")
 include("types/mct_audit_config.jl")
 include("types/display.jl")
+include("types/market_failure.jl")
 include("config.jl")
 include("observe/events.jl")
+include("observe/trace_context.jl")
 include("observe/metrics.jl")
 include("observe/event_log.jl")
 include("observe/sinks.jl")
@@ -87,6 +89,9 @@ include("cli.jl")
 # Types
 export StationCode, Itinerary, Trip, TripLeg, FlightGraph, ConnectionRef
 
+# Failure types
+export MarketSearchFailure, is_failure, failed_markets
+
 # Config
 export SearchConfig, load_config, load_constraints
 export ScopeMode, SCOPE_ALL, SCOPE_DOM, SCOPE_INTL
@@ -118,6 +123,9 @@ export MCTAuditConfig, MCTTrace, MCTCandidateTrace, EMPTY_MCT_RESULT
 export lookup_mct_traced, lookup_mct_codeshare_traced, decode_matched_fields
 export replay_misconnects, mct_inspect
 export DisplayStyle, PlainStyle
+
+# Observe
+export SpanEvent, TraceContext
 
 # Visualization
 export viz_network_map, viz_timeline, viz_trip_comparison, viz_itinerary_refs
@@ -188,6 +196,10 @@ using PrecompileTools
         # CLI parser construction
         CLI._build_parser()
     end
+end
+
+function __init__()
+    _init_unix_nano_origin!()
 end
 
 end # module

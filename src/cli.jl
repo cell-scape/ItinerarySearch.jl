@@ -127,6 +127,10 @@ function _build_parser()::ArgParseSettings
         help = "Disable MCT lookup cache"
         action = :store_true
 
+        "--no-parallel"
+        help = "Disable parallel market search (even when nthreads() > 1)"
+        action = :store_true
+
         # ── Alternate ingest source ──────────────────────────────────────────
         "--newssim"
         help = "Path to a NewSSIM CSV file (alternative to SSIM fixed-width)"
@@ -272,7 +276,7 @@ end
 - Merge CLI flag overrides into a new `SearchConfig`, leaving all unset flags
   at their existing values from `config`
 - Scope and interline are parsed from string values; boolean flags (allow-roundtrips,
-  no-mct-cache) are additive (can only turn on, not off from CLI)
+  no-mct-cache, no-parallel) are additive (can only turn on/off, not reversed from CLI)
 
 # Arguments
 1. `config::SearchConfig`: base configuration
@@ -315,6 +319,7 @@ function _apply_overrides(config::SearchConfig, args::Dict)::SearchConfig
         :distance_formula     => config.distance_formula,
         :allow_roundtrips     => config.allow_roundtrips,
         :mct_cache_enabled    => config.mct_cache_enabled,
+        :parallel_markets     => config.parallel_markets,
     )
 
     v = args["leading-days"]
@@ -339,6 +344,10 @@ function _apply_overrides(config::SearchConfig, args::Dict)::SearchConfig
 
     if args["no-mct-cache"]
         kwargs[:mct_cache_enabled] = false
+    end
+
+    if args["no-parallel"]
+        kwargs[:parallel_markets] = false
     end
 
     v = args["log-level"]
@@ -511,6 +520,7 @@ function _cmd_search(
         distance_formula     = config.distance_formula,
         allow_roundtrips     = config.allow_roundtrips,
         mct_cache_enabled    = config.mct_cache_enabled,
+        parallel_markets     = config.parallel_markets,
     )
 
     store = DuckDBStore()
@@ -630,6 +640,7 @@ function _cmd_trip(
         distance_formula     = config.distance_formula,
         allow_roundtrips     = config.allow_roundtrips,
         mct_cache_enabled    = config.mct_cache_enabled,
+        parallel_markets     = config.parallel_markets,
     )
 
     store = DuckDBStore()

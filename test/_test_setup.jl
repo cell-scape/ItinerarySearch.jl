@@ -46,6 +46,8 @@ import ItinerarySearch:
     TripScoringWeights, nonstop_connection,
     # Observe
     SystemMetricsEvent, PhaseEvent, BuildSnapshotEvent, SearchSnapshotEvent, CustomEvent,
+    SpanEvent, TraceContext,
+    _new_trace_id, _new_span_id, _unix_nano_now,
     EventLog, emit!, checkpoint!, with_phase, collect_system_metrics,
     JsonlSink, stdout_sink,
     setup_logger,
@@ -106,4 +108,6 @@ import ItinerarySearch:
     # Search internals
     score_trip,
     # Output internals (now exported; kept here for historical test imports)
-    resolve_leg, resolve_segment, resolve_legs
+    resolve_leg, resolve_segment, resolve_legs,
+    # Failure sentinel
+    MarketSearchFailure, is_failure, failed_markets

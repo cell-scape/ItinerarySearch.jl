@@ -594,10 +594,444 @@ function search(
     return copy(results)
 end
 
+# ── Runtime-context / sequential helpers (shared with parallel path) ──────────
+
+"""
+    `function _build_runtime_context(config::SearchConfig)::RuntimeContext`
+---
+
+# Description
+- Internal helper that constructs a `RuntimeContext` with the fields
+  `search_markets` sets before entering its date × market loop
+- Shared by the sequential path (`_search_markets_sequential_all_dates`) and,
+  in later tasks, the parallel-market worker pool — so that both paths agree
+  on what a "fresh" per-search context looks like
+- Does **not** set `worker_slot` (default `0` is correct for the sequential
+  path; the parallel worker pool assigns non-zero slot ids per worker)
+
+# Arguments
+1. `config::SearchConfig`: the shared immutable search configuration
+
+# Returns
+- `::RuntimeContext`: populated with `config`, default `SearchConstraints`,
+  and the itinerary-rule chain built from `config`
+"""
+function _build_runtime_context(config::SearchConfig)::RuntimeContext
+    return RuntimeContext(
+        config = config,
+        constraints = SearchConstraints(),
+        itn_rules = build_itn_rules(config),
+    )
+end
+
+"""
+    `function _search_markets_sequential_all_dates(config, store, dates, markets, target_source, event_sinks)::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`
+---
+
+# Description
+- Internal helper that executes the full sequential date × market loop on a
+  single `RuntimeContext` and returns one `copy`-ed result per cell
+- Extracted from `search_markets` as a pure refactor; behaviour is unchanged
+- The graph is rebuilt once per date (the schedule window shifts with the
+  target day); the per-date `ctx.results` buffer is reused across markets,
+  so each returned itinerary vector is `copy`-ed before being stored
+- A sibling `_search_markets_parallel_all_dates` with the same signature is
+  used by `search_markets` when `config.parallel_markets && Threads.nthreads() > 1`
+- Each market's `search_itineraries` call is wrapped in try/catch so a single
+  throwing market becomes a `MarketSearchFailure` sentinel written into
+  `results` (worker_slot `0` here — the sequential context has no pool slot).
+  Without this the whole date's iteration would abort on the first bad market.
+
+# Arguments
+1. `config::SearchConfig`: shared search configuration
+2. `store::DuckDBStore`: already-ingested store (newssim + optional MCT)
+3. `dates::AbstractVector{Date}`: normalized vector of target travel dates
+4. `markets::AbstractVector{<:Tuple{AbstractString,AbstractString}}`:
+   `(origin, dest)` string pairs
+5. `target_source::Symbol`: schedule source for `build_graph!` (e.g. `:newssim`)
+6. `event_sinks::Vector{<:Function}`: zero or more SpanEvent sink callables (see
+   `search_markets` for the contract)
+
+# Returns
+- `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`:
+  results keyed by `(origin_string, dest_string, date)`
+"""
+function _search_markets_sequential_all_dates(
+    config::SearchConfig,
+    store::DuckDBStore,
+    dates::AbstractVector{Date},
+    markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
+    target_source::Symbol,
+    event_sinks::Vector{<:Function},
+)::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
+    results = Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}()
+    ctx = _build_runtime_context(config)
+
+    # ── Root SpanEvent emission (OTel-ready) ──────────────────────────────
+    trace_id = _new_trace_id()
+    root_span_id = _new_span_id()
+    root_start_ns = _unix_nano_now()
+
+    emit_to_sinks = function(ev::SpanEvent)
+        for sink in event_sinks
+            sink(ev)
+        end
+        return nothing
+    end
+
+    emit_to_sinks(SpanEvent(
+        kind=:start, name=:search_markets,
+        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+        unix_nano=root_start_ns,
+        attributes=Dict{Symbol,Any}(
+            :market_count => length(markets),
+            :date_count   => length(dates),
+        ),
+    ))
+
+    for target in dates
+        graph = build_graph!(store, config, target; source = target_source)
+        for (org, dst) in markets
+            # Per-market span :start
+            market_span_id = _new_span_id()
+            market_start_ns = _unix_nano_now()
+            for sink in event_sinks
+                sink(SpanEvent(
+                    kind=:start, name=:market_search,
+                    trace_id=trace_id, span_id=market_span_id,
+                    parent_span_id=root_span_id,
+                    unix_nano=market_start_ns, worker_slot=ctx.worker_slot,
+                    attributes=Dict{Symbol,Any}(
+                        :origin => String(org),
+                        :destination => String(dst),
+                        :date => target,
+                    ),
+                ))
+            end
+
+            t0_ns = time_ns()
+            try
+                origin = StationCode(org)
+                dest = StationCode(dst)
+                itns = search_itineraries(graph.stations, origin, dest, target, ctx)
+                results[(String(org), String(dst), target)] = copy(itns)
+
+                market_end_ns = _unix_nano_now()
+                for sink in event_sinks
+                    sink(SpanEvent(
+                        kind=:end, name=:market_search,
+                        trace_id=trace_id, span_id=market_span_id,
+                        parent_span_id=root_span_id,
+                        unix_nano=market_end_ns, worker_slot=ctx.worker_slot,
+                        status=:ok,
+                        attributes=Dict{Symbol,Any}(
+                            :itinerary_count => length(itns),
+                            :elapsed_ms      => (market_end_ns - market_start_ns) / 1e6,
+                        ),
+                    ))
+                end
+            catch e
+                # Same sentinel contract as the parallel path — see
+                # `_run_one_market!`. `ctx.worker_slot` is `0` here (sequential
+                # context; no pool slot).
+                bt = stacktrace(catch_backtrace())
+                elapsed_ms = (time_ns() - t0_ns) / 1e6
+                fail = MarketSearchFailure(
+                    (String(org), String(dst), target), e, bt,
+                    ctx.worker_slot, elapsed_ms,
+                )
+                results[(String(org), String(dst), target)] = fail
+
+                market_end_ns = _unix_nano_now()
+                for sink in event_sinks
+                    sink(SpanEvent(
+                        kind=:end, name=:market_search,
+                        trace_id=trace_id, span_id=market_span_id,
+                        parent_span_id=root_span_id,
+                        unix_nano=market_end_ns, worker_slot=ctx.worker_slot,
+                        status=:error,
+                        attributes=Dict{Symbol,Any}(
+                            :exception_type => string(typeof(e)),
+                            :elapsed_ms     => (market_end_ns - market_start_ns) / 1e6,
+                        ),
+                    ))
+                end
+            end
+        end
+    end
+
+    # ── Root SpanEvent :end ───────────────────────────────────────────────
+    success_count = count(v -> v isa Vector{Itinerary}, values(results))
+    failure_count = count(v -> v isa MarketSearchFailure, values(results))
+    root_end_ns = _unix_nano_now()
+    emit_to_sinks(SpanEvent(
+        kind=:end, name=:search_markets,
+        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+        unix_nano=root_end_ns,
+        status = failure_count == 0 ? :ok : :error,
+        attributes=Dict{Symbol,Any}(
+            :success_count => success_count,
+            :failure_count => failure_count,
+            :elapsed_ms    => (root_end_ns - root_start_ns) / 1e6,
+        ),
+    ))
+
+    return results
+end
+
+"""
+    `function _search_markets_parallel_all_dates(config, store, dates, markets, target_source, event_sinks)::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`
+---
+
+# Description
+- Parallel counterpart to `_search_markets_sequential_all_dates`. Builds a
+  `Channel`-backed pool of `N = Threads.nthreads()` `RuntimeContext` instances
+  (one per worker slot, 1..N), rebuilds the graph once per target date, and
+  spawns a `Threads.@spawn` task per market that takes a context from the
+  pool, runs `search_itineraries`, and returns the context to the pool.
+- The shared `results` dict is protected by a `ReentrantLock`. Each worker's
+  context preserves cache warmth across the many markets it picks up — no
+  cache reset between markets on the same worker.
+- Thread-safety invariants:
+    1. `worker_slot` is the pool index (assigned at construction), never
+       `Threads.threadid()` — stable under Julia task migration.
+    2. No shared mutable state between workers except `results` + its lock;
+       each worker holds its own `RuntimeContext` while running.
+    3. `put!` happens in a `finally` block so a throwing market still
+       returns its context to the channel (no deadlock on subsequent
+       `take!`).
+    4. The `graph` is built outside the task spawn and shared read-only
+       across workers for the remainder of the per-date phase.
+
+!!! note
+    Failure handling (try/catch → `MarketSearchFailure` sentinel) lives in
+    `_run_one_market!` so a single bad market does not tear down the whole
+    date's iteration.
+
+# Arguments
+1. `config::SearchConfig`: shared search configuration
+2. `store::DuckDBStore`: already-ingested store (newssim + optional MCT)
+3. `dates::AbstractVector{Date}`: normalized vector of target travel dates
+4. `markets::AbstractVector{<:Tuple{AbstractString,AbstractString}}`:
+   `(origin, dest)` string pairs
+5. `target_source::Symbol`: schedule source for `build_graph!` (e.g. `:newssim`)
+6. `event_sinks::Vector{<:Function}`: zero or more SpanEvent sink callables (see
+   `search_markets` for the contract)
+
+# Returns
+- `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`:
+  results keyed by `(origin_string, dest_string, date)`; a bad market's cell
+  holds a `MarketSearchFailure` sentinel (wrapping the exception, backtrace,
+  worker slot, and elapsed time) rather than aborting the batch.
+"""
+function _search_markets_parallel_all_dates(
+    config::SearchConfig,
+    store::DuckDBStore,
+    dates::AbstractVector{Date},
+    markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
+    target_source::Symbol,
+    event_sinks::Vector{<:Function},
+)::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
+    results = Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}()
+    results_lock = ReentrantLock()
+    n = Threads.nthreads()
+
+    # ── Root SpanEvent emission (OTel-ready) ──────────────────────────────
+    trace_id = _new_trace_id()
+    root_span_id = _new_span_id()
+    root_start_ns = _unix_nano_now()
+
+    emit_to_sinks = function(ev::SpanEvent)
+        for sink in event_sinks
+            sink(ev)
+        end
+        return nothing
+    end
+
+    emit_to_sinks(SpanEvent(
+        kind=:start, name=:search_markets,
+        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+        unix_nano=root_start_ns,
+        attributes=Dict{Symbol,Any}(
+            :market_count => length(markets),
+            :date_count   => length(dates),
+        ),
+    ))
+
+    for target in dates
+        # Build the graph for this date once; workers share it read-only.
+        graph = build_graph!(store, config, target; source = target_source)
+
+        # Fresh pool of RuntimeContexts per date — ties the caches to this
+        # date's graph validity. `worker_slot` = pool index (1..N).
+        ctx_pool = Channel{RuntimeContext}(n)
+        for slot in 1:n
+            ctx = _build_runtime_context(config)
+            ctx.worker_slot = slot
+            put!(ctx_pool, ctx)
+        end
+
+        tasks = map(markets) do (origin, dest)
+            Threads.@spawn _run_one_market!(
+                ctx_pool, graph, results, results_lock,
+                String(origin), String(dest), target,
+                trace_id, root_span_id, event_sinks,
+            )
+        end
+        foreach(wait, tasks)
+        close(ctx_pool)
+    end
+
+    # ── Root SpanEvent :end ───────────────────────────────────────────────
+    success_count = count(v -> v isa Vector{Itinerary}, values(results))
+    failure_count = count(v -> v isa MarketSearchFailure, values(results))
+    root_end_ns = _unix_nano_now()
+    emit_to_sinks(SpanEvent(
+        kind=:end, name=:search_markets,
+        trace_id=trace_id, span_id=root_span_id, parent_span_id=UInt64(0),
+        unix_nano=root_end_ns,
+        status = failure_count == 0 ? :ok : :error,
+        attributes=Dict{Symbol,Any}(
+            :success_count => success_count,
+            :failure_count => failure_count,
+            :elapsed_ms    => (root_end_ns - root_start_ns) / 1e6,
+        ),
+    ))
+
+    return results
+end
+
+"""
+    `function _run_one_market!(ctx_pool, graph, results, results_lock, origin, dest, target, trace_id, parent_span_id, event_sinks)::Nothing`
+---
+
+# Description
+- Worker-pool task body: takes a `RuntimeContext` from `ctx_pool`, runs one
+  market's `search_itineraries`, writes the `copy`-ed result into the shared
+  `results` dict under `results_lock`, and returns the context to the pool
+  via a `finally` clause (so even a throwing market does not leak its slot).
+- The graph is accessed read-only; only `results` + its lock are shared.
+
+# Failure isolation
+- Two nested try blocks:
+  1. Inner try/catch turns any exception raised by `StationCode(…)` /
+     `search_itineraries` into a `MarketSearchFailure` sentinel written into
+     `results[(origin, dest, target)]`. The catch site captures the exception
+     object, a `Vector{Base.StackTraces.StackFrame}` (via
+     `stacktrace(catch_backtrace())`), the worker's pool slot, and the
+     elapsed wall time so callers can triage without replaying the search.
+  2. Outer `finally` always returns the context to `ctx_pool`, so even an
+     exception path does not leak a slot and deadlock the next `take!`.
+- The raw backtrace from `catch_backtrace()` is `Vector{Union{Ptr{Nothing},
+  Base.InterpreterIP}}`; `stacktrace(…)` converts to `StackFrame`s which is
+  what the `MarketSearchFailure.backtrace` field is typed for. Prefer this
+  over `Base.current_exceptions()[end].backtrace` which returns the raw form.
+
+# Arguments
+1. `ctx_pool::Channel{RuntimeContext}`: bounded channel of worker contexts
+2. `graph::FlightGraph`: read-only network for the current target date
+3. `results::Dict`: shared results dict (Union-valued — see parallel helper)
+4. `results_lock::ReentrantLock`: guards the `results` write
+5. `origin::String`: IATA origin code (already string-coerced)
+6. `dest::String`: IATA destination code
+7. `target::Date`: target travel date
+8. `trace_id::UInt128`: W3C trace id shared across all markets in the batch
+9. `parent_span_id::UInt64`: span id of the root `:search_markets` span
+10. `event_sinks::Vector{<:Function}`: zero or more SpanEvent sink callables (see
+    `search_markets` for the contract)
+
+# Returns
+- `::Nothing`
+"""
+function _run_one_market!(
+    ctx_pool::Channel{RuntimeContext},
+    graph::FlightGraph,
+    results::Dict,
+    results_lock::ReentrantLock,
+    origin::String, dest::String, target::Date,
+    trace_id::UInt128, parent_span_id::UInt64,
+    event_sinks::Vector{<:Function},
+)
+    ctx = take!(ctx_pool)
+    span_id = _new_span_id()
+    start_ns = _unix_nano_now()
+
+    # Per-market :start span — workers call sinks concurrently; sinks are
+    # responsible for their own thread safety.
+    for sink in event_sinks
+        sink(SpanEvent(
+            kind=:start, name=:market_search,
+            trace_id=trace_id, span_id=span_id, parent_span_id=parent_span_id,
+            unix_nano=start_ns, worker_slot=ctx.worker_slot,
+            attributes=Dict{Symbol,Any}(
+                :origin => origin,
+                :destination => dest,
+                :date => target,
+            ),
+        ))
+    end
+
+    t0_ns = time_ns()
+    try
+        try
+            itns = search_itineraries(graph.stations,
+                                      StationCode(origin), StationCode(dest),
+                                      target, ctx)
+            lock(results_lock) do
+                results[(origin, dest, target)] = copy(itns)
+            end
+
+            end_ns = _unix_nano_now()
+            for sink in event_sinks
+                sink(SpanEvent(
+                    kind=:end, name=:market_search,
+                    trace_id=trace_id, span_id=span_id,
+                    parent_span_id=parent_span_id,
+                    unix_nano=end_ns, worker_slot=ctx.worker_slot, status=:ok,
+                    attributes=Dict{Symbol,Any}(
+                        :itinerary_count => length(itns),
+                        :elapsed_ms      => (end_ns - start_ns) / 1e6,
+                    ),
+                ))
+            end
+        catch e
+            # stacktrace(catch_backtrace()) returns Vector{StackFrame}, which
+            # matches MarketSearchFailure.backtrace. catch_backtrace() alone
+            # returns a raw backtrace (incompatible type) — do not use it here.
+            bt = stacktrace(catch_backtrace())
+            elapsed_ms = (time_ns() - t0_ns) / 1e6
+            fail = MarketSearchFailure(
+                (origin, dest, target), e, bt,
+                ctx.worker_slot, elapsed_ms,
+            )
+            lock(results_lock) do
+                results[(origin, dest, target)] = fail
+            end
+
+            end_ns = _unix_nano_now()
+            for sink in event_sinks
+                sink(SpanEvent(
+                    kind=:end, name=:market_search,
+                    trace_id=trace_id, span_id=span_id,
+                    parent_span_id=parent_span_id,
+                    unix_nano=end_ns, worker_slot=ctx.worker_slot, status=:error,
+                    attributes=Dict{Symbol,Any}(
+                        :exception_type => string(typeof(e)),
+                        :elapsed_ms     => (end_ns - start_ns) / 1e6,
+                    ),
+                ))
+            end
+        end
+    finally
+        put!(ctx_pool, ctx)   # MUST return context, even on exception
+    end
+    return nothing
+end
+
 # ── Multi-market convenience search ───────────────────────────────────────────
 
 """
-    `function search_markets(newssim_path::AbstractString; markets, dates, mct_path="", kwargs...)::Dict{Tuple{String,String,Date}, Vector{Itinerary}}`
+    `function search_markets(newssim_path::AbstractString; markets, dates, mct_path="", kwargs...)::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`
 ---
 
 # Description
@@ -605,8 +1039,18 @@ end
 - Creates an in-memory `DuckDBStore`, ingests the NewSSIM CSV and optional MCT
   file, then iterates over every `(origin, dest, date)` combination
 - The graph is rebuilt once per date (schedule window shifts with the target day)
-- Returns deep-copied itineraries keyed by `(origin, dest, date)` strings, safe
-  to retain indefinitely
+- When `config.parallel_markets == true` (default) **and** `Threads.nthreads() > 1`,
+  markets for each date are run in parallel across a worker pool of size
+  `Threads.nthreads()` (each worker holds its own `RuntimeContext`). Otherwise
+  the sequential path is taken. Results are equivalent either way.
+- Returns itinerary vectors keyed by `(origin, dest, date)`. Each vector is
+  a `copy` of the search context's result buffer; the inner `Itinerary`
+  objects hold their own `connections` allocations, so retaining the
+  returned vectors across subsequent searches is safe.
+- The returned dict's value type is a `Union` with `MarketSearchFailure`:
+  any market whose `search_itineraries` call throws is caught and written
+  as a sentinel (see `_run_one_market!` / sequential loop) instead of
+  aborting the whole batch. Use `is_failure` / `failed_markets` to triage.
 - The store is closed automatically on return (or on error)
 
 # When to use
@@ -624,11 +1068,17 @@ end
 - `markets`: vector of `(origin, dest)` string pairs, e.g. `[("ORD","LHR")]`
 - `dates::Union{Date, AbstractVector{Date}}`: one or more target travel dates
 - `mct_path::AbstractString=""`: optional path to MCT file; omit for global defaults
+- `event_sinks::Vector{<:Function}=Function[]`: optional OTel-shaped span event
+  sinks. Each sink is a `(event)::Nothing` function called for every emitted
+  `SpanEvent` (root `:search_markets` + per-market `:market_search` start/end
+  pairs). Workers may call sinks concurrently — sinks are responsible for
+  their own thread safety.
 - All remaining keyword arguments are forwarded to `SearchConfig()`
 
 # Returns
-- `::Dict{Tuple{String,String,Date}, Vector{Itinerary}}`: results keyed by
-  `(origin_string, dest_string, date)` — index with `results["ORD","LHR",date]`
+- `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`:
+  results keyed by `(origin_string, dest_string, date)` — index with
+  `results["ORD","LHR",date]`. Use `is_failure` / `failed_markets` to triage.
 
 # Examples
 ```julia
@@ -646,8 +1096,9 @@ function search_markets(
     markets::AbstractVector{<:Tuple{AbstractString,AbstractString}},
     dates::Union{Date,AbstractVector{Date}},
     mct_path::AbstractString = "",
+    event_sinks::Vector{<:Function} = Function[],
     kwargs...,
-)::Dict{Tuple{String,String,Date},Vector{Itinerary}}
+)::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
     config = SearchConfig(; kwargs...)
     store = DuckDBStore()
 
@@ -658,26 +1109,18 @@ function search_markets(
         end
 
         date_vec = dates isa Date ? [dates] : collect(dates)
+        target_source = :newssim
 
-        ctx = RuntimeContext(
-            config = config,
-            constraints = SearchConstraints(),
-            itn_rules = build_itn_rules(config),
-        )
-
-        results = Dict{Tuple{String,String,Date},Vector{Itinerary}}()
-
-        for target in date_vec
-            graph = build_graph!(store, config, target; source = :newssim)
-            for (org, dst) in markets
-                origin = StationCode(org)
-                dest = StationCode(dst)
-                itns = search_itineraries(graph.stations, origin, dest, target, ctx)
-                results[(String(org), String(dst), target)] = copy(itns)
-            end
+        use_parallel = config.parallel_markets && Threads.nthreads() > 1
+        if use_parallel
+            return _search_markets_parallel_all_dates(
+                config, store, date_vec, markets, target_source, event_sinks,
+            )
+        else
+            return _search_markets_sequential_all_dates(
+                config, store, date_vec, markets, target_source, event_sinks,
+            )
         end
-
-        return results
     finally
         close(store)
     end

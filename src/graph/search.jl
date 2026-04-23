@@ -21,6 +21,9 @@
 # Fields
 - `config::SearchConfig` — search configuration (scope, interline, stop limits)
 - `constraints::SearchConstraints` — market-level parameter overrides
+- `worker_slot::Int` — worker-pool slot id (1..N in parallel mode, 0 for sequential).
+  Emitted into `SpanEvent`s and `MarketSearchFailure`s to identify the handling
+  worker without relying on `Threads.threadid()` (unstable under task migration).
 - `cnx_rules::Tuple` — connection rule chain; populated by `build_graph!`
   for graph-construction use and **not read during search**, so callers
   constructing a `RuntimeContext` for search can safely leave this as the
@@ -46,6 +49,11 @@
     # Shared immutable references
     config::SearchConfig = SearchConfig()
     constraints::SearchConstraints = SearchConstraints()
+
+    # Worker-pool slot id (1..nthreads when in parallel mode, 0 otherwise).
+    # Used in observability events to identify which pool worker handled
+    # a task without relying on `threadid()` (unstable under task migration).
+    worker_slot::Int = 0
 
     # Rule chains (Tuples for fully specialized dispatch in hot loops)
     cnx_rules::Tuple = ()

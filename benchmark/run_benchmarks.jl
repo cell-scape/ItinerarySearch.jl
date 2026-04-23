@@ -10,6 +10,7 @@ println("="^60)
 
 include("bench_ingest.jl")
 include("bench_graph.jl")
+include("bench_markets.jl")
 
 using ItinerarySearch
 
@@ -70,6 +71,14 @@ if isfile(config.ssim_path)
         println("  Sysimage: not built (run `make sysimage` to create)")
     end
     println("  PrecompileTools: enabled (exercises core paths at precompile time)")
+
+    # Phase 12: Parallel market search
+    newssim_path = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+    if isfile(newssim_path)
+        bench_market_search(newssim_path)
+    else
+        println("\nSkipping market search benchmark (sample_newssim.csv.gz not found).")
+    end
 else
     println("Demo data not found. Run extract_demo_data.jl first.")
     println("Skipping benchmarks.")
