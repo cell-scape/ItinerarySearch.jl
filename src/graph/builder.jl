@@ -625,7 +625,7 @@ function _build_runtime_context(config::SearchConfig)::RuntimeContext
 end
 
 """
-    `function _search_markets_sequential_all_dates(config, store, dates, markets, target_source)::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`
+    `function _search_markets_sequential_all_dates(config, store, dates, markets, target_source, event_sinks)::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`
 ---
 
 # Description
@@ -649,6 +649,8 @@ end
 4. `markets::AbstractVector{<:Tuple{AbstractString,AbstractString}}`:
    `(origin, dest)` string pairs
 5. `target_source::Symbol`: schedule source for `build_graph!` (e.g. `:newssim`)
+6. `event_sinks::Vector{<:Function}`: zero or more SpanEvent sink callables (see
+   `search_markets` for the contract)
 
 # Returns
 - `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`:
@@ -778,7 +780,7 @@ function _search_markets_sequential_all_dates(
 end
 
 """
-    `function _search_markets_parallel_all_dates(config, store, dates, markets, target_source)::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`
+    `function _search_markets_parallel_all_dates(config, store, dates, markets, target_source, event_sinks)::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`
 ---
 
 # Description
@@ -813,6 +815,8 @@ end
 4. `markets::AbstractVector{<:Tuple{AbstractString,AbstractString}}`:
    `(origin, dest)` string pairs
 5. `target_source::Symbol`: schedule source for `build_graph!` (e.g. `:newssim`)
+6. `event_sinks::Vector{<:Function}`: zero or more SpanEvent sink callables (see
+   `search_markets` for the contract)
 
 # Returns
 - `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`:
@@ -898,7 +902,7 @@ function _search_markets_parallel_all_dates(
 end
 
 """
-    `function _run_one_market!(ctx_pool, graph, results, results_lock, origin, dest, target)::Nothing`
+    `function _run_one_market!(ctx_pool, graph, results, results_lock, origin, dest, target, trace_id, parent_span_id, event_sinks)::Nothing`
 ---
 
 # Description
@@ -931,6 +935,10 @@ end
 5. `origin::String`: IATA origin code (already string-coerced)
 6. `dest::String`: IATA destination code
 7. `target::Date`: target travel date
+8. `trace_id::UInt128`: W3C trace id shared across all markets in the batch
+9. `parent_span_id::UInt64`: span id of the root `:search_markets` span
+10. `event_sinks::Vector{<:Function}`: zero or more SpanEvent sink callables (see
+    `search_markets` for the contract)
 
 # Returns
 - `::Nothing`
