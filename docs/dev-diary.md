@@ -1,5 +1,51 @@
 # ItinerarySearch Development Diary
 
+## 2026-04-22 — Parallel market search
+
+Wired a Channel-backed worker pool into `search_markets()` so per-market
+searches run concurrently across `Threads.nthreads()` workers, each with
+its own `RuntimeContext` (and therefore its own warm caches). Key
+additions:
+
+- `SearchConfig.parallel_markets::Bool = true` — opt-out flag
+- `--no-parallel` CLI flag (global, following `--no-mct-cache` idiom)
+- `MarketSearchFailure` sentinel — return value for per-market failures,
+  keeps the batch alive when one market throws. Public helpers `is_failure(x)`
+  and `failed_markets(dict)` for inspection.
+- `SpanEvent` struct — OTel-ready span events emitted for the root
+  `search_markets` call and each child `market_search` span. `event_sinks`
+  kwarg on `search_markets` lets callers register observer functions.
+- `TraceContext` + `_new_trace_id`, `_new_span_id`, `_unix_nano_now` —
+  W3C Trace Context primitives (UInt128 trace ids, UInt64 span ids,
+  nanosecond Unix timestamps from `time_ns()` + one-time offset).
+
+Worker pool design:
+- `Channel{RuntimeContext}(nthreads())` pre-filled with N contexts (one
+  per slot, 1..N); each `Threads.@spawn`-ed per-market task takes a
+  context, runs its search, returns the context in a `finally`. Fresh
+  pool per target date so cache validity tracks graph validity.
+- `ReentrantLock` protects shared `results::Dict` writes.
+- No `Threads.threadid()` anywhere (unstable under task migration in
+  Julia 1.7+); `worker_slot` is the stable pool slot id.
+- Return type widened to `Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`.
+
+Benchmark on 12 markets × demo dataset (4-thread MacBook, Apple Silicon):
+- Sequential: 2544 ms
+- Parallel (nthreads=4): 2381 ms (1.07× speedup)
+
+The modest speedup is expected: `search_markets()` includes CSV ingest +
+graph build + DFS search in a single call. The ingest/build phase is serial
+in both modes and accounts for ~93% of wall time (build ≈ 1.3 s after
+warm JIT, ingest from .gz ≈ dominant). The DFS search phase (≈7% of
+wall time, ~460 ms for 12 markets sequential) is the part that
+parallelizes. At production scale — many dates, or a pre-built graph
+shared across market calls — the parallel path delivers its expected
+speedup on the search-only slice.
+
+**Deferred:** OTLP/HTTP/JSON exporter for Dynatrace sidecar — tracked in
+`docs/superpowers/specs/2026-04-22-otlp-http-exporter-design.md` and
+`docs/superpowers/plans/2026-04-22-otlp-http-exporter.md`.
+
 ## 2026-04-21 — Circuity Tiers and Market-Level Overrides
 - **Scope**: Replace the scalar `SearchConfig.circuity_factor = 2.5` with a distance-tiered, market-overridable circuity model that mirrors the production profit-manager tables
 - **Data model**:
