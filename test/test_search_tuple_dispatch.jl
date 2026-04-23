@@ -54,3 +54,59 @@ include("_test_setup.jl")
         close(store)
     end
 end
+
+@testset "search — tuple-dispatch" begin
+    newssim_path = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+    target = Date(2026, 2, 25)
+    target2 = Date(2026, 2, 26)
+
+    store = DuckDBStore()
+    try
+        ingest_newssim!(store, newssim_path)
+        config = SearchConfig()
+
+        @testset "single tuple form" begin
+            # Both calls use source=:newssim (the default for tuple dispatch).
+            canonical = search(store, StationCode("ORD"), StationCode("LHR"), target;
+                               config, source=:newssim)
+            tuple_form = search(store, ("ORD", "LHR", target); config)
+            @test length(tuple_form) == length(canonical)
+        end
+
+        @testset "vector of tuples — preserves input order + no aliasing" begin
+            tuples = [
+                ("ORD", "LHR", target),
+                ("EWR", "LHR", target),
+                ("ORD", "LHR", target2),    # different date
+            ]
+
+            # Snapshot expected lengths BEFORE the batch call to avoid aliasing
+            # the ctx.results buffer the batch returns from.
+            # Use the single-tuple dispatch so the source (:newssim) matches the
+            # batch call below.
+            expected_lengths = [
+                length(search(store, t; config))
+                for t in tuples
+            ]
+
+            results = search(store, tuples; config)
+            @test results isa Vector{Vector{Itinerary}}
+            @test length(results) == 3
+            for i in eachindex(tuples)
+                @test length(results[i]) == expected_lengths[i]
+            end
+
+            # Identity check: the three results must not alias each other.
+            @test results[1] !== results[2]
+            @test results[2] !== results[3]
+        end
+
+        @testset "empty vector returns empty output" begin
+            results = search(store, Tuple{String,String,Date}[]; config)
+            @test results isa Vector{Vector{Itinerary}}
+            @test isempty(results)
+        end
+    finally
+        close(store)
+    end
+end

@@ -560,6 +560,8 @@ end
 
 # Keyword Arguments
 - `config::SearchConfig=SearchConfig()`: search configuration
+- `source::Symbol=:ssim`: ingest source — `:ssim` (default, SSIM fixed-width pipeline)
+  or `:newssim` (denormalized CSV pipeline)
 
 # Returns
 - `::Vector{Itinerary}`: all valid itineraries found (deep-copied from the
@@ -580,8 +582,9 @@ function search(
     dest::StationCode,
     target_date::Date;
     config::SearchConfig = SearchConfig(),
+    source::Symbol = :ssim,
 )::Vector{Itinerary}
-    graph = build_graph!(store, config, target_date)
+    graph = build_graph!(store, config, target_date; source)
 
     ctx = RuntimeContext(
         config = config,
@@ -592,6 +595,91 @@ function search(
     results = search_itineraries(graph.stations, origin, dest, target_date, ctx)
     # Return a copy — ctx.results is reused on subsequent searches
     return copy(results)
+end
+
+"""
+    `search(store::DuckDBStore, t::Tuple{<:AbstractString, <:AbstractString, Date}; config::SearchConfig=SearchConfig(), source::Symbol=:newssim)::Vector{Itinerary}`
+---
+
+# Description
+- Convenience overload accepting a single `(origin, destination, date)` tuple
+- Builds the graph for the given date and returns itineraries for the O-D pair
+- Defaults to `source=:newssim` (consistent with the vector-of-tuples overload);
+  pass `source=:ssim` when the store was ingested via the SSIM fixed-width path
+
+# Arguments
+1. `store::DuckDBStore`: data store (already ingested)
+2. `t::Tuple{<:AbstractString, <:AbstractString, Date}`: `(origin, destination, date)` triple
+
+# Keyword Arguments
+- `config::SearchConfig=SearchConfig()`: search configuration
+- `source::Symbol=:newssim`: ingest source — `:newssim` or `:ssim`
+
+# Returns
+- `::Vector{Itinerary}`: all valid itineraries found
+"""
+function search(
+    store::DuckDBStore,
+    t::Tuple{<:AbstractString,<:AbstractString,Date};
+    config::SearchConfig = SearchConfig(),
+    source::Symbol = :newssim,
+)::Vector{Itinerary}
+    graph = build_graph!(store, config, t[3]; source)
+    ctx = _build_runtime_context(config)
+    return copy(search_itineraries(graph.stations, StationCode(t[1]), StationCode(t[2]), t[3], ctx))
+end
+
+"""
+    `search(store::DuckDBStore, ts::AbstractVector{<:Tuple{<:AbstractString, <:AbstractString, Date}}; config::SearchConfig=SearchConfig())::Vector{Vector{Itinerary}}`
+---
+
+# Description
+- Convenience overload accepting a vector of `(origin, destination, date)` tuples
+- Groups tuples by date so the graph is built once per unique date, not once per tuple
+- Returns a vector of itinerary vectors in input order
+- Each inner vector is copied so the result survives subsequent searches
+  (important — `search_itineraries` returns `ctx.results` by reference)
+
+# Arguments
+1. `store::DuckDBStore`: data store (already ingested)
+2. `ts::AbstractVector{<:Tuple{<:AbstractString, <:AbstractString, Date}}`: tuple list
+
+# Keyword Arguments
+- `config::SearchConfig=SearchConfig()`: search configuration
+
+# Returns
+- `::Vector{Vector{Itinerary}}`: one itinerary vector per input tuple, in input order
+"""
+function search(
+    store::DuckDBStore,
+    ts::AbstractVector{<:Tuple{<:AbstractString,<:AbstractString,Date}};
+    config::SearchConfig = SearchConfig(),
+)::Vector{Vector{Itinerary}}
+    isempty(ts) && return Vector{Itinerary}[]
+
+    # Group input indices by date — enables one graph build per unique date.
+    date_groups = Dict{Date,Vector{Int}}()
+    for (i, t) in enumerate(ts)
+        push!(get!(date_groups, t[3], Int[]), i)
+    end
+
+    results = Vector{Vector{Itinerary}}(undef, length(ts))
+    for (date, indices) in date_groups
+        graph = build_graph!(store, config, date; source = :newssim)
+        ctx = _build_runtime_context(config)
+        for i in indices
+            t = ts[i]
+            # CRITICAL: copy() — search_itineraries returns ctx.results by
+            # reference, and the next iteration's empty!(ctx.results) would
+            # mutate our stored result. Aliasing bug: without copy(), every
+            # element of results ends up aliasing ctx.results and holding only
+            # the final search's results.
+            results[i] = copy(
+                search_itineraries(graph.stations, StationCode(t[1]), StationCode(t[2]), date, ctx),
+            )
+        end
+    end
+    return results
 end
 
 # ── Runtime-context / sequential helpers (shared with parallel path) ──────────
