@@ -110,3 +110,41 @@ end
         close(store)
     end
 end
+
+@testset "search_markets — tuple-dispatch" begin
+    newssim_path = joinpath(@__DIR__, "..", "data", "demo", "sample_newssim.csv.gz")
+    target = Date(2026, 2, 25)
+    target2 = Date(2026, 2, 26)
+
+    @testset "single tuple form" begin
+        tuple_form = search_markets(newssim_path, ("ORD", "LHR", target))
+        canonical = search_markets(newssim_path; markets=[("ORD", "LHR")], dates=target)
+        @test keys(tuple_form) == keys(canonical)
+        k = ("ORD", "LHR", target)
+        @test length(tuple_form[k]) == length(canonical[k])
+    end
+
+    @testset "vector of tuples — EXPLICIT, NOT cartesian" begin
+        # CRITICAL invariant: 2 tuples on 2 different dates = 2 markets, NOT 4.
+        tuples = [("ORD", "LHR", target), ("EWR", "LHR", target2)]
+        results = search_markets(newssim_path, tuples)
+        @test length(keys(results)) == 2
+        @test haskey(results, ("ORD", "LHR", target))
+        @test haskey(results, ("EWR", "LHR", target2))
+        # Cartesian would produce 4: (ORD,LHR,target), (EWR,LHR,target), (ORD,LHR,target2), (EWR,LHR,target2)
+        @test !haskey(results, ("ORD", "LHR", target2))
+        @test !haskey(results, ("EWR", "LHR", target))
+    end
+
+    @testset "vector of tuples — multiple markets same date" begin
+        tuples = [("ORD", "LHR", target), ("EWR", "LHR", target)]
+        results = search_markets(newssim_path, tuples)
+        @test length(keys(results)) == 2
+    end
+
+    @testset "empty vector returns empty dict" begin
+        results = search_markets(newssim_path, Tuple{String,String,Date}[])
+        @test results isa Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}
+        @test isempty(results)
+    end
+end

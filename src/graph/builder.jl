@@ -1215,3 +1215,80 @@ function search_markets(
         close(store)
     end
 end
+
+"""
+    `search_markets(newssim_path::AbstractString, t::Tuple{<:AbstractString, <:AbstractString, Date}; kwargs...)::Dict`
+---
+
+# Description
+- Convenience overload accepting a single `(origin, destination, date)` tuple
+- Delegates to the kwargs form with a single-market list and the tuple's date
+
+# Arguments
+1. `newssim_path::AbstractString`: path to NewSSIM CSV
+2. `t::Tuple{<:AbstractString, <:AbstractString, Date}`: `(origin, destination, date)` triple
+
+# Keyword Arguments
+- All kwargs of `search_markets(path; markets, dates, ...)` are forwarded
+
+# Returns
+- `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`: same shape as canonical form
+"""
+function search_markets(
+    newssim_path::AbstractString,
+    t::Tuple{<:AbstractString,<:AbstractString,Date};
+    kwargs...,
+)::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
+    return search_markets(newssim_path;
+        markets = [(String(t[1]), String(t[2]))],
+        dates = t[3],
+        kwargs...,
+    )
+end
+
+"""
+    `search_markets(newssim_path::AbstractString, ts::AbstractVector{<:Tuple{<:AbstractString, <:AbstractString, Date}}; kwargs...)::Dict`
+---
+
+# Description
+- Convenience overload accepting a vector of `(origin, destination, date)` tuples
+- CRITICAL: vector form is EXPLICIT per-tuple, NOT cartesian'd with a separate dates list
+- `[(ORD, LHR, June15), (EWR, LHR, June16)]` produces exactly 2 searches
+- Implementation groups tuples by date, calls the kwargs form once per date, merges results
+
+# Arguments
+1. `newssim_path::AbstractString`: path to NewSSIM CSV
+2. `ts::AbstractVector{<:Tuple{<:AbstractString, <:AbstractString, Date}}`: tuple list
+
+# Keyword Arguments
+- All kwargs of `search_markets(path; markets, dates, ...)` are forwarded
+
+# Returns
+- `::Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`: keyed dict with exactly one entry per input tuple
+"""
+function search_markets(
+    newssim_path::AbstractString,
+    ts::AbstractVector{<:Tuple{<:AbstractString,<:AbstractString,Date}};
+    kwargs...,
+)::Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}
+    merged = Dict{Tuple{String,String,Date},Union{Vector{Itinerary},MarketSearchFailure}}()
+    isempty(ts) && return merged
+
+    # Group (origin, dest) pairs by date so the kwargs form can build each
+    # date's graph once and search its markets in one call.
+    date_groups = Dict{Date,Vector{Tuple{String,String}}}()
+    for (o, d, date) in ts
+        push!(get!(date_groups, date, Tuple{String,String}[]),
+              (String(o), String(d)))
+    end
+
+    for (date, markets) in date_groups
+        partial = search_markets(newssim_path;
+            markets = markets,
+            dates = date,
+            kwargs...,
+        )
+        merge!(merged, partial)
+    end
+    return merged
+end
