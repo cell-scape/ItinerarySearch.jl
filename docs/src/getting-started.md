@@ -1,134 +1,394 @@
 # Getting Started
 
-This tutorial walks through the complete pipeline from loading a schedule to producing output. All examples assume the demo dataset is installed in `data/input/`.
+This tutorial is the guided tour of ItinerarySearch.jl. It leads with the
+highest-level entry point (`search_schedule`), works down through explicit
+market lists (`search_markets`) and the single-query convenience (`search`),
+and finally documents the low-level rule-chain APIs in the Advanced section.
 
-## Prerequisites
+All examples are self-contained: they use the NewSSIM demo file shipped with
+the package so you can copy-paste any block into a REPL that already has
+`using ItinerarySearch` loaded.
+
+## 1. Installation
 
 ```bash
 # Julia 1.10+ required
 julia --project=. -e 'using Pkg; Pkg.instantiate()'
 ```
 
-Alternatively, run the full demo end-to-end:
+To exercise the full stack end-to-end without writing any Julia, there are two
+demo targets that use the same data the examples below do:
 
 ```bash
-make demo
+make demo            # SSIM fixed-width path
+make demo-newssim    # NewSSIM CSV path — matches the examples in this guide
 ```
 
-## Step 1: Load the Schedule
+The rest of this tutorial assumes you are inside `julia --project=.` with
+`using ItinerarySearch, Dates` in scope.
+
+## 2. Quick Start
+
+`search_schedule` is a one-call entry point: given a NewSSIM CSV and a target
+date, it ingests the data, builds the connection graph, and returns every
+valid itinerary for every market a carrier serves.
 
 ```julia
-using ItinerarySearch
-using Dates
+using ItinerarySearch, Dates
 
-config = SearchConfig()    # defaults point to data/input/
-store  = DuckDBStore()
-load_schedule!(store, config)
+newssim_path = joinpath(pkgdir(ItinerarySearch), "data", "demo", "sample_newssim.csv.gz")
+
+results = search_schedule(newssim_path;
+    dates    = Date(2026, 2, 25),
+    carriers = ["UA"],
+)
+
+length(results)                                          # number of markets
+results[("ORD", "LHR", Date(2026, 2, 25))]               # itineraries for one market
 ```
 
-`load_schedule!` runs the full ingest pipeline:
+The result is a `Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}`.
+Each key is an `(origin, destination, date)` triple and each value is either a
+vector of valid itineraries or a `MarketSearchFailure` sentinel (see
+[Section 5](#5-handling-results)).
 
-1. Streams the SSIM file into DuckDB (`ingest_ssim!`), expanding EDF date ranges and resolving DEI 50 codeshare supplements
-2. Parses MCT records (`ingest_mct!`)
-3. Loads airport, region, aircraft, and OA-control reference tables
-4. Runs the SQL post-ingest pipeline inside DuckDB: segment building, codeshare joins, and market distance injection
+Everything below is a refinement of this one call: different graph-building
+strategies, different market universes, different output shapes.
 
-The store is now ready to serve graph-build queries.
+## 3. Core Concepts
 
-### Alternative: Load from a JSON Config
+A handful of terms recur throughout the API:
 
-For deployment-style setups, keep the config in `config/defaults.json` and load it:
+- **Itinerary** — an ordered sequence of flight legs from an origin to a
+  destination on a specific target date. An itinerary with zero intermediate
+  stops is a nonstop; itineraries with one or more stops pass through
+  connecting airports subject to minimum-connect-time rules.
+- **Market** — an `(origin, destination)` pair. A market is always evaluated
+  for a given target date, making the full key an `(origin, destination, date)`
+  triple.
+- **Target date** — the operating date of the first leg of each candidate
+  itinerary. Multi-leg itineraries that cross midnight are handled by the
+  schedule window.
+- **Schedule window** — the range of operating dates the graph materializes.
+  Controlled by `SearchConfig.leading_days` / `trailing_days`; see
+  [Section 7](#7-configuration).
+- **Carrier filter** — the optional `carriers` list that scopes "which
+  airline's network do we care about". Markets are those where at least one
+  filter-carrier flight exists (directly or via the connected universe).
+
+## 4. Primary Search APIs
+
+Three layers, from broadest to narrowest:
+
+| API | Scope | Typical use |
+|---|---|---|
+| `search_schedule` | Every carrier-relevant market on the date(s) | Bulk sweeps, daily feeds |
+| `search_markets` | An explicit list of markets | Targeted batch queries |
+| `search` | A single `(origin, destination, date)` | One-off lookups, tests |
+
+All three return the same `Dict{Tuple{String,String,Date}, ...}` shape
+(except `search`, which returns a single `Vector{Itinerary}` when given a
+single market, or a vector-of-vectors for a vector of tuples).
+
+### 4.1. `search_schedule` — carrier-scoped schedule-wide sweeps
+
+`search_schedule` enumerates every market the filter carriers serve on each
+target date, then searches them. It has three entry forms depending on how
+much of the lifecycle the caller wants to own.
+
+#### Path form (self-contained)
+
+Pass the path to a NewSSIM CSV. Ingestion, graph-build, and store cleanup are
+all handled for you.
+
+```julia
+newssim_path = joinpath(pkgdir(ItinerarySearch), "data", "demo", "sample_newssim.csv.gz")
+
+results = search_schedule(newssim_path;
+    dates    = Date(2026, 2, 25),
+    carriers = ["UA"],
+)
+length(results)                                     # → 1678 markets on this dataset
+```
+
+Pass a vector of dates to sweep multiple operating days in one call:
+
+```julia
+results = search_schedule(newssim_path;
+    dates    = [Date(2026, 2, 25), Date(2026, 2, 26), Date(2026, 2, 27)],
+    carriers = ["UA"],
+)
+```
+
+#### Store form (reuse ingested data)
+
+If you are running several sweeps against the same data, ingest once and hand
+the store to `search_schedule`. The caller owns the store's lifecycle:
+
+```julia
+store = DuckDBStore()
+try
+    ingest_newssim!(store, newssim_path)
+    # (optional) ingest_mct!(store, "path/to/mct.dat")
+
+    results_ua = search_schedule(store; dates = Date(2026, 2, 25), carriers = ["UA"])
+    results_aa = search_schedule(store; dates = Date(2026, 2, 25), carriers = ["AA"])
+finally
+    close(store)
+end
+```
+
+#### Graph form (reuse a pre-built graph)
+
+The third form takes a `FlightGraph` and a `MarketUniverse` directly. This is
+the "pure search" entry point — ingest and graph-build costs are paid up
+front, so the call measures only the search phase. It is what the benchmark
+suite uses.
+
+```julia
+store = DuckDBStore()
+try
+    ingest_newssim!(store, newssim_path)
+    graph    = build_graph!(store, SearchConfig(), Date(2026, 2, 25); source = :newssim)
+    universe = ItinerarySearch._universe_from_carriers_direct(
+        store, Date(2026, 2, 25), ["UA"], false,
+    )
+    results = search_schedule(graph, universe)
+    length(results)
+finally
+    close(store)
+end
+```
+
+`_universe_from_carriers_direct` is an internal helper (underscore-prefixed)
+that is fine to call from advanced code. For multi-date wide-window graphs,
+see [`build_graph_for_window`](#build_graph_for_window) in the Advanced
+section.
+
+#### `:direct` vs `:connected` universe
+
+The `universe` keyword chooses how markets are enumerated:
+
+- `:direct` (default) — markets with at least one direct flight operated or
+  marketed by a filter carrier. Fast SQL enumeration; typically a few
+  thousand markets per carrier-day.
+- `:connected` — markets where a filter carrier's leg appears in _any_ valid
+  itinerary up to `config.max_stops` deep. Uses BFS on the live graph.
+  Can be 50× larger than `:direct` on a hub carrier.
+
+```julia
+# :direct — fast, narrow
+direct = search_schedule(newssim_path;
+    dates = Date(2026, 2, 25), carriers = ["UA"], universe = :direct,
+)
+
+# :connected — wider, slower (BFS along connections)
+connected = search_schedule(newssim_path;
+    dates = Date(2026, 2, 25), carriers = ["UA"], universe = :connected,
+)
+```
+
+#### Streaming via `sink`
+
+For very large sweeps you may not want to materialize the full result dict.
+Pass a `sink::Function` and each `(market_tuple, result)` pair is delivered
+as soon as it completes; the returned dict stays empty.
+
+```julia
+count = Ref(0)
+sink = function(market, result)
+    # `market` is (origin, dest, date); `result` is either Vector{Itinerary}
+    # or MarketSearchFailure. Write to file, push to a queue, whatever suits
+    # your streaming policy — just avoid growing memory.
+    count[] += is_failure(result) ? 0 : 1
+    return nothing
+end
+
+search_schedule(newssim_path;
+    dates    = Date(2026, 2, 25),
+    carriers = ["UA"],
+    sink     = sink,
+)
+
+count[]   # number of markets streamed
+```
+
+The sink is called from worker tasks when `parallel_markets=true` — implement
+your own synchronization if the sink mutates shared state.
+
+### 4.2. `search_markets` — explicit market list
+
+When you already know which markets you want, use `search_markets`. Unlike
+`search_schedule`, nothing is enumerated from the carrier filter; only the
+markets you ask for are searched.
+
+#### Kwargs form
+
+```julia
+results = search_markets(newssim_path;
+    markets = [("ORD", "LHR"), ("DEN", "LAX")],
+    dates   = Date(2026, 2, 25),
+)
+
+results[("ORD", "LHR", Date(2026, 2, 25))]     # itineraries for one market
+```
+
+`markets` is a vector of `(origin, destination)` pairs; `dates` is a single
+`Date` or a vector of dates. The two are taken as a cartesian product: N
+markets × M dates produces N × M result entries.
+
+#### Tuple dispatch — single tuple
+
+For a one-off query, a single `(origin, destination, date)` tuple is often
+the clearest form:
+
+```julia
+results = search_markets(newssim_path, ("ORD", "LHR", Date(2026, 2, 25)))
+```
+
+This delegates to the kwargs form with a single-market list and the tuple's
+date. The result is still a keyed dict with one entry.
+
+#### Tuple dispatch — vector of tuples (non-cartesian)
+
+A vector of tuples is explicit per-tuple, **not** cartesian'd with a dates
+list. `[(ORD, LHR, Feb25), (EWR, LHR, Feb26)]` produces exactly 2 searches,
+one for each tuple:
+
+```julia
+results = search_markets(newssim_path, [
+    ("ORD", "LHR", Date(2026, 2, 25)),
+    ("EWR", "LHR", Date(2026, 2, 26)),
+])
+# results has exactly 2 keys: ("ORD","LHR",Date(2026,2,25)) and ("EWR","LHR",Date(2026,2,26))
+```
+
+This is the **non-cartesian invariant**: the vector-of-tuples form guarantees
+one search per tuple. Use the kwargs form when you want a cartesian product.
+
+Multi-date vector inputs re-ingest the NewSSIM file once per unique date. For
+performance-sensitive multi-date sweeps prefer `search_schedule`, which keeps
+a single store open across all dates.
+
+### 4.3. `search` — single `(origin, destination, date)`
+
+`search` is the oldest convenience wrapper: build graph, run DFS, return
+`Vector{Itinerary}`. It takes a pre-ingested store (not a path) and is most
+useful for one-off lookups once you already have data loaded.
+
+```julia
+store = DuckDBStore()
+try
+    ingest_newssim!(store, newssim_path)
+    itns = search(store, ("ORD", "LHR", Date(2026, 2, 25)); source = :newssim)
+    length(itns)
+finally
+    close(store)
+end
+```
+
+`search` also accepts `(origin::StationCode, dest::StationCode, date::Date)`
+as three positional arguments, or a `Vector{Tuple{...}}` for a batch with
+one graph-build per unique date.
+
+## 5. Handling Results
+
+Every `search_schedule` / `search_markets` result value is one of:
+
+- `Vector{Itinerary}` — the market was searched successfully
+- `MarketSearchFailure` — the underlying `search_itineraries` call threw an
+  exception; the market was preserved as a sentinel instead of aborting the
+  batch
+
+The `is_failure` predicate and `failed_markets` extractor handle this union
+without pattern matching:
+
+```julia
+results = search_schedule(newssim_path; dates = Date(2026, 2, 25), carriers = ["UA"])
+
+# Partition successes from failures
+fails = failed_markets(results)
+length(fails)                    # 0 on the demo dataset
+
+# Test a single value
+v = results[("ORD", "LHR", Date(2026, 2, 25))]
+is_failure(v)                    # false → v is a Vector{Itinerary}
+```
+
+`MarketSearchFailure` captures the `(market, exception, backtrace, worker_slot,
+elapsed_ms)` so you can triage which market broke and why without replaying
+the search.
+
+## 6. Parallelism
+
+When Julia is launched with more than one thread, `search_schedule` /
+`search_markets` parallelize across markets automatically. Each worker gets
+its own `RuntimeContext` and the shared `FlightGraph` is read-only, so there
+is no lock contention on the hot DFS path.
+
+Start Julia with threads enabled:
+
+```bash
+julia --project=. --threads=auto
+# or pin a specific count:
+julia --project=. --threads=8
+```
+
+To force sequential execution — useful for profiling, debugging, or reproducing
+deterministic error traces — flip `SearchConfig.parallel_markets`:
+
+```julia
+results = search_schedule(newssim_path;
+    dates            = Date(2026, 2, 25),
+    carriers         = ["UA"],
+    parallel_markets = false,
+)
+```
+
+The CLI exposes the same knob as `--no-parallel`. See
+[`config/README.md`](../../config/README.md) for the field reference.
+
+## 7. Configuration
+
+`SearchConfig` is the single configuration struct threaded through every
+search. Defaults are sensible, so `SearchConfig()` works out of the box; most
+users override a handful of fields.
+
+### SearchConfig overview
+
+Three common construction patterns:
+
+```julia
+# Defaults
+config = SearchConfig()
+
+# Keyword overrides
+config = SearchConfig(max_stops = 3, max_elapsed_minutes = 2880)
+
+# From a Dict (e.g. YAML or environment-derived)
+config = SearchConfig(Dict(:max_stops => 3, :interline => "all"))
+```
+
+Or load a full JSON config:
 
 ```julia
 config = load_config("config/defaults.json")
 ```
 
-The tracked `config/defaults.json` is an exhaustive exemplar listing every `SearchConfig` field at its compiled-in default — copy it, delete the sections you don't need, and tweak only the fields you want to override. Missing keys fall back to the struct defaults. See [`config/README.md`](../../config/README.md) for a grouped field reference (store, data, schedule, search, `mct_behaviour`, graph, output, `mct_audit`) and JSON schema.
+The tracked `config/defaults.json` is an exhaustive exemplar listing every
+`SearchConfig` field at its compiled-in default — copy it, delete the sections
+you don't need, and tweak only the fields you want to override. Missing keys
+fall back to the struct defaults. See [`config/README.md`](../../config/README.md)
+for a grouped field reference (store, data, schedule, search, `mct_behaviour`,
+graph, output, `mct_audit`) and JSON schema.
 
-### Alternative: Build from a Dictionary
+### Circuity tiers
 
-If your config arrives as a Julia `Dict` (e.g., from YAML, environment variables, or a caller-built map), pass it straight to the constructor:
-
-```julia
-config = SearchConfig(Dict(:max_stops => 3, :interline => "all"))
-```
-
-Both `String` and `Symbol` keys work. Enum-valued fields (`scope`, `interline`) accept either the canonical enum (`SCOPE_INTL`) or its string form (`"intl"`). Unknown keys throw `ArgumentError`. The same pattern works for `SearchConstraints`, `ParameterSet`, `MarketOverride`, and `MCTAuditConfig`.
-
-### Alternative: NewSSIM CSV Ingest
-
-For denormalized CSV schedule files (comma, pipe, or tab-delimited; .gz supported), use the NewSSIM ingest path:
-
-```julia
-store = DuckDBStore()
-ingest_newssim!(store, "data/demo/sample_newssim.csv.gz")
-ingest_mct!(store, "data/input/MCTIMFILUA.DAT")  # MCT still required
-
-target_date = Date(2026, 6, 15)
-graph = build_graph!(store, config, target_date; source=:newssim)
-```
-
-Or from the CLI:
-
-```bash
-julia --project=. bin/itinsearch.jl --newssim data/demo/sample_newssim.csv.gz \
-    search ORD LHR 2026-06-15
-```
-
-### Alternative: DataFrame Ingest
-
-All ingest functions also accept `AbstractDataFrame` directly, so library users with in-memory data can skip writing to files first:
-
-```julia
-using DataFrames
-
-store = DuckDBStore()
-ingest_newssim!(store, my_schedule_df)          # schedule data
-ingest_mct!(store, my_mct_df)                   # MCT records
-load_airports!(store, my_airports_df)           # station reference
-load_regions!(store, my_regions_df)             # region mappings
-load_aircrafts!(store, my_aircrafts_df)         # aircraft reference
-load_oa_control!(store, my_oa_control_df)       # OA control table
-```
-
-DataFrame column names must match the corresponding DuckDB table schema (column order does not matter). See the docstrings for each function for the expected columns.
-
-## Step 2: Build the Flight Graph
-
-```julia
-target_date = Date(2026, 3, 20)
-graph = build_graph!(store, config, target_date)
-```
-
-`build_graph!` materializes the in-memory network:
-
-- Queries schedule-level legs for the window `(target_date - leading_days)` to `(target_date + trailing_days)` (default: 2 days before, 0 days after)
-- Creates `GraphStation`, `GraphLeg`, and `GraphSegment` nodes
-- Gap-fills missing leg distances from the geodesic formula
-- Materializes the MCT lookup from DuckDB
-- Runs the O(n²) connection builder to create all `GraphConnection` edges
-
-`graph.build_stats` contains instrumentation counts (total stations, legs, segments, connections, build time).
-
-## Step 3: Create the Search Context
-
-```julia
-ctx = RuntimeContext(
-    config      = config,
-    constraints = SearchConstraints(),
-    itn_rules   = build_itn_rules(config),
-)
-```
-
-`RuntimeContext` holds all per-search mutable state: rule chains, great-circle distance cache, search statistics, and the results accumulator. Create one context per search thread.
-
-## Step 3b: Constraints and Circuity Tiers
-
-`SearchConstraints` holds the tunable parameters that shape which connections and itineraries survive the rule chain. Every field has a sensible default, so `SearchConstraints()` works out of the box; the sections below show how to customize it for realistic workloads. The full field list lives on `ParameterSet` (`src/types/constraints.jl`).
-
-### Why circuity is tiered
-
-Circuity is the ratio of *flown* distance to *great-circle* distance — a proxy for how "direct" an itinerary is. Short hops tolerate much higher circuity than long hauls: you'll happily accept a 2.4× detour on a 200-mile regional but not on a transatlantic. `ItinerarySearch` models this as a **distance-tiered ceiling**:
+Circuity is the ratio of _flown_ distance to _great-circle_ distance — a
+proxy for how "direct" an itinerary is. Short hops tolerate much higher
+circuity than long hauls: you'll happily accept a 2.4× detour on a 200-mile
+regional but not on a transatlantic. `ItinerarySearch` models this as a
+**distance-tiered ceiling**:
 
 ```julia
 julia> DEFAULT_CIRCUITY_TIERS
@@ -139,9 +399,9 @@ julia> DEFAULT_CIRCUITY_TIERS
  CircuityTier(Inf, 1.3)      # 2001+      → ≤ 1.3×
 ```
 
-`CircuityTier` is an isbits struct with two `Float64` fields: an inclusive upper-bound distance (miles) and the max circuity factor permitted up to that distance. The lookup is a linear scan — fast, no allocation.
-
-### Where tiers are evaluated
+`CircuityTier` is an isbits struct with two `Float64` fields: an inclusive
+upper-bound distance (miles) and the max circuity factor permitted up to that
+distance. The lookup is a linear scan — fast, no allocation.
 
 Circuity is checked at two layers:
 
@@ -150,7 +410,7 @@ Circuity is checked at two layers:
 | Connection | During `build_connections!` (graph-build time) | `CircuityRule` in `src/graph/rules_cnx.jl` |
 | Itinerary  | During DFS (per candidate path) | `check_itn_circuity_range` in `src/graph/rules_itn.jl` |
 
-The `SearchConfig.circuity_check_scope` field toggles which layers enforce the rule:
+`SearchConfig.circuity_check_scope` toggles which layers enforce the rule:
 
 ```julia
 SearchConfig(circuity_check_scope = :both)         # default
@@ -158,9 +418,8 @@ SearchConfig(circuity_check_scope = :connection)   # prune early, skip itinerary
 SearchConfig(circuity_check_scope = :itinerary)    # defer to full-path check
 ```
 
-The itinerary-level check automatically waives itself for nonstops and 1-stops — for those, the connection-level check already saw the full path.
-
-### Programmatic customization
+The itinerary-level check automatically waives itself for nonstops and
+1-stops — for those, the connection-level check already saw the full path.
 
 Swap the whole tier vector via `ParameterSet(circuity_tiers=...)`:
 
@@ -176,620 +435,252 @@ strict = SearchConstraints(
 )
 ```
 
-`max_circuity` is the global *ceiling* applied after the tier lookup — useful to cap tier outputs without rewriting the tiers themselves. `min_circuity` is the global *floor* (reject too-direct itineraries). `domestic_circuity_extra_miles` and `international_circuity_extra_miles` add flat-mile tolerance to the ceiling (`factor × gc + extra`).
+`max_circuity` is the global _ceiling_ applied after the tier lookup — useful
+to cap tier outputs without rewriting the tiers themselves. `min_circuity`
+is the global _floor_ (reject too-direct itineraries).
+`domestic_circuity_extra_miles` and `international_circuity_extra_miles` add
+flat-mile tolerance to the ceiling (`factor × gc + extra`).
 
-### Market-level overrides
+`SearchConstraints` also holds an `overrides::Vector{MarketOverride}`. When a
+connection or itinerary has a matching market override, its `ParameterSet` is
+used in place of `defaults`. Circuity-resolution is market-only — carrier is
+ignored because circuity is a geographic property. See
+[`docs/reference/pm_constraint_tables.md`](../reference/pm_constraint_tables.md)
+for the full profit-manager file-format reference.
 
-`SearchConstraints` also holds an `overrides::Vector{MarketOverride}`. When a connection or itinerary has a matching market override, its `ParameterSet` is used in place of `defaults`. Circuity-resolution is **market-only** (carrier is ignored — circuity is a geographic property):
+### Schedule window
 
-```julia
-constraints = SearchConstraints(
-    overrides = [
-        MarketOverride(
-            origin      = StationCode("ATL"),
-            destination = StationCode("YYZ"),
-            carrier     = WILDCARD_AIRLINE,
-            params      = ParameterSet(
-                circuity_tiers = [CircuityTier(Inf, 2.7)],  # loosen this market
-            ),
-            specificity = UInt32(1000),
-        ),
-    ],
-)
-```
+The schedule window is the range of operating dates the graph materializes.
+It is controlled by two `SearchConfig` fields:
 
-Overrides are scanned in descending `specificity`; the first match wins. Both the connection-level and itinerary-level rules resolve extra_miles, tiers, and ceiling from the matched `ParameterSet`, so a market override that tunes `domestic_circuity_extra_miles` flows through both layers identically.
+- `leading_days::Int = 2` — how many operating days before the target date
+  are included in the graph. Needed so that connections beginning the night
+  before can still feed the target-day search.
+- `trailing_days::Int = 0` — how many operating days after the target date
+  are included. Needed for multi-day itineraries that cross midnight.
 
-### CSV loaders (profit-manager file format)
-
-Production workloads typically ship tier defaults and market overrides as CSV. `ItinerarySearch` reads both formats directly:
-
-```
-data/demo/cirOvrdDflt.dat        (tier defaults)
-    HIGH,CIRCUITY
-    250,2.4
-    800,1.9
-    2000,1.5
-    99999,1.3
-
-data/demo/cirOvrd.dat            (market overrides)
-    ORG,DEST,ENTNM,CRTY
-    ATL,YYZ,*,2.7
-    ATL,IAH,*,1.75
-    ORD,PHX,*,1.44
-```
-
-Load them into a `SearchConstraints`:
+For a single-date search on `Date(2026, 2, 25)` with defaults, the graph
+covers `Date(2026, 2, 23)` through `Date(2026, 2, 25)`. Widen the window when
+you need multi-day itineraries or when your sweep includes adjacent dates:
 
 ```julia
-constraints = SearchConstraints()
-apply_circuity_files!(constraints;
-    defaults_path  = "data/demo/cirOvrdDflt.dat",
-    overrides_path = "data/demo/cirOvrd.dat",
-)
-
-ctx = RuntimeContext(
-    config      = config,
-    constraints = constraints,
-    itn_rules   = build_itn_rules(config),
-)
+config = SearchConfig(leading_days = 2, trailing_days = 3)
 ```
 
-`apply_circuity_files!` returns a new `SearchConstraints` with the tier list applied to `defaults.circuity_tiers` and one `MarketOverride` per overrides row. The individual loaders `load_circuity_tiers` and `load_circuity_overrides` are also exported if you want to compose them manually.
+When sweeping several consecutive dates, `build_graph_for_window` (Advanced
+section) replaces N per-date `build_graph!` calls with a single wide build.
 
-The full profit-manager file-format reference (including related tables like
-`maxCnctTm.dat`, `cnctFlags.dat`, and entity/alliance mappings) lives in
-[`docs/reference/pm_constraint_tables.md`](../reference/pm_constraint_tables.md).
+## 8. Observability (brief)
 
-## Step 4: Search
-
-### Single O-D Pair
-
-`itinerary_legs` returns a `Vector{ItineraryRef}` sorted by stops, then elapsed time, then distance. Duplicates (same leg sequence on multiple dates) are removed.
+Every high-level search emits OpenTelemetry-shaped `SpanEvent`s as it runs.
+Pass one or more functions via the `event_sinks` keyword to receive them:
 
 ```julia
-refs = itinerary_legs(
-    graph.stations,
-    StationCode("ORD"),
-    StationCode("LHR"),
-    target_date,
-    ctx,
-)
-println("Found $(length(refs)) itineraries")
-
-for (i, ref) in enumerate(refs[1:min(5, length(refs))])
-    println("  $i. $(route_str(ref)) — $(ref.num_stops) stops, $(ref.elapsed_minutes) min")
+events = ItinerarySearch.SpanEvent[]
+event_lock = ReentrantLock()
+collector = function(ev::ItinerarySearch.SpanEvent)
+    lock(event_lock) do
+        push!(events, ev)
+    end
+    return nothing
 end
-```
 
-Each `ItineraryRef` contains:
-
-| Field / Accessor | Description |
-|-------|-------------|
-| `legs` | `Vector{LegKey}` — ordered leg references (each LegKey carries `operating_date` and `departure_time`) |
-| `num_stops` | Number of intermediate stops (0 = nonstop) |
-| `elapsed_minutes` | Total elapsed time (minutes, UTC-corrected) |
-| `flight_minutes` | Total in-flight block time (minutes) |
-| `layover_minutes` | Total ground time at connect points (minutes) |
-| `distance_miles` | Total flown distance (statute miles) |
-| `circuity` | Ratio of flown distance to great-circle distance |
-| `flights_str(ref)` | Human-readable flight chain, e.g., `"UA 920"` or `"UA4247 -> UA 284"` |
-| `route_str(ref)` | Station chain, e.g., `"ORD -> LHR"` or `"ORD -> EWR -> LHR"` |
-| `origin(ref)` | Origin station code (first leg's org) |
-| `destination(ref)` | Destination station code (last leg's dst) |
-
-### Multiple O-D Pairs (Keyword Interface)
-
-`itinerary_legs_multi` accepts single values or vectors for origins, destinations, and dates.
-
-```julia
-# Specific O-D pairs — paired by default (ORD→LHR, DEN→LAX)
-result = itinerary_legs_multi(graph.stations, ctx;
-    origins      = ["ORD", "DEN"],
-    destinations = ["LHR", "LAX"],
-    dates        = target_date,
+results = search_schedule(newssim_path;
+    dates       = Date(2026, 2, 25),
+    carriers    = ["UA"],
+    event_sinks = Function[collector],
 )
 
-# Access by date → origin → destination
-refs_ord_lhr = result[target_date]["ORD"]["LHR"]
-
-# Cross-product: every origin × every destination
-result = itinerary_legs_multi(graph.stations, ctx;
-    origins      = ["ORD", "DEN"],
-    destinations = ["LHR", "LAX"],
-    dates        = target_date,
-    cross        = true,
-)
+length(events)           # start + end for each span emitted during the sweep
+events[1].name           # :search_schedule (root span)
 ```
 
-### All Destinations from a Station
+`SpanEvent` fields: `kind` (`:start` | `:end`), `name`, `trace_id`, `span_id`,
+`parent_span_id`, `unix_nano`, `worker_slot`, `status`, and a free-form
+`attributes::Dict{Symbol,Any}`. Root-span attributes include
+`:universe_mode`, which takes one of three values:
 
-Omit `destinations` (or pass `nothing`) to search all reachable stations:
+- `:direct` — path/store form with `universe=:direct`
+- `:connected` — path/store form with `universe=:connected`
+- `:prebuilt` — graph form (`search_schedule(graph, universe)`)
 
-```julia
-result = itinerary_legs_multi(graph.stations, ctx;
-    origins = "ORD",
-    dates   = target_date,
-)
-# result[target_date]["ORD"] contains all reachable destinations from ORD
-```
+The schema is OTel-ready; an OTLP/HTTP exporter is on the roadmap. For now,
+the `event_sinks` hook is the integration point — wire it to your own
+collector, metrics backend, or file sink.
 
-### Multiple Dates
+## 9. Advanced / Low-Level
 
-```julia
-result = itinerary_legs_multi(graph.stations, ctx;
-    origins      = "ORD",
-    destinations = "LHR",
-    dates        = [Date(2026, 3, 20), Date(2026, 3, 21), Date(2026, 3, 22)],
-)
-# result[Date(2026, 3, 20)]["ORD"]["LHR"]  → itineraries for March 20
-# result[Date(2026, 3, 21)]["ORD"]["LHR"]  → itineraries for March 21
-```
+This section documents the primitives the high-level APIs compose. Reach for
+them when you need per-search fine-grained control, are writing benchmarks,
+or are extending the pipeline.
 
-### JSON Output
+### `search_itineraries` — the DFS primitive
 
-`itinerary_legs_json` returns a JSON string keyed by date → origin → destination. The default (full) format includes the complete `legs` array per itinerary. The compact format includes only summary fields.
+`search_itineraries` is the low-level depth-first search that underlies every
+other API in this package. It operates on a materialized graph and a
+`RuntimeContext`, and does **not** copy its results — it returns
+`ctx.results` by reference, which is reused on the next search.
 
-```julia
-# Full JSON with leg arrays
-json = itinerary_legs_json(graph.stations, ctx;
-    origins      = ["ORD", "DEN"],
-    destinations = ["LHR", "SFO"],
-    dates        = target_date,
-)
-write("data/output/itineraries_$(target_date).json", json)
-
-# Compact JSON (no leg arrays — faster, smaller)
-compact_json = itinerary_legs_json(graph.stations, ctx;
-    origins  = "ORD",
-    dates    = target_date,
-    compact  = true,
-)
-```
-
-JSON structure:
-
-```json
-{
-  "2026-03-20": {
-    "ORD": {
-      "LHR": [
-        {
-          "flights": "UA 920",
-          "route": "ORD -> LHR",
-          "origin": "ORD",
-          "destination": "LHR",
-          "stops": ["ORD", "LHR"],
-          "num_stops": 0,
-          "elapsed_minutes": 480,
-          "flight_minutes": 465,
-          "layover_minutes": 0,
-          "distance_miles": 3958.0,
-          "circuity": 1.0,
-          "legs": [
-            {
-              "row_number": 8234,
-              "carrier": "UA",
-              "flight_number": 920,
-              "departure_station": "ORD",
-              "arrival_station": "LHR"
-            }
-          ]
-        }
-      ]
-    }
-  }
-}
-```
-
-## Step 5: Resolve LegKey Back to Full Records
-
-`LegKey` is a compact cross-reference. Use `resolve_leg` to recover the full `LegRecord` or `GraphLeg`:
-
-```julia
-ref = refs[1]
-key = ref.legs[1]
-
-# Resolve to GraphLeg (requires graph in memory)
-graph_leg = resolve_leg(key, graph)
-println(graph_leg.record.passenger_departure_time)   # scheduled departure (minutes since midnight)
-
-# Resolve to LegRecord from DuckDB (works without graph)
-leg_record = resolve_leg(key, store)
-println(leg_record.aircraft_type)    # equipment type
-
-# Resolve all legs in an ItineraryRef
-all_legs = resolve_legs(ref, graph)   # Vector{Union{GraphLeg, Nothing}}
-all_records = resolve_legs(ref, store) # Vector{Union{LegRecord, Nothing}}
-```
-
-## Step 6: DataFrame and Tabular Output
-
-Before dropping to hand-rolled CSV, you probably want the `DataFrame` wrappers — they go straight to any Tables.jl sink (DataFrames, CSV.jl, Arrow.jl, Parquet) and preserve the full schedule-level detail plus the MCT audit trail.
+Callers **must** `copy()` the returned vector before issuing another search
+on the same context, or they will observe aliasing.
 
 ```julia
 using DataFrames
 
-itineraries = copy(search_itineraries(
-    graph.stations,
-    StationCode("ORD"),
-    StationCode("LHR"),
-    target_date,
-    ctx,
-))
+store = DuckDBStore()
+ingest_newssim!(store, newssim_path)
 
-# One row per leg per itinerary — tidy / long format.  Contains the MCT
-# audit columns (`mct_matched_id`, `mct_matched_fields`) for connecting legs.
-legs_df = itinerary_legs_df(itineraries)
-# 2×N DataFrame with schedule + audit columns
+target_date = Date(2026, 2, 25)
+config      = SearchConfig()
+graph       = build_graph!(store, config, target_date; source = :newssim)
 
-# One row per itinerary — summary format with joined flight-id and
-# record-serial strings, plus itinerary-level totals and geo counts.
-summary_df = itinerary_summary_df(itineraries)
-
-# One row per itinerary with legN_* / cnxN_* column blocks — wide pivot
-# useful for side-by-side comparison in spreadsheets or BI tools.  The
-# `max_legs` keyword pins the schema; itineraries with more legs than
-# this throw ArgumentError rather than silently truncating.
-pivot_df = itinerary_pivot_df(itineraries; max_legs=3)
-```
-
-The underlying `itinerary_long_format` and `itinerary_wide_format` functions return `Vector{NamedTuple}` — if you don't want the DataFrame dependency, these still satisfy the Tables.jl protocol and work with CSV.jl, Arrow.jl, and friends directly. See [API: Output](api/output.md) for the full column reference including the MCT audit fields.
-
-## Step 6b: Write CSV Files (traditional path)
-
-When you want the canonical CSV format with every schedule-level field or when you need passthrough columns from the original ingested data:
-
-```julia
-outdir = "data/output/legs_index"
-mkpath(outdir)
-
-result = itinerary_legs_multi(graph.stations, ctx;
-    origins      = ["ORD", "DEN", "IAH"],
-    destinations = ["LHR", "SFO", "LAX"],
-    dates        = target_date,
-)
-
-for (date, org_dict) in result
-    for (org, dst_dict) in org_dict
-        for (dst, itinerary_refs) in dst_dict
-            fname = joinpath(outdir, "$(org)_$(dst)_$(date).csv")
-            open(fname, "w") do io
-                println(io, "itinerary,leg_pos,row_number,record_serial,carrier,flight_number,departure_station,arrival_station")
-                for (itn_idx, ref) in enumerate(itinerary_refs)
-                    for (leg_pos, key) in enumerate(ref.legs)
-                        println(io, join([
-                            itn_idx, leg_pos,
-                            key.row_number, key.record_serial,
-                            strip(String(key.carrier)), key.flight_number,
-                            strip(String(key.departure_station)), strip(String(key.arrival_station)),
-                        ], ","))
-                    end
-                end
-            end
-        end
-    end
-end
-```
-
-Alternatively, use `write_legs` and `write_itineraries` for the full CSV format with all schedule fields:
-
-```julia
-open("data/output/legs_$(target_date).csv", "w") do io
-    n = write_legs(io, graph, target_date)
-    println("Wrote $n legs")
-end
-
-itineraries = copy(search_itineraries(
-    graph.stations,
-    StationCode("ORD"),
-    StationCode("LHR"),
-    target_date,
-    ctx,
-))
-
-open("data/output/itineraries_ord_lhr.csv", "w") do io
-    n = write_itineraries(io, itineraries, graph, target_date)
-    println("Wrote $n rows")
-end
-```
-
-**Passthrough columns**: `write_itineraries` (and `write_legs`, `write_trips`) accept `store::DuckDBStore` and `passthrough_columns::Vector{String}` keyword arguments that append arbitrary columns from the original ingested schedule table — `prbd`, `DEI_127`, anything in the source CSV that isn't among the canonical columns. One batched SQL query; empty vector (default) takes a fast path with no store access. See [API: Output — Passthrough Columns](api/output.md) for details.
-
-## Step 7: Trip Search
-
-`search_trip` pairs multiple one-way itineraries into a multi-leg trip (e.g., round-trip), applies temporal pairing constraints, scores the combinations, and returns a ranked list.
-
-```julia
-legs = [
-    TripLeg(
-        origin      = StationCode("ORD"),
-        destination = StationCode("LHR"),
-        date        = Date(2026, 3, 20),
-    ),
-    TripLeg(
-        origin      = StationCode("LHR"),
-        destination = StationCode("ORD"),
-        date        = Date(2026, 3, 27),
-        min_stay    = 1440,   # at least 24 hours between arrival and next departure
-    ),
-]
-
-trips = search_trip(store, graph, legs, ctx;
-    weights     = TripScoringWeights(),
-    max_per_leg = 100,
-    max_trips   = 1000,
-)
-
-println("Found $(length(trips)) trips")
-if !isempty(trips)
-    best = trips[1]
-    println("Best: score=$(round(best.score; digits=1)), $(best.trip_type), $(best.total_elapsed) min")
-end
-```
-
-`TripScoringWeights` controls the relative importance of each criterion (all minimized, lower score = better):
-
-| Weight field | Default | Criterion |
-|-------------|---------|-----------|
-| `stops` | 10.0 | Total intermediate stops across all legs |
-| `eqp_changes` | 5.0 | Number of equipment type changes |
-| `carrier_changes` | 5.0 | Number of marketing carrier changes |
-| `flt_no_changes` | 2.0 | Number of flight number changes |
-| `elapsed` | 1.0 | Total elapsed time (hours) |
-| `block_time` | 0.5 | Total in-flight block time (hours) |
-| `layover` | 0.5 | Total layover / connection time (hours) |
-| `distance` | 0.1 | Total flown distance (thousands of miles) |
-| `circuity` | 3.0 | Average circuity excess above 1.0 |
-
-Write trip results:
-
-```julia
-open("data/output/trips_ord_lhr.csv", "w") do io
-    n = write_trips(io, trips, graph, Date(2026, 3, 20))
-    println("Wrote $n rows")
-end
-```
-
-## Step 8: Visualizations
-
-All three visualization functions write self-contained HTML files that open directly in a browser.
-
-### Network Map
-
-Renders station markers (sized by departure count) and leg arcs for an operating date. Pass itineraries to highlight specific paths as thick colored arcs.
-
-```julia
-viz_network_map(
-    "data/viz/network_$(target_date).html",
-    graph,
-    target_date;
-    itineraries = itineraries[1:min(5, length(itineraries))],
-    map_mode    = :leaflet,   # or :offline for no tile dependency
-)
-```
-
-### Itinerary Timeline
-
-Gantt-style view of legs plotted in UTC minutes. Connection gaps appear as dashed rectangles; legs are colored by airline.
-
-```julia
-viz_timeline(
-    "data/viz/timeline_ord_lhr.html",
-    itineraries;
-    max_display = 30,
-)
-```
-
-### Trip Comparison
-
-Stacked horizontal bar chart showing the weighted contribution of each scoring criterion per trip. Useful for understanding why one trip ranks above another.
-
-```julia
-viz_trip_comparison(
-    "data/viz/trips_comparison.html",
-    trips;
-    weights = TripScoringWeights(),
-    top_n   = 10,
-)
-```
-
-## Step 9: Observability
-
-### Structured JSON Logging (DynaTrace-Compatible)
-
-Enable DynaTrace-compatible JSON logging by setting `log_json_path`:
-
-```julia
-config = SearchConfig(
-    log_json_path = "data/output/app.log",  # JSON log file
-    log_level     = :debug,                  # :debug, :info, :warn, :error
-)
-graph = build_graph!(store, config, target_date)
-```
-
-Every `@info`, `@debug`, `@warn`, and `@error` message is written as a JSON line:
-
-```json
-{"timestamp":"2026-03-23T14:30:00.123Z","severity":"INFO","content":"Built connections","service.name":"ItinerarySearch","attributes":{"total":1234}}
-```
-
-For container deployments, also send JSON to stdout:
-
-```julia
-config = SearchConfig(log_stdout_json = true)
-```
-
-The log level can also be set via environment variable (takes precedence over config):
-
-```bash
-ITINERARY_SEARCH_LOG_LEVEL=debug julia --project=. scripts/demo.jl
-```
-
-### Event Log (Typed Telemetry)
-
-Enable the structured event log for phase timing and system metrics:
-
-```julia
-config = SearchConfig(
-    event_log_enabled = true,
-    event_log_path    = "data/output/events.jsonl",
-)
-graph = build_graph!(store, config, target_date)
-```
-
-The event log captures `PhaseEvent` (start/end of ingest, MCT materialization, connection build), `SystemMetricsEvent` (memory, GC stats), and `BuildSnapshotEvent` (connection build stats) as typed JSONL records.
-
-## Step 10: CLI
-
-The CLI wraps the entire pipeline in a single command:
-
-```bash
-# Search itineraries
-julia --project=. bin/itinsearch.jl search ORD LHR 2026-03-20
-
-# Multiple ODs, multiple dates
-julia --project=. bin/itinsearch.jl search ORD,DEN LHR,LAX 2026-03-20 2026-03-21
-
-# Round-trip search with scoring
-julia --project=. bin/itinsearch.jl trip ORD LHR 2026-03-20 LHR ORD 2026-03-27 --min-stay 720
-
-# Build graph only (warmup/validation)
-julia --project=. bin/itinsearch.jl build --date 2026-03-20
-
-# Show table stats
-julia --project=. bin/itinsearch.jl info
-
-# With parameter overrides
-julia --project=. bin/itinsearch.jl search ORD LHR 2026-03-20 \
-    --max-stops 3 --scope intl --compact --output results.json
-```
-
-Global flags: `--config`, `--log-level`, `--log-json`, `--quiet`, `--compact`, `--output`.
-
-## Step 11: REST API Server
-
-Start the service:
-
-```bash
-julia --project=. bin/itinsearch.jl serve --date 2026-03-20 --port 8080
-# or: make serve DATE=2026-03-20
-```
-
-The server loads the schedule, builds the graph once, then serves requests concurrently. Each request gets its own `RuntimeContext`; the shared graph is read-only.
-
-### Search
-
-```bash
-curl -X POST http://localhost:8080/search \
-  -H "Content-Type: application/json" \
-  -d '{
-    "origins": ["ORD"],
-    "destinations": ["LHR"],
-    "dates": ["2026-03-20"],
-    "max_stops": 2,
-    "compact": true
-  }'
-```
-
-Response: `{"status":"ok","data":{...}}` — same nested structure as `itinerary_legs_json`.
-
-### Trip Search
-
-```bash
-curl -X POST http://localhost:8080/trip \
-  -H "Content-Type: application/json" \
-  -d '{
-    "legs": [
-      {"origin":"ORD","destination":"LHR","date":"2026-03-20"},
-      {"origin":"LHR","destination":"ORD","date":"2026-03-27","min_stay":720}
-    ],
-    "max_trips": 50
-  }'
-```
-
-### Other Endpoints
-
-```bash
-# Station info
-curl http://localhost:8080/station/ORD
-
-# Server health
-curl http://localhost:8080/health
-
-# Refresh graph (rebuild in background)
-curl -X POST http://localhost:8080/rebuild
-curl -X POST http://localhost:8080/rebuild -d '{"date":"2026-03-21"}'
-```
-
-### Per-Request Constraint Overrides
-
-The `/search` endpoint accepts optional constraint fields in the request body:
-
-| Field | Default | Maps to |
-|-------|---------|---------|
-| `max_stops` | 2 | `ParameterSet.max_stops` |
-| `max_elapsed` | 1440 | `ParameterSet.max_elapsed` |
-| `max_connection` | 480 | `ParameterSet.max_mct_override` |
-
-Circuity is controlled via `SearchConstraints` (see Step 3b) rather than
-per-request overrides; reload the server with different constraints if
-you need to tune tiers or add market-level overrides.
-
-## Step 12: Compilation
-
-### Sysimage (fast startup, ~0ms load)
-
-```bash
-make sysimage
-julia --sysimage=build/ItinerarySearch.so --project=. bin/itinsearch.jl search ORD LHR 2026-03-20
-```
-
-The sysimage exercises the full pipeline during build, compiling all code paths to native code. Module load drops from ~400ms to 0ms.
-
-### Standalone App
-
-```bash
-make app
-build/app/bin/itinsearch search ORD LHR 2026-03-20
-```
-
-Produces a distributable directory with all dependencies bundled. No Julia installation required on the target machine.
-
-## Complete Example Script
-
-```julia
-using ItinerarySearch
-using Dates
-
-# Load
-config = SearchConfig()
-store  = DuckDBStore()
-load_schedule!(store, config)
-
-# Build graph
-target = Date(2026, 3, 20)
-graph  = build_graph!(store, config, target)
-
-# Search context
 ctx = RuntimeContext(
     config      = config,
     constraints = SearchConstraints(),
     itn_rules   = build_itn_rules(config),
 )
 
-# Search all destinations from ORD and DEN, write JSON
-json = itinerary_legs_json(graph.stations, ctx;
-    origins = ["ORD", "DEN"],
-    dates   = target,
-)
-mkpath("data/output")
-write("data/output/all_itineraries_$(target).json", json)
-println("Written $(length(json)) bytes")
-
-# Visualize the network
-viz_network_map("data/viz/network_$(target).html", graph, target)
-println("Network map written")
+itineraries = copy(search_itineraries(
+    graph.stations,
+    StationCode("ORD"),
+    StationCode("LHR"),
+    target_date,
+    ctx,
+))
 
 close(store)
 ```
+
+The DataFrame wrappers consume this same `Vector{Itinerary}` directly:
+
+```julia
+# One row per leg per itinerary — tidy/long format with MCT audit columns
+legs_df    = itinerary_legs_df(itineraries)
+
+# One row per itinerary — summary totals and joined flight-id strings
+summary_df = itinerary_summary_df(itineraries)
+
+# Wide pivot: legN_*/cnxN_* columns, side-by-side comparable
+pivot_df   = itinerary_pivot_df(itineraries; max_legs = 3)
+```
+
+See [API: Output](api/output.md) for the full column reference.
+
+### `build_graph!` — manual graph build
+
+`build_graph!` materializes the full in-memory network for a single target
+date. Use it when you want direct control over graph lifetime (e.g. reuse one
+graph across many searches):
+
+```julia
+store = DuckDBStore()
+ingest_newssim!(store, newssim_path)
+
+graph = build_graph!(store, SearchConfig(), Date(2026, 2, 25); source = :newssim)
+graph.build_stats                # instrumentation counts
+
+close(store)
+```
+
+`build_graph!` queries schedule-level legs for the window
+`(target - leading_days)` to `(target + trailing_days)`, gap-fills missing
+leg distances from the geodesic formula, materializes the MCT lookup, and
+runs the O(n²) connection builder. `graph.build_stats` contains station,
+leg, segment, connection counts and build time.
+
+### <a name="build_graph_for_window"></a>`build_graph_for_window` — multi-date amortization
+
+When sweeping several consecutive target dates, building a graph per date
+repeats a lot of work. `build_graph_for_window` widens the window to cover
+every date in one go:
+
+```julia
+store = DuckDBStore()
+ingest_newssim!(store, newssim_path)
+
+dates = [Date(2026, 2, 25), Date(2026, 2, 26), Date(2026, 2, 27)]
+graph = build_graph_for_window(store, SearchConfig(), dates)
+
+# Now feed a pre-computed universe straight to search_schedule(graph, universe):
+universe_tuples = Tuple{String,String,Date}[]
+for date in dates
+    u = ItinerarySearch._universe_from_carriers_direct(store, date, ["UA"], false)
+    append!(universe_tuples, u.tuples)
+end
+universe = MarketUniverse(universe_tuples)
+results  = search_schedule(graph, universe)
+
+close(store)
+```
+
+The wide-window graph is the basis of the pure-search benchmarks — ingest
+and build are paid up front so the search-only phase can be measured in
+isolation.
+
+### `RuntimeContext` — per-search mutable state
+
+`RuntimeContext` holds the rule chain, great-circle distance cache, search
+statistics, and results buffer. Create one per search thread. The high-level
+APIs construct contexts for you; reach for the direct constructor only when
+driving `search_itineraries` manually:
+
+```julia
+ctx = RuntimeContext(
+    config      = SearchConfig(),
+    constraints = SearchConstraints(),
+    itn_rules   = build_itn_rules(SearchConfig()),
+)
+```
+
+### Rule chain overview
+
+Connection and itinerary rules are `Vector{Function}`. Each rule returns
+`Int` (positive = pass, 0/negative = fail with reason code). Rules are
+enabled or disabled by including them in (or excluding them from) the chain.
+`build_itn_rules(config)` constructs the itinerary rule chain from a
+`SearchConfig`; connection rules are wired in during `build_connections!`.
+
+This design keeps the hot path branch-light — each rule is a concrete
+function, the chain is iterated once per candidate, and failures short-circuit
+immediately. To add a new rule, write a function matching the rule signature,
+append it to the chain, and the DFS picks it up with no other changes.
+
+### Per-leg passthrough columns (output)
+
+`write_legs`, `write_itineraries`, and `write_trips` accept a `store::DuckDBStore`
+and a `passthrough_columns::Vector{String}` keyword argument that appends
+arbitrary columns from the original ingested schedule table — `prbd`,
+`DEI_127`, anything in the source CSV that isn't among the canonical columns.
+A single batched SQL query fetches all passthrough values; the empty-vector
+default takes a fast path with no store access. See
+[API: Output — Passthrough Columns](api/output.md) for details.
+
+## 10. Reference Data Files
+
+The canonical reference files the demo uses live under `data/demo/`:
+
+| File | Purpose |
+|---|---|
+| `sample_newssim.csv.gz` | NewSSIM denormalized schedule (carrier, flight, O-D, times, aircraft, distance) |
+| `ssim_demo.dat` | SSIM fixed-width schedule (alternative ingest path) |
+| `mct_demo.dat` | Minimum Connecting Time records |
+| `airports.txt` | Airport metadata (timezone offsets, country, region codes) |
+| `regions.dat` | Region hierarchy |
+| `aircraft.txt` | Aircraft type codes |
+| `cirOvrdDflt.dat` | Circuity tier defaults (`HIGH,CIRCUITY` rows) |
+| `cirOvrd.dat` | Per-market circuity overrides (`ORG,DEST,ENTNM,CRTY` rows) |
+| `maxCnctTm.dat` / `maxCnctTmDflt.dat` | Maximum connection time tables |
+| `cnctFlags.dat` | Connection flags |
+| `mktFlags.dat` | Market-level flag overrides |
+| `alliance.dat`, `alliancePref.dat`, `alnCtry.dat` | Alliance metadata |
+| `entList.dat` | Entity / carrier alias mappings |
+| `ItinLvlCnstExc.dat`, `RgnLvlCnstExc.dat` | Itinerary- and region-level constraint exceptions |
+
+For real workloads, point `SearchConfig` at your production files via the
+`store`, `data`, and related keyword groups. `config/defaults.json` documents
+every option; the loaders under `src/ingest/` and `src/store/` accept both
+file paths and in-memory `DataFrame`s.
+
+See the [Architecture](architecture.md) page for the full pipeline overview
+and [`docs/reference/pm_constraint_tables.md`](../reference/pm_constraint_tables.md)
+for the profit-manager file-format reference.

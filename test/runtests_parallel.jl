@@ -78,6 +78,7 @@ const TEST_FILES_FULL = [
     "test_dispatcher_prebuilt_graph.jl",        # ~varies — prebuilt_graph param + store=nothing path
     "test_search_schedule_graph_form.jl",       # ~varies — search_schedule(graph, universe) overload
     "test_build_graph_for_window.jl",           # ~varies — build_graph_for_window helper
+    "test_getting_started_examples.jl",         # ~varies — smoke tests for tutorial + README examples
 ]
 
 # Apply the static-analysis env filters.

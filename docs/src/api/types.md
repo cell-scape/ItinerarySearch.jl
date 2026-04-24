@@ -117,3 +117,22 @@ full_id
 nonstop_connection
 resolve_params
 ```
+
+## Search Results
+
+```@docs
+MarketUniverse
+MarketSearchFailure
+is_failure
+failed_markets
+```
+
+## Observability
+
+Span and trace primitives emitted during searches. See the "Observability"
+section of `docs/src/getting-started.md` for a walkthrough.
+
+```@docs
+SpanEvent
+TraceContext
+```
