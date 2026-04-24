@@ -6,6 +6,24 @@
 > Open them in VS Code (Draw.io Integration extension) or at
 > [app.diagrams.net](https://app.diagrams.net).
 
+## Module Structure
+
+The main module (`src/ItinerarySearch.jl`) includes source files in dependency order across these subdirectories:
+
+- **`src/types/`** — Core type definitions: `InlineString`-based domain aliases (`StationCode`, `AirlineCode`, `FlightNumber`), `CEnum.@cenum` types (`Cabin`, `TrafficRestrictionCode`, `CnxType`), and graph-layer structs.
+- **`src/ingest/`** — Streaming parsers for SSIM fixed-width files, MCT data, and reference tables (airports, regions, aircraft). Also `newssim.jl` (CSV ingest via `ingest_newssim!`) and `newssim_materialize.jl` (materializes NewSSIM data into graph-ready leg records).
+- **`src/store/`** — `DuckDBStore` singleton for ingest and query of all tables. SQL post-ingest pipeline (join, enrich, filter). Persistence to `.duckdb` file optional.
+- **`src/graph/`** — `FlightGraph` struct, `build_graph!`, `build_connections!`, and the `search_itineraries` DFS engine. Connection rule chain and itinerary rule chain live here.
+- **`src/search/`** — Universe-enumeration strategies (`_universe_from_carriers_direct` via SQL, `_universe_from_carriers_connected` via BFS on the connection graph) that feed `search_schedule` — the carrier-scoped schedule-wide sweep with two universe modes (`:direct` fast, `:connected` wider-net) and an optional `sink::Function` callback for streaming results.
+- **`src/output/`** — Post-processing: `itinerary_legs*`, `write_legs`, `write_trips`, long/wide format Tables.jl views, HTML visualizations.
+- **`src/audit/`** — MCT audit tooling: misconnect replay, interactive inspector, audit logging.
+- **`src/observe/`** — Structured logging setup, `EventLog`, `SpanEvent` / `TraceContext` for OpenTelemetry-ready observability.
+- **`src/api/`** — High-level `SearchConfig` (JSON-configurable parameters) and `ParameterSet`.
+- **`src/cli.jl`** — ArgParse.jl command interface (6 commands). PackageCompiler-ready entry point.
+- **`src/server.jl`** — HTTP.jl REST service with atomic graph-swap and per-request context isolation.
+
+---
+
 ## Data Pipeline
 
 The system transforms raw airline schedule files into searchable itineraries through a five-stage pipeline:
@@ -136,6 +154,20 @@ The `CLI` submodule (`src/cli.jl`) wraps the pipeline in an ArgParse.jl command 
 The `Server` submodule (`src/server.jl`) wraps the pipeline in an HTTP.jl service. A `ServerState` mutable struct holds the shared `FlightGraph`, `DuckDBStore`, `SearchConfig`, and synchronization primitives (`ReentrantLock` for graph swap, `Atomic{Bool}` for rebuild guard). The graph is built once at startup and shared read-only across concurrent request threads. Each request handler snapshots the graph reference under the lock (microsecond hold), creates a per-request `RuntimeContext`, executes the search, and returns JSON. `POST /rebuild` triggers a background `build_graph!` that atomically swaps the graph when complete — in-flight requests continue using their pre-swap snapshot. Five endpoints: `/search`, `/trip`, `/station/:code`, `/health`, `/rebuild`. The `/rebuild` endpoint accepts an optional `"source"` field (`"newssim"`) to rebuild from the CSV pipeline.
 
 **PackageCompiler** — `build/build.jl` supports sysimage mode (0ms module load, ~236MB `.so`) and standalone app mode. A dedicated `build/precompile_workload.jl` runs the full pipeline (ingest, graph build, search, JSON output) with synthetic data, capturing all method specializations without requiring test-only dependencies.
+
+### Parallelism
+
+Per-market search parallelism is enabled by default (`SearchConfig.parallel_markets = true`) and activates when Julia is started with `JULIA_NUM_THREADS > 1`.
+
+**Worker pool pattern** — `_search_markets_parallel_all_dates` builds a `Channel`-backed pool of `N = Threads.nthreads()` `RuntimeContext` instances (one per slot, 1..N). Each per-market `Threads.@spawn` task `take!`s a context, runs `search_itineraries`, and `put!`s it back in a `finally` block — so the pool does not deadlock when a market throws. The graph is built once per date outside the task spawns and shared read-only across all workers.
+
+**Worker identity** — Each context carries its own `worker_slot::Int` (the pool index, 1..N). This value is stable under Julia task migration (unlike `Threads.threadid()` which can change between yield points since Julia 1.7+). `worker_slot` is included in every `SpanEvent` and `MarketSearchFailure` for triage without re-running the search.
+
+**Failure isolation** — a single bad market does not kill the batch. The per-market `try/catch` in `_run_one_market!` converts exceptions into a `MarketSearchFailure` sentinel (carrying the exception, backtrace, worker slot, and elapsed ms) written to the shared results dict under `results_lock`. Other markets continue normally. Callers use `is_failure(v)` or `failed_markets(dict)` to filter results.
+
+**CLI** — the `--no-parallel` flag sets `parallel_markets = false`, forcing sequential execution regardless of `nthreads()`.
+
+**Observability** — each worker's market search emits `:start` / `:end` `SpanEvent`s parented under the root `:search_schedule` (or `:search_markets`) span. Events carry `trace_id`, `span_id`, `worker_slot`, `unix_nano`, and a status (`:ok` or `:error`). The schema is OpenTelemetry-ready; an OTLP/HTTP exporter is tracked as a deferred follow-on.
 
 ---
 
