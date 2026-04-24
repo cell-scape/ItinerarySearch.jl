@@ -70,6 +70,7 @@ The tunable knobs for what counts as a valid connection or itinerary.
 | `maft_enabled` | `true` | Enables the MAFT (Maximum Allowable Flying Time) rule, which caps total block time against a distance-based formula with a per-stop allowance. |
 | `interline_dcnx_enabled` | `true` | Enables the interline-double-connect restriction — blocks itineraries with two interline connections in a row. |
 | `crs_cnx_enabled` | `true` | Enables the CRS distance-based max-connection-time rule (stricter than `max_connection_minutes` for short-haul pairs). |
+| `parallel_markets` | `true` | Run per-market searches concurrently across `Threads.nthreads()` workers. Set to `false` to force sequential execution (useful for deterministic benchmarks or debugging). Falls back to sequential automatically when `nthreads() == 1`. |
 
 ### `mct_behaviour` — MCT lookup behaviour
 
