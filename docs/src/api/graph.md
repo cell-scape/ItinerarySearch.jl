@@ -4,6 +4,7 @@
 
 ```@docs
 build_graph!
+build_graph_for_window
 build_connections!
 build_connections_at_station!
 ```
@@ -95,16 +96,16 @@ check_itn_interline_dcnx
 check_itn_crs_cnx
 ```
 
-## DFS Search
+## Search
+
+The search family has several entry points, ordered from highest-level
+convenience to lowest-level control.
 
 ```@docs
-search_itineraries
+search_schedule
+search_markets
 search
-```
-
-## Trip Search
-
-```@docs
+search_itineraries
 search_trip
 score_trip
 ```
