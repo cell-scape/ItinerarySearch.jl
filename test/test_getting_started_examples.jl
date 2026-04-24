@@ -250,7 +250,7 @@ end
 end
 
 @testset "getting-started §7 — load_config from file" begin
-    config = load_config("config/defaults.json")
+    config = load_config(joinpath(pkgdir(ItinerarySearch), "config", "defaults.json"))
 
     @test config isa SearchConfig
 end
@@ -460,10 +460,13 @@ end
     using ItinerarySearch
     using Dates
 
-    results = search_markets("data/demo/sample_newssim.csv.gz";
+    _newssim = joinpath(pkgdir(ItinerarySearch), "data", "demo", "sample_newssim.csv.gz")
+    _mct     = joinpath(pkgdir(ItinerarySearch), "data", "demo", "mct_demo.dat")
+
+    results = search_markets(_newssim;
         markets  = [("ORD","LHR"), ("DEN","LAX"), ("IAH","EWR")],
         dates    = [Date(2026, 2, 26)],
-        mct_path = "data/demo/mct_demo.dat",
+        mct_path = _mct,
         max_stops = 2,
     )
 
@@ -487,11 +490,14 @@ end
     using ItinerarySearch
     using Dates
 
+    _newssim = joinpath(pkgdir(ItinerarySearch), "data", "demo", "sample_newssim.csv.gz")
+    _mct     = joinpath(pkgdir(ItinerarySearch), "data", "demo", "mct_demo.dat")
+
     config = SearchConfig(max_stops=2)
     store  = DuckDBStore()
 
-    ingest_newssim!(store, "data/demo/sample_newssim.csv.gz")
-    ingest_mct!(store, "data/demo/mct_demo.dat")
+    ingest_newssim!(store, _newssim)
+    ingest_mct!(store, _mct)
 
     ctx = RuntimeContext(
         config=config, constraints=SearchConstraints(),

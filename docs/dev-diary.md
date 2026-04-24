@@ -309,6 +309,47 @@ speedup on the search-only slice.
   - `FlightGraph` gains `geo_stats::GeoStats` field, populated in `build_graph!`
 - **Tests**: 1174 total (34 new instrumentation tests)
 
+## 2026-04-23 — Documentation sweep
+
+Updated user-facing documentation to match the three features that landed
+earlier in the session:
+
+- **API reference (`docs/src/api/*.md`)** — `@docs` blocks now include
+  `search_schedule` (3 methods), `build_graph_for_window`, `MarketUniverse`,
+  `MarketSearchFailure`, `is_failure`, `failed_markets`, `SpanEvent`,
+  `TraceContext`. Documenter.jl auto-includes source-file docstrings, so
+  this was purely structural. Consolidated the prior separate `DFS Search`
+  / `Trip Search` sections into a single `Search` section ordered from
+  highest-level (`search_schedule`) to lowest-level (`search_itineraries`).
+
+- **Getting-started tutorial** — full restructure (684 lines, 25 code
+  blocks). Leads with `search_schedule` (the highest-level entry), then
+  `search_markets` with tuple dispatch, then `search`. Low-level
+  `search_itineraries` moved to the Advanced section. Circuity tiers,
+  schedule window, and rule chain content preserved under Configuration
+  and Advanced. Reference data files preserved at §10.
+
+- **Surgical updates** — README (new-feature callouts, corrected
+  `search_markets` Union return type), architecture (new `src/search/`
+  subdirectory + Parallelism section covering worker pool, failure
+  isolation, CLI flag, observability), index (feature highlights),
+  config/README (`parallel_markets` field entry).
+
+**Smoke-test coverage for prose examples** — new
+`test/test_getting_started_examples.jl` wraps every tutorial code block
+(25) plus the README examples (2) in testsets with structural (not
+content) assertions. Prevents the "tutorial rots silently as API changes"
+failure mode that led to this sweep. Chosen over flipping `manual=true`
+on `test_doctests.jl` because the library's parallelism and timing
+outputs make strict doctest output matching fragile.
+
+**Deferred:** flipping `manual=true` on doctests (future hardening
+opportunity — the smoke tests catch compilation failures but not output
+drift); migration guide for the `search_markets` return-type change (not
+strictly needed — `Union{Vector{Itinerary}, MarketSearchFailure}` is a
+strict superset; existing callers that destructure as `Vector{Itinerary}`
+still work for non-failure markets).
+
 ## 2026-03-23 — MCT Full SSIM8 Matching
 - **Scope**: Expanded the MCT lookup to support all SSIM8 Chapter 8 matching fields
 - **Changes**:
