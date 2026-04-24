@@ -71,14 +71,19 @@ results = search_markets("data/demo/sample_newssim.csv.gz";
     max_stops = 2,
 )
 
-# Results are keyed by (origin, dest, date)
+# Results are keyed by (origin, dest, date).
+# Values are Union{Vector{Itinerary}, MarketSearchFailure} — use is_failure(v) to
+# detect failed markets, or failed_markets(results) to extract them all at once.
 for ((org, dst, date), itns) in results
+    is_failure(itns) && continue   # skip failed markets
     println("$(org)→$(dst) $(date): $(length(itns)) itineraries")
     for itn in itns
         println("  $(itn.num_stops)-stop, $(itn.elapsed_time) min, circuity $(round(itn.circuity; digits=2))x")
     end
 end
 ```
+
+`search_markets` returns `Dict{Tuple{String,String,Date}, Union{Vector{Itinerary}, MarketSearchFailure}}` — successful markets map to itinerary vectors; failed markets map to `MarketSearchFailure` sentinels. Use `is_failure(v)` to test a single value, or `failed_markets(dict)` to extract all failures in one call.
 
 For finer control (reusing a store, customising constraints, or searching the same graph repeatedly), use the lower-level API directly:
 
@@ -110,6 +115,27 @@ close(store)
 ```
 
 > **Note:** `search_itineraries` returns a reference to `ctx.results` — call `copy(itns)` if you need to retain results across multiple search calls.
+
+## What's new
+
+- **`search_schedule`** — schedule-wide sweeps, carrier-scoped. Two universe modes
+  (`:direct` fast; `:connected` wider-net via BFS on the connection graph). Optional
+  `sink::Function` callback for streaming results. Three entry forms: `path`,
+  pre-ingested `store`, and pre-built `graph` + `universe`.
+- **Tuple-dispatch convenience** — `search_markets(path, (origin, dest, date))` for
+  one-off queries; vector form `search_markets(path, [(o1, d1, t1), (o2, d2, t2), ...])`
+  is explicit per-tuple (not cartesian with a separate dates list).
+- **Thread-based parallelism** — per-market search scales across
+  `JULIA_NUM_THREADS`. `--no-parallel` CLI flag and `SearchConfig.parallel_markets=false`
+  force sequential.
+- **Graph reuse** — `search_schedule(graph, universe)` skips ingest + build for
+  benchmark and batch scenarios. `build_graph_for_window` builds a graph covering
+  a date range for multi-date sweeps.
+- **OpenTelemetry-shaped events** — `SpanEvent`s emitted via an `event_sinks` kwarg
+  for downstream trace collectors. OTLP/HTTP exporter on the roadmap.
+
+See [`docs/src/getting-started.md`](docs/src/getting-started.md) for walkthrough
+examples.
 
 ### CLI
 
