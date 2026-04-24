@@ -197,8 +197,10 @@ as soon as it completes; the returned dict stays empty.
 ```julia
 count = Ref(0)
 sink = function(market, result)
-    count[] += 1
-    # write to file, push to queue, etc.
+    # `market` is (origin, dest, date); `result` is either Vector{Itinerary}
+    # or MarketSearchFailure. Write to file, push to a queue, whatever suits
+    # your streaming policy — just avoid growing memory.
+    count[] += is_failure(result) ? 0 : 1
     return nothing
 end
 
